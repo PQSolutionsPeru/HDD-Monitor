@@ -8,6 +8,7 @@ NC_pin = Pin(12, Pin.IN)
 NO_pin = Pin(13, Pin.IN)
 
 # Conectar a la red WiFi
+'''
 print("Conectando a WiFi", end="")
 sta_if = network.WLAN(network.STA_IF)
 sta_if.active(True)
@@ -16,6 +17,7 @@ while not sta_if.isconnected():
     print(".", end="")
     time.sleep(0.1)    
 print(" ¡Conectado!")
+'''
 
 # Funciones para encender y apagar el LED
 def estatus_NC(pin):
@@ -42,6 +44,10 @@ while True:
             estatus_NC(NC_pin)
         else:
             estatus_des_NC(NC_pin)
+    elif relay_state:
+        estatus_NC(NC_pin)
+    else:
+        estatus_des_NC(NC_pin)
     
     # Pequeño retraso entre las lecturas
-    time.sleep(0.1)
+    time.sleep(1)
