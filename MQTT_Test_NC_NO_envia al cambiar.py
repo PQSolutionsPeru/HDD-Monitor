@@ -2,6 +2,7 @@
 import network
 import time
 from machine import Pin
+from umqtt.simple import MQTTClient
 
 # Configuración de los pines GPIO
 NC_pin = Pin(12, Pin.IN)
@@ -17,12 +18,28 @@ while not sta_if.isconnected():
     time.sleep(0.1)    
 print(" ¡Conectado!")
 
-# Funciones para encender y apagar el LED
+# Configuración de MQTT
+mqtt_server = "node02.myqtthub.com"
+mqtt_port = 1883
+mqtt_user = "PQSolutions"
+mqtt_password = "ZGJtb6Jr-L32ovPHb"
+mqtt_client_id = "pqsolutionsperu@gmail.com"
+mqtt_topic = "estado_rele"
+
+mqtt_client = MQTTClient(mqtt_client_id, mqtt_server, port=mqtt_port, user=mqtt_user, password=mqtt_password)
+mqtt_client.connect()
+
+# Funciones para publicar mensajes MQTT
+def publicar_mensaje(topic, mensaje):
+    mqtt_client.publish(topic, mensaje)
+
 def estatus_NC(pin):
-    print("El pin {} está activado".format(pin))
+    mensaje = "El pin {} está activado".format(pin)
+    publicar_mensaje(mqtt_topic, mensaje)
 
 def estatus_des_NC(pin):
-    print("El pin {} está desactivado".format(pin))
+    mensaje = "El pin {} está desactivado".format(pin)
+    publicar_mensaje(mqtt_topic, mensaje)
 
 # Variable para almacenar el estado anterior del relé
 prev_relay_state = False
@@ -45,3 +62,6 @@ while True:
     
     # Pequeño retraso entre las lecturas
     time.sleep(0.1)
+
+# Desconectar MQTT al finalizar
+mqtt_client.disconnect()
