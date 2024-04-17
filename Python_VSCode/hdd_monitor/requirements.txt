@@ -1,0 +1,4 @@
+micropython
+paho-mqtt
+adafruit-ampy
+adafruit-io
