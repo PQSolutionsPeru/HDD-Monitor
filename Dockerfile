@@ -2,15 +2,16 @@
 FROM python:3.12
 
 # Instalar las herramientas necesarias
-RUN pip install platformio
-RUN pip install paho-mqtt
-RUN pip install adafruit-ampy
+RUN pip install platformio paho-mqtt adafruit-ampy
 
 # Configurar el entorno de trabajo
 WORKDIR /clean-hdd-monitor
 
 # Copiar el código fuente al contenedor
-COPY . /clean-hdd-monitor-container
+COPY . /clean-hdd-monitor
 
-# Iniciar el contenedor sin ejecutar nada
-CMD ["sleep", "infinity"]
+# Copiar el archivo de punto de entrada
+COPY entrypoint.py /clean-hdd-monitor/entrypoint.py
+
+# Establecer el punto de entrada o comando por defecto
+CMD ["python", "/clean-hdd-monitor/entrypoint.py"]
