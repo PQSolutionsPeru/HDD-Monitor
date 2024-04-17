@@ -28,3 +28,12 @@ Para almacenar los datos de la aplicación en un servidor cloud, tienes varias o
 
 
 
+
+
+quiero un pgorama en micropython que mediante el pin12 y pin13 de ESP32 WROOM 32D:
+1. detecte el estado del NO y el NC
+2. Si están iguales, imprimir una vez "Relay desconectado o malogrado"
+3. Si el NC o el NO se energizan deberá imprimir una vez "NC: Conectado (energizado)" o "NO: Conectado (energizado)" según corresponda
+4. Si el NC o el NO dejan de energizarse, deberá imprimir una vez "NC: Desconectado (no energizado)" o "NO: Desconectado (no energizado)" según corresponda
+5. Si entre alguno de esos eventos el NO y el NC vuelven a estar iguales, imprimir una vez "Relay desconectado o malogrado"
+6. Ningún mensaje debe imprimirse todo el tiempo según el time.sleep, sino que solo se debe imprimir cuando ocurra un cambio
