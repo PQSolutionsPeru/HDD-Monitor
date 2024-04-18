@@ -52,7 +52,7 @@ def on_message(topic, message):
     print("Contenido del mensaje:", message)
 
 # Configurar el cliente MQTT y establecer la conexión con el broker
-client = MQTTClient("ESP32-PQ1", "node02.myqtthub.com", port=8883, user="PQSolutions", password="Quixy35L4M3J0R", ssl=True)
+client = MQTTClient("ESP32-PQ1", "node02.myqtthub.com", port=8883, user="ESP32-1", password="Quixy35L4M3J0R", ssl=True)
 client.set_callback(on_message)
 client.connect()
 
