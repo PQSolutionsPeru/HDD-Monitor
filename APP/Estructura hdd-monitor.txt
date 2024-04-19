@@ -1,0 +1,95 @@
+- Carpeta principal del proyecto
+  - Carpeta "backend"
+    - Carpeta "src"
+      - Carpeta "login"
+        - Archivo "login.py"
+      - Carpeta "dashboard"
+        - Archivo "dashboard.py"
+      - Carpeta "notifications"
+        - Archivo "notifications.py"
+      - Archivo "main.py"
+  - Carpeta "frontend"
+    - Carpeta "lib"
+      - Carpeta "screens"
+        - Carpeta "login"
+          - Archivo "login.dart"
+        - Carpeta "dashboard"
+          - Archivo "dashboard.dart"
+        - Carpeta "notifications"
+          - Archivo "notifications.dart"
+      - Archivo "main.dart"
+    - Carpeta "assets"
+  - Carpeta "tests"
+    - Carpeta "backend"
+      - Carpeta "src"
+        - Carpeta "login"
+          - Archivo "test_login.py"
+        - Carpeta "dashboard"
+          - Archivo "test_dashboard.py"
+        - Carpeta "notifications"
+          - Archivo "test_notifications.py"
+    - Carpeta "frontend"
+      - Carpeta "lib"
+        - Carpeta "screens"
+          - Carpeta "login"
+            - Archivo "test_login.dart"
+          - Carpeta "dashboard"
+            - Archivo "test_dashboard.dart"
+          - Carpeta "notifications"
+            - Archivo "test_notifications.dart"
+  - Carpeta "docs"
+  - Archivo de configuración principal (por ejemplo, "config.json" o "settings.ini")
+
+En esta estructura, hemos organizado el proyecto en dos carpetas principales: "backend" y "frontend". La carpeta "backend" contendrá el código fuente escrito en Python, mientras que la carpeta "frontend" contendrá el código escrito en Flutter.
+
+Dentro de la carpeta "backend/src", hemos creado carpetas separadas para cada módulo, como "login", "dashboard" y "notifications". Cada una de estas carpetas contendrá los archivos Python correspondientes a cada módulo.
+
+En la carpeta "frontend/lib/screens", hemos creado carpetas separadas para cada pantalla de la interfaz de usuario, como "login", "dashboard" y "notifications". Cada una de estas carpetas contendrá los archivos Flutter correspondientes a cada pantalla.
+
+Además, hemos incluido una carpeta "tests" para almacenar las pruebas relacionadas con el backend y el frontend. Tanto para el backend como para el frontend, hemos organizado las pruebas en carpetas correspondientes a cada módulo o pantalla.
+
+También hemos incluido una carpeta "docs" para almacenar cualquier documentación relacionada con el proyecto.
+
+
+
+
++++++++++++++++++++++ DESCRIPCION DE LAS PARTES +++++++++++++++++++++++
+
+Carpeta principal del proyecto:
+Esta será la carpeta raíz de tu proyecto en la que se almacenarán todos los archivos y carpetas relacionados con tu aplicación.
+Carpeta "backend":
+Esta carpeta contendrá todo el código fuente relacionado con el backend de tu aplicación.
+Carpeta "src":
+Es la carpeta principal del código fuente del backend.
+Aquí es donde colocarás todos los módulos o componentes relacionados con el backend de tu aplicación.
+Carpetas de módulos o componentes (por ejemplo, "login", "dashboard", "notifications"):
+Estas carpetas contendrán los archivos de código fuente relacionados con cada módulo o componente específico.
+Por ejemplo, en la carpeta "login" tendrás el archivo "login.py" que contendrá la lógica y funcionalidad del módulo de inicio de sesión.
+Archivo de configuración de Firebase:
+Este archivo contendrá la configuración necesaria para interactuar con Firebase, como las credenciales de autenticación y las URL de la base de datos.
+Carpeta "frontend":
+Esta carpeta contendrá todo el código fuente relacionado con el frontend de tu aplicación.
+Carpeta "lib":
+Aquí es donde colocarás todos los archivos de lógica y configuración de Flutter para el frontend de tu aplicación.
+Dentro de esta carpeta, encontrarás subcarpetas como "screens", "components", "models" y "services".
+Carpeta "screens":
+Esta carpeta contendrá los archivos de pantalla de tu aplicación, como "login_screen.dart" y "dashboard_screen.dart".
+Cada archivo de pantalla contendrá la interfaz de usuario y la lógica relacionada con esa pantalla específica.
+Carpeta "components":
+Aquí se almacenarán los componentes reutilizables que se utilizarán en varias pantallas de tu aplicación.
+Por ejemplo, podrías tener un archivo "button.dart" que define un componente de botón personalizado.
+Carpeta "models":
+Esta carpeta contendrá los modelos de datos utilizados en tu aplicación.
+Por ejemplo, podrías tener un archivo "user_model.dart" que define la estructura de un objeto de usuario.
+Carpeta "services":
+Aquí se almacenarán los archivos de servicio que interactúan con Firebase u otros servicios externos.
+Por ejemplo, podrías tener un archivo "firebase_service.dart" que contiene métodos para realizar operaciones de lectura y escritura en la base de datos de Firebase.
+Carpeta "assets":
+Esta carpeta contendrá los recursos estáticos de tu aplicación, como imágenes, iconos o archivos de configuración.
+Estos archivos se utilizarán en tu aplicación para mejorar la interfaz de usuario o para otros fines.
+Carpeta "test":
+Si deseas escribir pruebas para tu aplicación frontend, puedes utilizar esta carpeta para almacenar los archivos de prueba correspondientes.
+Carpeta "docs":
+Aquí es donde puedes almacenar cualquier documentación relacionada con tu proyecto, como manuales de usuario, guías de instalación o cualquier otra información relevante.
+Archivo de configuración principal:
+Este archivo contendrá la configuración principal de tu aplicación, como las credenciales de Firebase o cualquier otra configuración global necesaria.
