@@ -1,0 +1,70 @@
+Por supuesto. Aquí tienes un ejemplo de código comentado para el archivo "login.py" que implementa la funcionalidad de inicio de sesión basado en los detalles de tu proyecto:
+
+```python
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# Ruta para el inicio de sesión
+@app.route('/login', methods=['POST'])
+def login():
+    # Obtener los datos enviados en la solicitud
+    data = request.get_json()
+
+    # Extraer el nombre de usuario y la contraseña de los datos
+    username = data.get('username')
+    password = data.get('password')
+
+    # Verificar las credenciales del usuario
+    if username == 'admin' and password == 'contraseña':
+        # Generar un token de sesión seguro (usando PyJWT)
+        token = generate_token(username)
+
+        # Devolver el token como respuesta
+        return jsonify({'token': token})
+
+    # Si las credenciales son incorrectas, devolver un mensaje de error
+    return jsonify({'error': 'Credenciales inválidas'}), 401
+
+# Función para generar un token JWT
+def generate_token(username):
+    # Aquí puedes utilizar la biblioteca PyJWT para generar y firmar el token
+    # Puedes incluir información adicional en el token, como el nombre de usuario
+    # y cualquier otra información relevante para tu aplicación
+    # Aquí hay un ejemplo básico:
+
+    # Importar la biblioteca PyJWT
+    import jwt
+
+    # Definir el secreto para firmar el token (asegúrate de mantenerlo seguro)
+    secret_key = 'mi_secreto'
+
+    # Crear el payload del token (en este caso, solo incluye el nombre de usuario)
+    payload = {'username': username}
+
+    # Generar el token JWT usando la función jwt.encode()
+    # El token tendrá una vida útil limitada (por ejemplo, 1 hora)
+    token = jwt.encode(payload, secret_key, algorithm='HS256')
+
+    # Devolver el token como cadena
+    return token.decode('utf-8')
+
+# Punto de entrada principal para la aplicación
+if __name__ == '__main__':
+    app.run()
+```
+
+Este código proporciona un ejemplo básico de cómo implementar la funcionalidad de inicio de sesión en Flask. Aquí hay una explicación de las partes principales del código:
+
+- Se importa la biblioteca Flask y se crea una instancia de la aplicación Flask.
+- Se define una ruta para la función `login()` que se ejecutará cuando se realice una solicitud POST a "/login".
+- En la función `login()`, se obtienen los datos enviados en la solicitud y se extraen el nombre de usuario y la contraseña.
+- Se verifica si las credenciales son correctas (en este ejemplo, se compara el nombre de usuario con "admin" y la contraseña con "contraseña").
+- Si las credenciales son correctas, se genera un token JWT utilizando la función `generate_token()`, y se devuelve el token como respuesta.
+- Si las credenciales son incorrectas, se devuelve un mensaje de error y se establece el código de estado 401 (no autorizado).
+- La función `generate_token()` utiliza la biblioteca PyJWT para generar un token JWT firmado. En este ejemplo, se utiliza un secreto ("mi_secreto") para firmar el token y se incluye solo el nombre de usuario en el payload. Puedes personalizar esto según tus necesidades.
+- En el punto de entrada principal `if __name__ == '__main__':`, se ejecuta la aplicación Flask.
+
+Recuerda que este es solo un ejemplo básico y debes adaptarlo según tus necesidades específicas. Asegúrate de instalar las bibliotecas necesarias, como Flask y PyJWT, y de realizar las importaciones correspondientes en tu proyecto.
+
+Si tienes más preguntas o necesitas más ayuda, no dudes en decírmelo. ¡Estoy aquí para ayudarte en el desarrollo de tu proyecto!

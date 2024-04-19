@@ -1,0 +1,12 @@
+name: app_hdd_monitor 
+description: Aplicación de monitoreo de relés de paneles de incendios 
+version: 1.0.0 
+environment: 
+  sdk: ">=2.12.0 <3.0.0" 
+dependencies: 
+  flutter: 
+    sdk: flutter 
+  # Aquí puedes agregar las dependencias adicionales que necesites 
+dev_dependencies: 
+  flutter_test: 
+    sdk: flutter 
