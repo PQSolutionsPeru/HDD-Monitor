@@ -9,86 +9,144 @@ Es importante tener en cuenta que las pruebas automatizadas son una práctica re
 
 EXPLICACION DE LAS CARPETAS Y ARCHIVOS DEL PROYECTO APP
 
-Carpeta "app-hdd-monitor": Esta es la carpeta principal del proyecto, que contiene todo el código y los archivos relacionados con tu aplicación.
-Carpeta "backend": Esta carpeta contiene el código fuente y los archivos relacionados con el backend de tu aplicación.
-Carpeta "src": Aquí se encuentra el código fuente principal del backend.
-Carpeta "login": Contiene el código relacionado con la funcionalidad de inicio de sesión en el backend.
-Archivo "login.py": Este archivo contiene el código Python para la funcionalidad de inicio de sesión.
-Carpeta "dashboard": Contiene el código relacionado con la funcionalidad del panel de control en el backend.
-Archivo "dashboard.py": Este archivo contiene el código Python para la funcionalidad del panel de control.
-Carpeta "notifications": Contiene el código relacionado con la funcionalidad de notificaciones en el backend.
-Archivo "notifications.py": Este archivo contiene el código Python para la funcionalidad de notificaciones.
-Archivo "main.py": Este archivo contiene el código principal del backend de tu aplicación.
-Carpeta "frontend": Esta carpeta contiene el código fuente y los archivos relacionados con el frontend de tu aplicación.
-Carpeta "lib": Aquí se encuentra el código fuente principal del frontend.
-Archivo "main.dart": Este archivo contiene el código Dart principal del frontend de tu aplicación.
-Carpeta "screens": Contiene las carpetas correspondientes a cada pantalla de tu aplicación.
-Carpeta "login": Contiene el código relacionado con la pantalla de inicio de sesión.
-Archivo "login.dart": Este archivo contiene el código Dart para la pantalla de inicio de sesión.
-Carpeta "dashboard": Contiene el código relacionado con la pantalla de panel de control.
-Archivo "dashboard.dart": Este archivo contiene el código Dart para la pantalla de panel de control.
-Carpeta "notifications": Contiene el código relacionado con la pantalla de notificaciones.
-Archivo "notifications.dart": Este archivo contiene el código Dart para la pantalla de notificaciones.
-Carpeta "assets": Aquí puedes colocar los recursos estáticos de tu aplicación, como imágenes, fuentes, etc.
-Carpeta "tests": Esta carpeta contiene los archivos de prueba relacionados con tu aplicación.
-Carpeta "backend": Aquí se encuentran los archivos de prueba relacionados con el backend de tu aplicación.
-Carpeta "src": Contiene las carpetas correspondientes a cada parte del backend que se va a probar.
-Carpeta "login": Contiene los archivos de prueba para la funcionalidad de inicio de sesión en el backend.
-Archivo "test_login.py": Este archivo contiene los casos de prueba para la funcionalidad de inicio de sesión.
-Carpeta "dashboard": Contiene los archivos de prueba para la funcionalidad del panel de control en el backend.
-Archivo "test_dashboard.py": Este archivo contiene los casos de prueba para la funcionalidad del panel de control.
-Carpeta "notifications": Contiene los archivos de prueba para la funcionalidad de notificaciones en el backend.
-Archivo "test_notifications.py": Este archivo contiene los casos de prueba para la funcionalidad de notificaciones.
-Carpeta "frontend": Aquí se encuentran los archivos de prueba relacionados con el frontend de tu aplicación.
-Carpeta "lib": Contiene las carpetas correspondientes a cada pantalla del frontend que se va a probar.
-Carpeta "login": Contiene los archivos de prueba para la pantalla de inicio de sesión.
-Archivo "test_login.dart": Este archivo contiene los casos de prueba para la pantalla de inicio de sesión.
-Carpeta "dashboard": Contiene los archivos de prueba para la pantalla de panel de control.
-Archivo "test_dashboard.dart": Este archivo contiene los casos de prueba para la pantalla de panel de control.
-Carpeta "notifications": Contiene los archivos de prueba para la pantalla de notificaciones.
-Archivo "test_notifications.dart": Este archivo contiene los casos de prueba para la pantalla de notificaciones.
-Archivo "pubspec.yaml": Este archivo es necesario para la configuración del proyecto en Flutter. Aquí puedes especificar el nombre, la descripción, la versión y las dependencias de tu aplicación, tanto para el entorno de desarrollo como para las pruebas.
+Carpeta "app-hdd-monitor": Es la carpeta principal del proyecto.
+Carpeta "backend": Contiene el código y los recursos relacionados con el backend de la aplicación.
+Carpeta "src": Es la carpeta principal del código fuente del backend.
+Carpeta "login": Contiene archivos relacionados con la funcionalidad de inicio de sesión.
+Archivo "login.py": Es el archivo de código fuente para la función de inicio de sesión.
+Carpeta "dashboard": Contiene archivos relacionados con la funcionalidad del panel de control.
+Archivo "dashboard.py": Es el archivo de código fuente para la función del panel de control.
+Carpeta "notifications": Contiene archivos relacionados con la funcionalidad de notificaciones.
+Archivo "notifications.py": Es el archivo de código fuente para la función de notificaciones.
+Archivo "main.py": Es el archivo principal de código fuente del backend.
+Carpeta "frontend": Contiene el código y los recursos relacionados con el frontend de la aplicación.
+Carpeta "lib": Contiene el código fuente de la aplicación.
+Archivo "main.dart": Es el archivo principal de código fuente del frontend.
+Carpeta "screens": Contiene archivos relacionados con las diferentes pantallas de la aplicación.
+Carpeta "login": Contiene archivos relacionados con la pantalla de inicio de sesión.
+Archivo "login.dart": Es el archivo de código fuente para la pantalla de inicio de sesión.
+Carpeta "dashboard": Contiene archivos relacionados con la pantalla del panel de control.
+Archivo "dashboard.dart": Es el archivo de código fuente para la pantalla del panel de control.
+Carpeta "notifications": Contiene archivos relacionados con la pantalla de notificaciones.
+Archivo "notifications.dart": Es el archivo de código fuente para la pantalla de notificaciones.
+Carpeta "assets": Contiene recursos como imágenes, fuentes, etc.
+Carpeta "tests": Contiene pruebas relacionadas con el backend y el frontend de la aplicación.
+Carpeta "backend": Contiene pruebas relacionadas con el backend.
+Archivo "test_login.py": Es el archivo de prueba para la función de inicio de sesión del backend.
+Archivo "test_dashboard.py": Es el archivo de prueba para la función del panel de control del backend.
+Archivo "test_notifications.py": Es el archivo de prueba para la función de notificaciones del backend.
+Carpeta "frontend": Contiene pruebas relacionadas con el frontend.
+Archivo "test_login.dart": Es el archivo de prueba para la pantalla de inicio de sesión del frontend.
+Archivo "test_dashboard.dart": Es el archivo de prueba para la pantalla del panel de control del frontend.
+Archivo "test_notifications.dart": Es el archivo de prueba para la pantalla de notificaciones del frontend.
+Archivo "pubspec.yaml": Es el archivo de configuración de Flutter para el proyecto.
+Define el nombre, la descripción, la versión y las dependencias del proyecto.
 
 
 
 
-PASOS GENERALES PARA COMENZAR DESARROLLAR
 
-1. Configurar el entorno de desarrollo: Asegúrate de tener instalado Flutter y el SDK de Dart en tu sistema. También puedes configurar tu IDE preferido, como VSCode, para trabajar en el proyecto. Asegúrate de tener las extensiones y complementos necesarios instalados.
-Desarrollar la lógica del backend: En la carpeta "backend/src", puedes comenzar a desarrollar la lógica de tu backend. Esto puede incluir el manejo de consultas de estado de los relés, la comunicación con el broker MQTT y el envío de mensajes al frontend. Puedes utilizar el archivo "main.py" y los archivos en las subcarpetas para organizar tu código según las funcionalidades.
-2. Desarrollar la interfaz de usuario: En la carpeta "frontend/lib/screens", puedes comenzar a desarrollar la interfaz de usuario de tu aplicación utilizando Flutter y Dart. Puedes utilizar los archivos Dart en las subcarpetas correspondientes para cada pantalla (por ejemplo, "login.dart", "dashboard.dart", "notifications.dart") para definir la interfaz y la lógica de cada pantalla.
-Conectar el backend con el frontend: Asegúrate de establecer la comunicación adecuada entre el backend y el frontend de tu aplicación. Esto puede implicar el uso de API REST, websockets u otros métodos dependiendo de tus necesidades. Asegúrate de que el frontend pueda recibir los datos del backend y mostrarlos correctamente en la interfaz de usuario.
-3. Implementar la autenticación de usuarios: Si tienes diferentes tipos de cuentas (administrador y usuario), asegúrate de implementar la autenticación de usuarios en tu aplicación. Puedes utilizar Firebase Authentication u otras bibliotecas para facilitar este proceso. Asegúrate de que solo los usuarios autenticados puedan acceder a ciertas funcionalidades de la aplicación.
-4. Implementar la funcionalidad de historial y mensajes: Utiliza la funcionalidad de historial para almacenar y mostrar registros pasados de los estados de los relés. Asegúrate de que el backend envíe los mensajes al frontend cuando ocurran cambios en los relés y que estos mensajes se muestren correctamente en la interfaz de usuario.
-Probar y depurar: A medida que vayas desarrollando tu aplicación, realiza pruebas y depuración regularmente. Utiliza pruebas unitarias y pruebas de integración para garantizar el correcto funcionamiento de todas las funcionalidades. Asegúrate de manejar los posibles errores y excepciones de manera adecuada.
+PASOS A SEGUIR 
 
-
-
-PUNTO 2
-
-Dentro de la carpeta "backend/src", encontrarás las subcarpetas "login", "dashboard" y "notifications", así como el archivo "main.py". Estas subcarpetas son un buen lugar para organizar tu código según las funcionalidades correspondientes.
-En cada una de estas subcarpetas, puedes comenzar a desarrollar la lógica específica de cada funcionalidad. Aquí tienes una descripción de cada una de ellas:
-Carpeta "login":
-Archivo "login.py": Este archivo es el punto de entrada para la funcionalidad de inicio de sesión. Aquí puedes definir las rutas y la lógica para autenticar a los usuarios, verificar las credenciales y generar tokens de sesión, por ejemplo. Puedes utilizar bibliotecas como Flask o Django para crear las rutas y manejar las solicitudes HTTP.
-Carpeta "dashboard":
-Archivo "dashboard.py": Aquí puedes desarrollar la lógica relacionada con la funcionalidad del panel de control. Puedes definir las rutas y la lógica para obtener y actualizar el estado de los relés, así como para consultar el historial de estados. También puedes implementar la lógica para enviar mensajes al frontend cuando ocurran cambios en los relés.
-Carpeta "notifications":
-Archivo "notifications.py": En esta carpeta puedes desarrollar la lógica para manejar las notificaciones. Puedes definir las rutas y la lógica para registrar las preferencias de notificación de los usuarios, enviar notificaciones en función de los eventos en los relés, y gestionar la entrega de mensajes de notificación.
-Archivo "main.py":
-Este archivo es el punto de entrada principal para tu backend. Aquí puedes importar y configurar las bibliotecas y módulos necesarios, establecer la conexión con el broker MQTT, inicializar la base de datos, etc. También puedes definir las rutas principales de tu API y configurar cualquier middleware necesario.
-Recuerda que el enfoque y la implementación precisa de cada funcionalidad pueden variar según tus requisitos específicos. Utiliza las bibliotecas y herramientas adecuadas en tu lenguaje de programación para facilitar el desarrollo y la gestión de tu backend.
+1. Configuración de Firebase: Comienza por configurar correctamente Firebase en tu proyecto. Puedes seguir la documentación oficial para agregar las credenciales y configurar los servicios que necesitarás, como Firestore y Authentication.
+2. Autenticación de usuarios: En el backend, puedes empezar a implementar la lógica de autenticación de usuarios en el archivo auth.py. Aquí puedes definir las funciones para el registro, inicio de sesión y manejo de sesiones de usuario.
+3. Servicios Firebase y MQTT: En los archivos firebase_service.py y mqtt_service.py, puedes implementar las funciones para interactuar con Firestore y el broker MQTT, respectivamente.
+4. Pantallas de Flutter: En el frontend, comienza a desarrollar las pantallas principales de tu aplicación en los archivos correspondientes de la carpeta screens. Por ejemplo, puedes empezar con la pantalla de inicio de sesión en login_screen.dart.
+5. Componentes reutilizables: A medida que vayas desarrollando la interfaz de usuario, identifica los componentes que se puedan reutilizar en múltiples pantallas (como botones, tarjetas, listas, etc.) y colócalos en la carpeta components.
+6. Servicios en el frontend: En la carpeta services, implementa los servicios que se comunicarán con el backend, como auth_service.dart, firebase_service.dart y mqtt_service.dart.
+7. Enrutamiento: Configura las rutas de tu aplicación Flutter en el archivo app_routes.dart de la carpeta routes.
+8. Pruebas unitarias: A medida que vayas desarrollando tu aplicación, escribe pruebas unitarias para los diferentes módulos, tanto en el backend como en el frontend.
+9. Git y control de versiones: Asegúrate de estar utilizando un sistema de control de versiones como Git y realizar commits regulares de tus cambios.
+10. Documentación: Documenta tu código a medida que avanzas, ya sea mediante comentarios o documentación adicional, para facilitar el mantenimiento y la colaboración en el futuro.
 
 
 
-COMENZANDO POR EL LOGIN
+PASO 1:
+Claro, vamos a configurar Firebase en tu proyecto. Sigue estos pasos:
 
-Es recomendable comenzar por el desarrollo de la funcionalidad de inicio de sesión (carpeta "login") antes de pasar a las otras funcionalidades. La razón es que la autenticación y seguridad son elementos fundamentales en cualquier aplicación, por lo que es importante asegurarse de que esta parte esté correctamente implementada antes de avanzar.
-Aquí tienes una guía paso a paso para desarrollar la funcionalidad de inicio de sesión:
-Abre el archivo "login.py" en la carpeta "backend/src/login".
-Define las rutas necesarias para el inicio de sesión. Puedes utilizar un framework como Flask o Django para facilitar la creación de rutas y manejar las solicitudes HTTP.
-Implementa la lógica para autenticar a los usuarios. Esto puede involucrar la verificación de las credenciales proporcionadas (como nombre de usuario y contraseña) y la consulta a una base de datos para validar la información.
-Genera un token de sesión seguro para el usuario autenticado. Puedes utilizar bibliotecas como PyJWT para generar y firmar tokens JWT (JSON Web Tokens).
-Almacena el token de sesión en una cookie segura o en el almacenamiento local del navegador para que el usuario pueda mantener la sesión iniciada en futuras solicitudes.
-Asegúrate de manejar los posibles casos de error, como credenciales incorrectas o usuarios no registrados.
-Realiza pruebas exhaustivas para asegurarte de que la funcionalidad de inicio de sesión funcione correctamente y que se manejen los casos de error adecuadamente.
-Una vez que hayas completado la funcionalidad de inicio de sesión, puedes continuar desarrollando las otras funcionalidades (dashboard y notifications) según tu prioridad y necesidades. Recuerda que puedes ajustar el orden de desarrollo según tus preferencias y requerimientos específicos.
+1. Crea un proyecto en Firebase:
+   - Accede a la consola de Firebase (https://console.firebase.google.com/) e inicia sesión con tu cuenta de Google.
+   - Haz clic en "Crear un proyecto".
+   - Ingresa un nombre para tu proyecto (por ejemplo, "app-hdd-monitor") y acepta los términos y condiciones.
+
+2. Habilita los servicios de Firebase que necesitarás:
+   - En el menú lateral, selecciona "Build" > "Authentication" y habilita el método de autenticación "Correo electrónico/Contraseña".
+   - Luego, ve a "Build" > "Firestore Database" y crea una nueva base de datos en modo de prueba.
+
+3. Configura Firebase en tu proyecto de Flutter:
+   - En la consola de Firebase, ve a "Configuración del proyecto" > "Web" y registra una nueva aplicación web (Flutter necesita las credenciales de una aplicación web).
+   - Sigue las instrucciones para registrar la aplicación web y obtener el archivo `google-services.json`.
+   - Mueve este archivo a la carpeta `android/app` de tu proyecto de Flutter.
+
+4. Configura Firebase en tu proyecto de Python:
+   - En la consola de Firebase, ve a "Configuración del proyecto" > "Cuentas de servicio" y haz clic en "Generar nueva clave privada".
+   - Descarga el archivo JSON de credenciales de servicio.
+   - Mueve este archivo a la carpeta `backend/src` de tu proyecto de Python.
+
+5. Inicializa Firebase en tu código:
+   - En tu archivo `main.py` del backend, agrega el siguiente código para inicializar Firebase con las credenciales descargadas:
+
+
+   import firebase_admin
+   from firebase_admin import credentials, firestore
+
+   cred = credentials.Certificate("path/to/serviceAccountKey.json")
+   firebase_admin.initialize_app(cred)
+   db = firestore.client()
+
+
+   - En tu archivo `main.dart` del frontend, agrega el siguiente código para inicializar Firebase:
+
+
+   import 'package:firebase_core/firebase_core.dart';
+
+   void main() async {
+     WidgetsFlutterBinding.ensureInitialized();
+     await Firebase.initializeApp();
+     runApp(MyApp());
+   }
+
+
+Configura las reglas de seguridad de Firestore:
+   - En la consola de Firebase, ve a "Build" > "Firestore Database" > "Reglas".
+   - Configura las reglas de seguridad según tus necesidades. Por ejemplo, puedes permitir leer y escribir en la colección "users" solo a usuarios autenticados.
+
+Una vez completados estos pasos, Firebase estará configurado correctamente en tu proyecto. Recuerda reemplazar `"path/to/serviceAccountKey.json"` con la ruta real del archivo de credenciales de servicio descargado.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Nombre del proyecto en firebase: firebase-hdd-monitor
+Nombre de la cuenta de Google Analytics: google-analytics-hdd-monitor

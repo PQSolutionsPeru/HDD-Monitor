@@ -9,12 +9,23 @@ mkdir backend
 cd backend
 mkdir src
 cd src
-mkdir login dashboard notifications
-echo. > login\login.py
-echo. > dashboard\dashboard.py
-echo. > notifications\notifications.py
-echo. > main.py
+mkdir api auth services utils
+cd api
+echo. > routes.py
+cd ..
+cd auth 
+echo. > auth.py
+cd ..
+cd services
+echo. > firebase_service.py
+echo. > mqtt_service.py
+cd ..
+cd utils
+echo. > helpers.py
 cd ..\..
+echo. > main.py
+echo. > config.py
+cd ..
 
 REM Crear la estructura de carpetas para "frontend"
 mkdir frontend
@@ -22,12 +33,25 @@ cd frontend
 mkdir lib assets
 cd lib
 echo. > main.dart
-mkdir screens
+mkdir screens components utils services routes
 cd screens
 mkdir login dashboard notifications
-echo. > login\login.dart
-echo. > dashboard\dashboard.dart
-echo. > notifications\notifications.dart
+echo. > login\login_screen.dart
+echo. > dashboard\dashboard_screen.dart
+echo. > notifications\notifications_screen.dart
+cd ..\components
+echo. > login_form.dart
+echo. > dashboard_card.dart
+echo. > notification_tile.dart
+cd ..\utils
+echo. > constants.dart
+echo. > helpers.dart
+cd ..\services
+echo. > auth_service.dart
+echo. > firebase_service.dart
+echo. > mqtt_service.dart
+cd ..\routes
+echo. > app_routes.dart
 cd ..\..
 
 REM Crear la estructura de carpetas para "tests"
@@ -35,13 +59,14 @@ mkdir tests
 cd tests
 mkdir backend frontend
 cd backend
-echo. > test_login.py
-echo. > test_dashboard.py
-echo. > test_notifications.py
+echo. > test_auth.py
+echo. > test_firebase.py
+echo. > test_mqtt.py
 cd ..\frontend
-echo. > test_login.dart
-echo. > test_dashboard.dart
-echo. > test_notifications.dart
+echo. > test_auth_service.dart
+echo. > test_firebase_service.dart
+echo. > test_mqtt_service.dart
+echo. > test_routes.dart
 cd ..\..
 
 REM Volver a la carpeta "app-hdd-monitor" y crear pubspec.yaml en la raíz del "frontend"
@@ -55,9 +80,15 @@ echo   sdk: ">=2.12.0 <3.0.0" >> pubspec.yaml
 echo dependencies: >> pubspec.yaml
 echo   flutter: >> pubspec.yaml
 echo     sdk: flutter >> pubspec.yaml
+echo   firebase_core: ^2.7.0 >> pubspec.yaml
+echo   firebase_auth: ^4.2.9 >> pubspec.yaml
+echo   cloud_firestore: ^4.4.3 >> pubspec.yaml
+echo   mqtt_client: ^9.7.4 >> pubspec.yaml
+echo   go_router: ^6.0.1 >> pubspec.yaml
 echo dev_dependencies: >> pubspec.yaml
 echo   flutter_test: >> pubspec.yaml
 echo     sdk: flutter >> pubspec.yaml
+echo   mockito: ^5.3.2 >> pubspec.yaml
 
 REM Finalización del script
 echo Estructura de carpetas y archivos para app-hdd-monitor creada exitosamente.
