@@ -5,12 +5,35 @@ class FirebaseService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  Future<String?> registerUser(String email, String password) async {
+    try {
+      // Crear usuario en Firebase Authentication
+      await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // Si deseas realizar alguna acción adicional, como guardar datos en Firestore
+      // Por ejemplo, guardar información adicional del usuario
+      // Puedes agregar aquí una lógica para guardar datos del usuario en Firestore
+      // Ejemplo:
+      // await _firestore.collection('users').doc(user.uid).set({
+      //   'email': email,
+      //   'createdAt': DateTime.now(),
+      // });
+
+      return null; // Registro exitoso, retorna null sin errores
+    } catch (e) {
+      return 'Error de registro: $e'; // Retorna el mensaje de error en caso de fallo
+    }
+  }
+
   Future<String?> signInUser(String email, String password) async {
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
       return null; // Inicio de sesión exitoso, retorna null sin errores
     } catch (e) {
-      return e.toString(); // Retorna el mensaje de error en caso de fallo
+      return 'Error de inicio de sesión: $e'; // Retorna el mensaje de error en caso de fallo
     }
   }
 

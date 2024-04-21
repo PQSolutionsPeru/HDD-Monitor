@@ -18,6 +18,20 @@ class AuthService {
     }
   }
 
+  Future<String?> registerUser(String email, String password) async {
+    try {
+      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // Aquí puedes realizar operaciones adicionales, como guardar información del usuario en Firestore
+      return null; // Registro exitoso, retorna null sin errores
+    } catch (e) {
+      return 'Error de registro: $e'; // Retorna el mensaje de error en caso de fallo
+    }
+  }
+
   Future<void> signOutUser() async {
     await _auth.signOut();
   }
