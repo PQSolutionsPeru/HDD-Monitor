@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_app_hdd_monitor/services/auth_service.dart'; // Importa AuthService
+import 'package:flutter_app_hdd_monitor/services/auth_service.dart';
 
 class UserHomeScreen extends StatelessWidget {
   const UserHomeScreen({Key? key}) : super(key: key);
@@ -13,9 +13,9 @@ class UserHomeScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () {
-              // Lógica para cerrar sesión al presionar el botón de logout
-              AuthService().signOutUser();
+            onPressed: () async {
+              // Cerrar sesión al presionar el botón de logout
+              await AuthService().signOutUser();
               Navigator.pushReplacementNamed(context, '/login');
             },
           ),
