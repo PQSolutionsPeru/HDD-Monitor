@@ -1,30 +1,27 @@
+// main.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_app_hdd_monitor/screens/home_screen.dart';
 import 'package:flutter_app_hdd_monitor/screens/login_screen.dart';
+import 'package:flutter_app_hdd_monitor/screens/register_screen.dart';
+import 'package:flutter_app_hdd_monitor/services/firebase_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_app_hdd_monitor/services/firebase_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Reemplaza los valores con los de tu proyecto Firebase
-  String apiKey = 'AIzaSyA9356Ag5rbtyev5l7U_iE8dc9Rz6zTgbU';
-  String appId = '1:1002136032862:android:44e8c6751e458dca3dc6cf';
-  String projectId = 'fir-hdd-monitor-d00de';
-  String messagingSenderId = '1002136032862';
-
-  await Firebase.initializeApp(
-    options: FirebaseOptions(
-      apiKey: apiKey,
-      appId: appId,
-      projectId: projectId,
-      messagingSenderId: messagingSenderId,
-    ),
-  );
+  await Firebase.initializeApp(options: FirebaseConfig.options);
 
   runApp(MyApp());
 }
 
+
 class MyApp extends StatelessWidget {
+  final FirebaseService _firebaseService = FirebaseService();
+
+  MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -33,9 +30,24 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.red,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: LoginScreen(),
+      home: FutureBuilder(
+        future: _firebaseService.getCurrentUser(),
+        builder: (context, AsyncSnapshot<User?> snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const CircularProgressIndicator();
+          } else {
+            if (snapshot.hasData && snapshot.data != null) {
+              return const HomeScreen();
+            } else {
+              return const LoginScreen();
+            }
+          }
+        },
+      ),
       routes: {
-        '/home': (context) => HomeScreen(), // Reemplaza HomeScreen con tu pantalla principal
+        '/home': (context) => const HomeScreen(),
+        '/login': (context) => const LoginScreen(),
+        '/register': (context) => RegisterScreen(),
       },
     );
   }

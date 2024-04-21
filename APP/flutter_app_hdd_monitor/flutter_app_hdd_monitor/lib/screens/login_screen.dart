@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_app_hdd_monitor/services/firebase_service.dart';
+import 'package:flutter_app_hdd_monitor/services/firebase_service.dart'; // Importa FirebaseService desde su ubicación
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,46 +11,58 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final FirebaseService _firebaseService = FirebaseService();
+  final FirebaseService _firebaseService = FirebaseService(); // Utiliza FirebaseService
+
+  @override
+  void initState() {
+    super.initState();
+    checkCurrentUser();
+  }
+
+  void checkCurrentUser() async {
+    if (await _firebaseService.getCurrentUser() != null) {
+      Navigator.pushReplacementNamed(context, '/home');
+    }
+  }
 
   void _signIn(BuildContext context) async {
     String email = _emailController.text.trim();
     String password = _passwordController.text.trim();
 
     if (email.isNotEmpty && password.isNotEmpty) {
-      try {
-        String? error = await _firebaseService.signInUser(email, password);
-        if (error == null) {
-          // Inicio de sesión exitoso, navegar a la pantalla principal u otra pantalla
-          Navigator.pushReplacementNamed(context, '/home'); // Navegar a HomeScreen
-        } else {
-          // Mostrar mensaje de error al usuario
-          _showErrorDialog(context, 'Error de Inicio de Sesión', error);
-        }
-      } catch (e) {
-        print('Error de autenticación: $e');
-        _showErrorDialog(context, 'Error de Autenticación', 'Ocurrió un error al iniciar sesión.');
+      String? error = await _firebaseService.signInUser(email, password);
+      if (error == null) {
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Error de Inicio de Sesión', style: TextStyle(color: Colors.red)),
+            content: Text(error),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        );
       }
     } else {
-      // Mostrar mensaje si falta el correo o la contraseña
-      _showErrorDialog(context, 'Error', 'Por favor ingresa tu correo y contraseña.');
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error', style: TextStyle(color: Colors.red)),
+          content: const Text('Por favor ingresa tu correo y contraseña.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
     }
-  }
-
-  void _showErrorDialog(BuildContext context, String title, String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title, style: const TextStyle(color: Colors.red)),
-        content: Text(message, style: const TextStyle(color: Colors.black)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -92,8 +104,15 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: () => _signIn(context),
               style: ButtonStyle(
                 backgroundColor: MaterialStateProperty.all<Color>(Colors.red),
-              ), // Llama a _signIn al presionar el botón
+              ),
               child: const Text('Iniciar Sesión'),
+            ),
+            const SizedBox(height: 20.0),
+            TextButton(
+              onPressed: () {
+                Navigator.pushNamed(context, '/register');
+              },
+              child: const Text('¿Nuevo Usuario? Regístrate aquí'),
             ),
           ],
         ),
