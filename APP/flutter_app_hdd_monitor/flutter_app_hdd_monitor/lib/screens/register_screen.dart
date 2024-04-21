@@ -1,5 +1,3 @@
-// screens/register_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_app_hdd_monitor/services/firebase_service.dart';
 import 'package:flutter_app_hdd_monitor/services/auth_service.dart';
@@ -66,24 +64,22 @@ class RegisterScreen extends StatelessWidget {
                   _passwordController.text.trim(),
                 );
                 
-                if (registerError != null) {
-                  // Mostrar mensaje de error de registro
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Error de Registro', style: TextStyle(color: Colors.red)),
-                      content: Text(registerError),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('OK', style: TextStyle(color: Colors.red)),
-                        ),
-                      ],
-                    ),
-                  );
-                  return; // Detener la ejecución si hubo un error en el registro
-                }
-
+                // Mostrar mensaje de error de registro
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Error de Registro', style: TextStyle(color: Colors.red)),
+                    content: Text(registerError),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('OK', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+                return; // Detener la ejecución si hubo un error en el registro
+              
                 // Registro exitoso, ahora guarda datos adicionales
                 String? firebaseError = await _firebaseService.registerUser(
                   _emailController.text.trim(),
@@ -91,26 +87,21 @@ class RegisterScreen extends StatelessWidget {
                   _usernameController.text.trim(),
                 );
                 
-                if (firebaseError != null) {
-                  // Mostrar mensaje de error de Firebase
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Error de Registro', style: TextStyle(color: Colors.red)),
-                      content: Text(firebaseError),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('OK', style: TextStyle(color: Colors.red)),
-                        ),
-                      ],
-                    ),
-                  );
-                } else {
-                  // Navegar a la pantalla de inicio si todo fue exitoso
-                  Navigator.pushReplacementNamed(context, '/home');
-                }
-              },
+                // Mostrar mensaje de error de Firebase
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Error de Registro', style: TextStyle(color: Colors.red)),
+                    content: Text(firebaseError),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('OK', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+                            },
               style: ButtonStyle(
                 backgroundColor: MaterialStateProperty.all<Color>(Colors.red),
               ),

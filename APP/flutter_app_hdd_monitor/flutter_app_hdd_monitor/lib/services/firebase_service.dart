@@ -1,7 +1,5 @@
-// services/firebase_service.dart
-
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class FirebaseService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -16,21 +14,6 @@ class FirebaseService {
     }
   }
 
-  Future<String?> registerUser(String email, String password, String username) async {
-    try {
-      await _auth.createUserWithEmailAndPassword(email: email, password: password);
-      String userId = _auth.currentUser!.uid;
-      await _firestore.collection('users').doc(userId).set({
-        'username': username,
-        'email': email,
-        'isAdmin': false,
-      });
-      return null; // Registro exitoso, retorna null sin errores
-    } catch (e) {
-      return e.toString(); // Retorna el mensaje de error en caso de fallo
-    }
-  }
-
   Future<User?> getCurrentUser() async {
     return _auth.currentUser;
   }
@@ -39,22 +22,39 @@ class FirebaseService {
     await _auth.signOut();
   }
 
-  Future<bool> isUserAdmin() async {
-    Map<String, dynamic>? userData = await getCurrentUserData();
-    if (userData != null) {
-      return userData['isAdmin'] ?? false;
+  Future<bool> isUserAdmin(String email) async {
+    try {
+      QuerySnapshot<Map<String, dynamic>> adminQuery = await _firestore
+          .collection('hdd-monitor')
+          .doc('cuentas')
+          .collection('administradores')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+
+      return adminQuery.docs.isNotEmpty;
+    } catch (e) {
+      print('Error verificando si el usuario es administrador: $e');
+      return false;
     }
-    return false;
   }
 
-  Future<Map<String, dynamic>?> getCurrentUserData() async {
-    String? userId = _auth.currentUser?.uid;
-    if (userId != null) {
-      DocumentSnapshot userSnapshot = await _firestore.collection('users').doc(userId).get();
-      if (userSnapshot.exists) {
-        return userSnapshot.data() as Map<String, dynamic>?;
-      }
+  Future<bool> isRegularUser(String email) async {
+    try {
+      QuerySnapshot<Map<String, dynamic>> userQuery = await _firestore
+          .collection('hdd-monitor')
+          .doc('cuentas')
+          .collection('clientes')
+          .doc('cliente_1')
+          .collection('usuarios')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+
+      return userQuery.docs.isNotEmpty;
+    } catch (e) {
+      print('Error verificando si el usuario es regular: $e');
+      return false;
     }
-    return null;
   }
 }

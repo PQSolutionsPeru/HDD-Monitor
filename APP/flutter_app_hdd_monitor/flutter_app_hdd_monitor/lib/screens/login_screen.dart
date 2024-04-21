@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_app_hdd_monitor/services/firebase_service.dart'; // Importa FirebaseService desde su ubicación
+import 'package:flutter_app_hdd_monitor/services/auth_service.dart'; // Importa AuthService
+import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({Key? key}) : super(key: key);
 
   @override
   _LoginScreenState createState() => _LoginScreenState();
@@ -11,7 +12,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final FirebaseService _firebaseService = FirebaseService(); // Utiliza FirebaseService
+  final AuthService _authService = AuthService(); // Utiliza AuthService en lugar de FirebaseService
 
   @override
   void initState() {
@@ -20,8 +21,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void checkCurrentUser() async {
-    if (await _firebaseService.getCurrentUser() != null) {
-      Navigator.pushReplacementNamed(context, '/home');
+    User? user = await _authService.getCurrentUser();
+    if (user != null) {
+      String userType = await _authService.getUserType(user.email!);
+      if (userType == 'admin') {
+        Navigator.pushReplacementNamed(context, '/admin_home');
+      } else if (userType == 'user') {
+        Navigator.pushReplacementNamed(context, '/user_home');
+      }
     }
   }
 
@@ -30,15 +37,23 @@ class _LoginScreenState extends State<LoginScreen> {
     String password = _passwordController.text.trim();
 
     if (email.isNotEmpty && password.isNotEmpty) {
-      String? error = await _firebaseService.signInUser(email, password);
-      if (error == null) {
-        Navigator.pushReplacementNamed(context, '/home');
+      String? result = await _authService.signInUser(email, password);
+      if (result == null) {
+        User? user = await _authService.getCurrentUser();
+        if (user != null) {
+          String userType = await _authService.getUserType(user.email!);
+          if (userType == 'admin') {
+            Navigator.pushReplacementNamed(context, '/admin_home');
+          } else if (userType == 'user') {
+            Navigator.pushReplacementNamed(context, '/user_home');
+          }
+        }
       } else {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Error de Inicio de Sesión', style: TextStyle(color: Colors.red)),
-            content: Text(error),
+            content: Text(result),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
