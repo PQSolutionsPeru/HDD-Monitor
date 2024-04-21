@@ -7,6 +7,7 @@ import 'package:flutter_app_hdd_monitor/screens/register_screen.dart';
 import 'package:flutter_app_hdd_monitor/services/firebase_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_app_hdd_monitor/services/firebase_config.dart';
+import 'package:flutter_app_hdd_monitor/widgets/panel_list.dart'; // Importa el archivo donde está definido PanelListWidget
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,7 +47,21 @@ class MyApp extends StatelessWidget {
                     } else {
                       final isAdmin = isAdminSnapshot.data ?? false;
                       if (isAdmin) {
-                        return AdminHomeScreen();
+                        return Scaffold(
+                          appBar: AppBar(title: Text('Admin Home')),
+                          body: Column(
+                            children: [
+                              Text('Welcome, Admin!'),
+                              Expanded(
+                                child: PanelListWidget(
+                                  panels: [
+                                    // Aquí puedes pasar datos de paneles si es necesario
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
                       } else {
                         return UserHomeScreen();
                       }
