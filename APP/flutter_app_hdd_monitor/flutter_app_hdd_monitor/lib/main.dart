@@ -2,20 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_app_hdd_monitor/screens/home_screen.dart';
 import 'package:flutter_app_hdd_monitor/screens/login_screen.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Inicializa Firebase
-  await Firebase.initializeApp();
+  // Reemplaza los valores con los de tu proyecto Firebase
+  String apiKey = 'AIzaSyA9356Ag5rbtyev5l7U_iE8dc9Rz6zTgbU';
+  String appId = '1:1002136032862:android:44e8c6751e458dca3dc6cf';
+  String projectId = 'fir-hdd-monitor-d00de';
+  String messagingSenderId = '1002136032862';
 
-  runApp(const MyApp());
+  await Firebase.initializeApp(
+    options: FirebaseOptions(
+      apiKey: apiKey,
+      appId: appId,
+      projectId: projectId,
+      messagingSenderId: messagingSenderId,
+    ),
+  );
+
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -24,28 +33,9 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.red,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: StreamBuilder(
-        stream: FirebaseAuth.instance.authStateChanges(), // Escucha los cambios de autenticación
-        builder: (context, AsyncSnapshot<User?> snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            // Muestra un indicador de carga mientras se verifica la autenticación
-            return const Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(),
-              ),
-            );
-          } else {
-            // Verifica si el usuario está autenticado y redirige a la pantalla correspondiente
-            if (snapshot.hasData && snapshot.data != null) {
-              return const HomeScreen(); // Usuario autenticado, muestra HomeScreen
-            } else {
-              return const LoginScreen(); // Usuario no autenticado, muestra LoginScreen
-            }
-          }
-        },
-      ),
+      home: LoginScreen(),
       routes: {
-        '/home': (context) => const HomeScreen(),
+        '/home': (context) => HomeScreen(), // Reemplaza HomeScreen con tu pantalla principal
       },
     );
   }
