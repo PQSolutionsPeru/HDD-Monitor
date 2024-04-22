@@ -7,11 +7,6 @@ class AuthService {
 
   Future<String?> signInUser(String email, String password) async {
     try {
-      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
       return null; // Inicio de sesión exitoso, retorna null sin errores
     } catch (e) {
       return 'Error de autenticación: $e'; // Retorna el mensaje de error en caso de fallo
@@ -20,11 +15,6 @@ class AuthService {
 
   Future<String?> registerUser(String email, String password) async {
     try {
-      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
       // Aquí puedes realizar operaciones adicionales, como guardar información del usuario en Firestore
       return null; // Registro exitoso, retorna null sin errores
     } catch (e) {
