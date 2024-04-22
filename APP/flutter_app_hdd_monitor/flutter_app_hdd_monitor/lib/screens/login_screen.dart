@@ -3,7 +3,7 @@ import 'package:flutter_app_hdd_monitor/services/auth_service.dart'; // Importa 
 import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   _LoginScreenState createState() => _LoginScreenState();

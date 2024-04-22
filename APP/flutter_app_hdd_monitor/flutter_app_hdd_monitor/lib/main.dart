@@ -19,6 +19,8 @@ void main() async {
 class MyApp extends StatelessWidget {
   final FirebaseService _firebaseService = FirebaseService();
 
+  MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -29,13 +31,13 @@ class MyApp extends StatelessWidget {
       ),
       initialRoute: '/login', // Ruta inicial al iniciar la aplicación
       routes: {
-        '/login': (context) => LoginScreen(),
-        '/register': (context) => RegisterScreen(),
+        '/login': (context) => const LoginScreen(),
+        '/register': (context) => const RegisterScreen(),
         '/admin_home': (context) => FutureBuilder(
           future: _firebaseService.getCurrentUser(),
           builder: (context, AsyncSnapshot<User?> snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return CircularProgressIndicator();
+              return const CircularProgressIndicator();
             } else {
               final currentUser = snapshot.data;
               if (currentUser != null) {
@@ -43,13 +45,13 @@ class MyApp extends StatelessWidget {
                   future: _firebaseService.isUserAdmin(currentUser.email!),
                   builder: (context, AsyncSnapshot<bool> isAdminSnapshot) {
                     if (isAdminSnapshot.connectionState == ConnectionState.waiting) {
-                      return CircularProgressIndicator();
+                      return const CircularProgressIndicator();
                     } else {
                       final isAdmin = isAdminSnapshot.data ?? false;
                       if (isAdmin) {
                         return Scaffold(
-                          appBar: AppBar(title: Text('Admin Home')),
-                          body: Column(
+                          appBar: AppBar(title: const Text('Admin Home')),
+                          body: const Column(
                             children: [
                               Text('Welcome, Admin!'),
                               Expanded(
@@ -63,13 +65,13 @@ class MyApp extends StatelessWidget {
                           ),
                         );
                       } else {
-                        return UserHomeScreen();
+                        return const UserHomeScreen();
                       }
                     }
                   },
                 );
               } else {
-                return LoginScreen();
+                return const LoginScreen();
               }
             }
           },
@@ -78,7 +80,7 @@ class MyApp extends StatelessWidget {
           future: _firebaseService.getCurrentUser(),
           builder: (context, AsyncSnapshot<User?> snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return CircularProgressIndicator();
+              return const CircularProgressIndicator();
             } else {
               final currentUser = snapshot.data;
               if (currentUser != null) {
@@ -86,19 +88,19 @@ class MyApp extends StatelessWidget {
                   future: _firebaseService.isRegularUser(currentUser.email!),
                   builder: (context, AsyncSnapshot<bool> isRegularUserSnapshot) {
                     if (isRegularUserSnapshot.connectionState == ConnectionState.waiting) {
-                      return CircularProgressIndicator();
+                      return const CircularProgressIndicator();
                     } else {
                       final isRegularUser = isRegularUserSnapshot.data ?? false;
                       if (isRegularUser) {
-                        return UserHomeScreen();
+                        return const UserHomeScreen();
                       } else {
-                        return AdminHomeScreen();
+                        return const AdminHomeScreen();
                       }
                     }
                   },
                 );
               } else {
-                return LoginScreen();
+                return const LoginScreen();
               }
             }
           },

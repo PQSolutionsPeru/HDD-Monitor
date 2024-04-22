@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_app_hdd_monitor/services/auth_service.dart';
 
 class UserHomeScreen extends StatelessWidget {
-  const UserHomeScreen({Key? key}) : super(key: key);
+  const UserHomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +31,7 @@ class UserHomeScreen extends StatelessWidget {
             .snapshots(),
         builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
@@ -54,8 +54,8 @@ class UserHomeScreen extends StatelessWidget {
                     children: [
                       Text('Ubicación: ${panelData['ubicación'] ?? '-sin data-'}'),
                       Text('Estado: ${panelData['estado'] ?? '-sin data-'}'),
-                      SizedBox(height: 8),
-                      Text(
+                      const SizedBox(height: 8),
+                      const Text(
                         'Relés:',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),

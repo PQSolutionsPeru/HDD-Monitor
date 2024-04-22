@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app_hdd_monitor/services/auth_service.dart';
-import 'package:flutter_app_hdd_monitor/services/firebase_service.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({Key? key}) : super(key: key);
+  const RegisterScreen({super.key});
 
   @override
   _RegisterScreenState createState() => _RegisterScreenState();

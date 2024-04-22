@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class PanelListWidget extends StatelessWidget {
   final List<Map<String, dynamic>?> panels;
 
-  const PanelListWidget({Key? key, required this.panels}) : super(key: key);
+  const PanelListWidget({super.key, required this.panels});
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +14,7 @@ class PanelListWidget extends StatelessWidget {
 
         // Verificar si panelData es null
         if (panelData == null) {
-          return Card(
+          return const Card(
             child: ListTile(
               title: Text('-sin data-'),
               subtitle: Text('-sin data-'),
@@ -37,8 +37,8 @@ class PanelListWidget extends StatelessWidget {
               children: [
                 Text('Ubicación: $panelLocation'),
                 Text('Estado: $panelState'),
-                SizedBox(height: 8),
-                Text(
+                const SizedBox(height: 8),
+                const Text(
                   'Relés:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
