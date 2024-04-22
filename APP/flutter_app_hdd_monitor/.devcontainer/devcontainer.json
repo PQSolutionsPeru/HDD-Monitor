@@ -1,0 +1,31 @@
+{
+    "name": "Mi Proyecto en Contenedor",
+    "build": {
+        "context": "..",
+        "dockerfile": "../Dockerfile"
+    },
+    "workspaceFolder": "/workspace",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.shell.linux": "/bin/bash"
+            },
+            "extensions": [
+                "dart-code.dart-code",
+                "dart-code.flutter",
+                "ms-azuretools.vscode-docker",
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-toolsai.jupyter",
+                "ms-vscode-remote.remote-containers",
+                "ms-vscode.cpptools",
+                "seunlanlege.action-buttons",
+                "ms-python.debugpy",
+                "ms-python.isort",
+                "ms-vscode.cpptools-extension-pack",
+                "ms-vscode.cpptools-themes",
+                "ms-vscode.vscode-serial-monitor"
+            ]
+        }
+    }
+}
