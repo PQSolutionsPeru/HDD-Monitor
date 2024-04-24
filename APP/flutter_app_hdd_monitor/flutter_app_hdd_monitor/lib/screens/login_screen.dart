@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_app_hdd_monitor/services/auth_service.dart'; // Importa AuthService
+import 'package:flutter_app_hdd_monitor/services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -12,7 +12,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final AuthService _authService = AuthService(); // Utiliza AuthService en lugar de FirebaseService
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
@@ -23,12 +23,18 @@ class _LoginScreenState extends State<LoginScreen> {
   void checkCurrentUser() async {
     User? user = await _authService.getCurrentUser();
     if (user != null) {
-      String userType = await _authService.getUserType(user.email!);
-      if (userType == 'admin') {
-        Navigator.pushReplacementNamed(context, '/admin_home');
-      } else if (userType == 'user') {
-        Navigator.pushReplacementNamed(context, '/user_home');
-      }
+      redirectToHome(user);
+    }
+  }
+
+  void redirectToHome(User user) async {
+    String userType = await _authService.getUserType(user.email!);
+    if (userType == 'admin') {
+      Navigator.pushReplacementNamed(context, '/admin_home');
+    } else if (userType == 'user') {
+      Navigator.pushReplacementNamed(context, '/user_home');
+    } else {
+      print("User type is unknown or not handled.");
     }
   }
 
@@ -41,43 +47,34 @@ class _LoginScreenState extends State<LoginScreen> {
       if (result == null) {
         User? user = await _authService.getCurrentUser();
         if (user != null) {
-          String userType = await _authService.getUserType(user.email!);
-          if (userType == 'admin') {
-            Navigator.pushReplacementNamed(context, '/admin_home');
-          } else if (userType == 'user') {
-            Navigator.pushReplacementNamed(context, '/user_home');
-          }
+          redirectToHome(user);
+        } else {
+          print("User is null after sign-in");
         }
       } else {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Error de Inicio de Sesión', style: TextStyle(color: Colors.red)),
-            content: Text(result),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-        );
+        print("Sign-in failed: $result");
+        showErrorDialog(result);
       }
     } else {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Error', style: TextStyle(color: Colors.red)),
-          content: const Text('Por favor ingresa tu correo y contraseña.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        ),
-      );
+      print("Email or password is empty.");
+      showErrorDialog('Por favor ingresa tu correo y contraseña.');
     }
+  }
+
+  void showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error', style: TextStyle(color: Colors.red)),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

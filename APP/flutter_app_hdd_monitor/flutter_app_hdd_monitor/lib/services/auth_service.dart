@@ -8,11 +8,15 @@ class AuthService {
   Future<String?> signInUser(String email, String password) async {
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
-      return null; // Inicio de sesión exitoso, retorna null sin errores
+      return null;  // Inicio de sesión exitoso
     } on FirebaseAuthException catch (e) {
-      return 'Error de autenticación: ${e.message}'; // Retorna el mensaje de error en caso de fallo
+      return 'Error de autenticación: ${e.message}';  // Manejo de errores específicos de autenticación
+    } catch (e) {
+      return 'Error general: ${e.toString()}';  // Otros errores
     }
   }
+
+
 
   Future<String?> registerUser(String email, String password) async {
     try {
@@ -33,30 +37,29 @@ class AuthService {
   }
 
   Future<String> getUserType(String email) async {
-    // Verificar si el usuario es un administrador
-    QuerySnapshot<Map<String, dynamic>> adminSnapshot = await _firestore
-        .collection('hdd-monitor')
-        .doc('accounts')
-        .collection('admins')
-        .where('email', isEqualTo: email)
-        .limit(1)
-        .get();
+    try {
+      // Verificación de administrador
+      QuerySnapshot adminQuery = await _firestore
+          .collection('hdd-monitor/accounts/admins')
+          .where('email', isEqualTo: email)
+          .get();
+      if (adminQuery.docs.isNotEmpty) {
+        return 'admin';
+      }
 
-    if (adminSnapshot.docs.isNotEmpty) {
-      return 'admin';
-    }
-
-    // Verificar si el usuario es un cliente (más complejo debido a la estructura)
-    var clientRef = _firestore.collection('hdd-monitor').doc('accounts').collection('clients');
-    var clientsDocs = await clientRef.get();
-    for (var client in clientsDocs.docs) {
-      var usersRef = client.reference.collection('users');
-      var userDoc = await usersRef.where('email', isEqualTo: email).limit(1).get();
-      if (userDoc.docs.isNotEmpty) {
+      // Verificación de usuario regular
+      QuerySnapshot userQuery = await _firestore
+          .collection('hdd-monitor/accounts/clients/client_1/users')
+          .where('email', isEqualTo: email)
+          .get();
+      if (userQuery.docs.isNotEmpty) {
         return 'user';
       }
-    }
 
-    return 'unknown';
+      return 'unknown';  // No se encontró el tipo de usuario
+    } catch (e) {
+      print('Error fetching user type: $e');
+      return 'error';  // Manejo de errores
+    }
   }
 }
