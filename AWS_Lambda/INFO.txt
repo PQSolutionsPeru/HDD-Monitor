@@ -1,0 +1,57 @@
+import json
+from google.cloud import firestore
+from google.oauth2 import service_account
+
+def lambda_handler(event, context):
+    # Suponemos que 'event' contiene el mensaje MQTT
+    message = json.loads(event['message'])
+    name = message['name']
+    status = message['status']
+    date_time = message['date_time']
+
+    # Autenticarse con Firestore usando las credenciales almacenadas
+    credentials = service_account.Credentials.from_service_account_info(
+        # Aquí debes cargar tus credenciales de Google desde un lugar seguro
+    )
+    db = firestore.Client(credentials=credentials, project='tu-proyecto-firestore')
+
+    # Especifica la ruta en Firestore donde se actualizará la información
+    document_path = f'hdd-monitor/accounts/clients/client_1/panels/panel_1/relays/{name}'
+    doc_ref = db.document(document_path)
+
+    # Actualiza el documento en Firestore
+    doc_ref.set({
+        'status': status,
+        'date_time': date_time
+    })
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Update successful!')
+    }
+
+
+
+
+
+
+
+
+
+Paso 3: Modifica tu código de Lambda para usar estas credenciales
+
+from google.oauth2 import service_account
+from google.cloud import firestore
+import json
+import os
+
+def lambda_handler(event, context):
+    # Cargar las credenciales desde la variable de entorno
+    credentials_info = json.loads(os.environ['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
+    credentials = service_account.Credentials.from_service_account_info(credentials_info)
+
+    # Inicializa el cliente de Firestore
+    db = firestore.Client(credentials=credentials, project=credentials_info['project_id'])
+
+    # Aquí puedes añadir la lógica para interactuar con Firestore
+    # Por ejemplo, para actualizar un documento basado en un mensaje de MQTT recibido

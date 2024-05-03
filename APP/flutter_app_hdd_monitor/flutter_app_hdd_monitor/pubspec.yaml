@@ -34,6 +34,7 @@ dependencies:
   firebase_auth: ^4.19.2  # Ajusta la versión de firebase_auth según la sugerencia
   cloud_firestore: ^4.17.0  # También puedes ajustar la versión de cloud_firestore si es necesario
   mqtt_client: ^10.2.1
+
   
 
 
@@ -52,9 +53,15 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.9.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "E:\\PQSolutions\\HDD-Monitor\\HDD-Monitor-GitHub\\APP\\flutter_app_hdd_monitor\\flutter_app_hdd_monitor\\lib\\models\\Activity_Monitor_26229.png"
 
 # The following section is specific to Flutter packages.
 flutter:

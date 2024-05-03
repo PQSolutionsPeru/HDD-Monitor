@@ -1,0 +1,16 @@
+FROM public.ecr.aws/lambda/python:3.8
+
+# Instala zip y otros utilitarios necesarios
+RUN yum install -y zip unzip
+
+# Copia el archivo de requerimientos
+COPY requirements.txt .
+
+# Instala las dependencias
+RUN pip install -r requirements.txt --target "/var/task/"
+
+# Configura el directorio de trabajo
+WORKDIR /var/task
+
+# Cambiar el punto de entrada para usar el shell
+ENTRYPOINT ["/bin/sh", "-c"]
