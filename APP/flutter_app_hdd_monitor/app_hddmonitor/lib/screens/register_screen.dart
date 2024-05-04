@@ -19,26 +19,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (email.isNotEmpty && password.isNotEmpty) {
       String? registerError = await _authService.registerUser(email, password); // O _firebaseService.registerUser(email, password);
-      if (registerError == null) {
-        // Registro exitoso, puedes navegar a la siguiente pantalla
-        // Por ejemplo, redirigir a la pantalla de inicio de sesión
-        Navigator.pushReplacementNamed(context, '/login');
-      } else {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Error de Registro', style: TextStyle(color: Colors.red)),
-            content: Text(registerError),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-        );
-      }
-    } else {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error de Registro', style: TextStyle(color: Colors.red)),
+          content: Text(registerError ?? ''),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+        } else {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
