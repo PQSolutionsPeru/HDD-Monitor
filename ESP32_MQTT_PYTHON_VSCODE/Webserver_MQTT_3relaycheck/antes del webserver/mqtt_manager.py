@@ -10,31 +10,32 @@ class MQTTManager:
         self.password = password
         self.logger = logger
         self.client = None
-        self.retry_interval = 1
 
     def ensure_client(self):
-        if self.client is None or not self.client.is_connected():
+        if self.client is None:
             self.connect_mqtt()
 
     def connect_mqtt(self):
         try:
+            if self.client:
+                self.client.disconnect()  # Asegúrate de desconectar primero si el cliente ya existe
             self.client = MQTTClient(self.client_id.encode('utf-8'), self.broker, self.port,
                                      user=self.user.encode('utf-8'), password=self.password.encode('utf-8'), ssl=True)
             self.client.connect()
             self.logger.write_log("Conectado al broker MQTT!")
-            self.retry_interval = 1
         except Exception as e:
             self.logger.write_log(f"Fallo al conectar con MQTT: {str(e)}")
-            time.sleep(self.retry_interval)
-            self.retry_interval = min(self.retry_interval * 2, 300)
-            self.client = None
+            time.sleep(5)  # Delay before retry
+            self.client = None  # Asegurarse de resetear el cliente si hay una falla
 
     def publish_event(self, topic, message):
         try:
-            self.ensure_client()
+            self.ensure_client()  # Asegura que el cliente está conectado
             if self.client:
                 self.client.publish(topic, message, qos=1)
                 self.logger.write_log(f"Evento enviado al broker MQTT: {message}")
+            else:
+                raise Exception("Cliente MQTT no disponible")
         except Exception as e:
             self.logger.write_log(f"Fallo al publicar: {str(e)}")
-            self.client = None
+            self.client = None  # Asegurarse de resetear el cliente si hay una falla

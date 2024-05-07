@@ -1,12 +1,10 @@
-import utime
+import utime # type: ignore
 import json
-import uasyncio as asyncio
 from watchdog import feed_watchdog, restart_device
 from wifi_manager import WiFiManager
 from mqtt_manager import MQTTManager
 from relay_manager import RelayManager
-import log_manager
-from webserver import create_safe_task, http_server
+from log_manager import LogManager
 
 SSID = "PABLO-2.4G"
 PASSWORD = "47009410"
@@ -18,7 +16,7 @@ MQTT_PASSWORD = "esp32"
 RELAY_PINS = [32, 33, 25]
 RELAY_NAMES = {"32": "Alarma", "33": "Problema", "25": "Supervision"}
 
-log_manager = log_manager.LogManager("logs.txt", max_size_kb=100)
+log_manager = LogManager("logs.txt", max_size_kb=100)
 wifi_manager = WiFiManager(SSID, PASSWORD, log_manager)
 mqtt_manager = MQTTManager(MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD, log_manager)
 relay_manager = RelayManager(log_manager)
@@ -33,21 +31,18 @@ def relay_callback(pin, pin_num):
         }
         mqtt_manager.publish_event(f"EMPRESA_TEST/{MQTT_CLIENT_ID}/eventos", json.dumps(message))
 
-async def main():
-    while True:
-        try:
-            wifi_manager.connect_wifi()
-            for relay_pin in RELAY_PINS:
-                relay_manager.setup_relay(relay_pin, relay_callback)
-            while True:
-                feed_watchdog()
-                await asyncio.sleep(5)
-                wifi_manager.check_connection()
-        except Exception as e:
-            log_manager.write_log(f"Error en el bucle principal: {str(e)}")
-            await asyncio.sleep(10)  # Esperar antes de intentar reiniciar el bucle principal
+def main():
+    try:
+        wifi_manager.connect_wifi()
+        for relay_pin in RELAY_PINS:
+            relay_manager.setup_relay(relay_pin, relay_callback)
+        while True:
+            feed_watchdog()
+            utime.sleep(10)
+            wifi_manager.check_connection()
+    except Exception as e:
+        log_manager.write_log(f"Error en el bucle principal: {str(e)}")
+        restart_device()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    create_safe_task(http_server)  # Usar la función de wrapper para iniciar el servidor web de manera segura
-    loop.run_until_complete(main())
+    main()

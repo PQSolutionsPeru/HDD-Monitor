@@ -1,0 +1,349 @@
+--- Contenido de log_manager.py ---
+
+import os
+
+class LogManager:
+    def __init__(self, file_path, max_size_kb=50):
+        self.file_path = file_path
+        self.max_size_kb = max_size_kb
+        self.ensure_file_exists()
+
+    def ensure_file_exists(self):
+        try:
+            with open(self.file_path, 'a') as file:
+                pass
+        except OSError as e:
+            print(f"Error al asegurar que el archivo de log existe: {e}")
+
+    def write_log(self, message):
+        print(f"LOG: {message}")
+        self._manage_log_size()
+        with open(self.file_path, "a") as file:
+            file.write(message + "\n")
+
+    def _manage_log_size(self):
+        try:
+            file_stat = os.stat(self.file_path)
+            if file_stat[6] > self.max_size_kb * 1024:  # Acceso por índice si st_size no está disponible
+                self._remove_oldest_log()
+        except OSError as e:
+            print(f"Error al gestionar el tamaño del archivo de log: {e}")
+
+
+
+    def _remove_oldest_log(self):
+        try:
+            with open(self.file_path, "r+") as file:
+                lines = file.readlines()
+                file.seek(0)
+                file.truncate()
+                file.writelines(lines[-50:])
+        except OSError as e:
+            print(f"Error al remover la línea más antigua del log: {e}")
+
+
+
+--- Contenido de main.py ---
+
+import utime
+import json
+import uasyncio as asyncio
+from watchdog import feed_watchdog, restart_device
+from wifi_manager import WiFiManager
+from mqtt_manager import MQTTManager
+from relay_manager import RelayManager
+import log_manager
+from webserver import create_safe_task, http_server
+
+SSID = "PABLO-2.4G"
+PASSWORD = "47009410"
+MQTT_BROKER = "node02.myqtthub.com"
+MQTT_PORT = 8883
+MQTT_CLIENT_ID = "ESP32-PQ1"
+MQTT_USER = "ESP32-1"
+MQTT_PASSWORD = "esp32"
+RELAY_PINS = [32, 33, 25]
+RELAY_NAMES = {"32": "Alarma", "33": "Problema", "25": "Supervision"}
+
+log_manager = log_manager.LogManager("logs.txt", max_size_kb=100)
+wifi_manager = WiFiManager(SSID, PASSWORD, log_manager)
+mqtt_manager = MQTTManager(MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD, log_manager)
+relay_manager = RelayManager(log_manager)
+
+def relay_callback(pin, pin_num):
+    current_datetime = wifi_manager.get_current_time()
+    if current_datetime:
+        message = {
+            "date_time": current_datetime,
+            "name": RELAY_NAMES.get(str(pin_num), "Error al obtener nombre del relevador"),
+            "status": "DESC" if pin.value() else "OK"
+        }
+        mqtt_manager.publish_event(f"EMPRESA_TEST/{MQTT_CLIENT_ID}/eventos", json.dumps(message))
+
+async def main():
+    while True:
+        try:
+            wifi_manager.connect_wifi()
+            for relay_pin in RELAY_PINS:
+                relay_manager.setup_relay(relay_pin, relay_callback)
+            while True:
+                feed_watchdog()
+                await asyncio.sleep(5)
+                wifi_manager.check_connection()
+        except Exception as e:
+            log_manager.write_log(f"Error en el bucle principal: {str(e)}")
+            await asyncio.sleep(10)  # Esperar antes de intentar reiniciar el bucle principal
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    create_safe_task(http_server)  # Usar la función de wrapper para iniciar el servidor web de manera segura
+    loop.run_until_complete(main())
+
+
+--- Contenido de mqtt_manager.py ---
+
+from umqtt.robust import MQTTClient
+import time
+
+class MQTTManager:
+    def __init__(self, broker, port, client_id, user, password, logger):
+        self.broker = broker
+        self.port = port
+        self.client_id = client_id
+        self.user = user
+        self.password = password
+        self.logger = logger
+        self.client = None
+        self.retry_interval = 1
+
+    def ensure_client(self):
+        if self.client is None or not self.client.is_connected():
+            self.connect_mqtt()
+
+    def connect_mqtt(self):
+        try:
+            self.client = MQTTClient(self.client_id.encode('utf-8'), self.broker, self.port,
+                                     user=self.user.encode('utf-8'), password=self.password.encode('utf-8'), ssl=True)
+            self.client.connect()
+            self.logger.write_log("Conectado al broker MQTT!")
+            self.retry_interval = 1
+        except Exception as e:
+            self.logger.write_log(f"Fallo al conectar con MQTT: {str(e)}")
+            time.sleep(self.retry_interval)
+            self.retry_interval = min(self.retry_interval * 2, 300)
+            self.client = None
+
+    def publish_event(self, topic, message):
+        try:
+            self.ensure_client()
+            if self.client:
+                self.client.publish(topic, message, qos=1)
+                self.logger.write_log(f"Evento enviado al broker MQTT: {message}")
+        except Exception as e:
+            self.logger.write_log(f"Fallo al publicar: {str(e)}")
+            self.client = None
+
+
+
+--- Contenido de relay_manager.py ---
+
+from machine import Pin
+import time
+from log_manager import LogManager
+
+class RelayManager:
+    def __init__(self, logger):
+        self.relays = {}
+        self.relay_states = {}
+        self.last_trigger_time = {}
+        self.logger = logger
+
+    def setup_relay(self, pin_num, callback):
+        pin = Pin(pin_num, Pin.IN, Pin.PULL_UP)
+        self.relays[pin_num] = pin
+        self.relay_states[pin_num] = pin.value()
+        pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=lambda p: self.debounce(pin_num, p, callback))
+        return pin
+
+    def debounce(self, pin_num, pin, callback):
+        current_time = time.ticks_ms()
+        if current_time - self.last_trigger_time.get(pin_num, 0) > 300 and self.relay_states[pin_num] != pin.value():
+            self.relay_states[pin_num] = pin.value()
+            callback(pin, pin_num)
+            self.logger.write_log(f"Estado del relevador {pin_num} cambiado a {pin.value()}")
+            print(f"Estado del relevador {pin_num} cambiado a {pin.value()}")
+            self.last_trigger_time[pin_num] = current_time
+
+
+
+--- Contenido de terminal_output.py ---
+
+import sys
+
+class StreamLogger:
+    def __init__(self, file_path):
+        self.terminal = sys.stdout
+        self.log = open(file_path, "a")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+
+sys.stdout = StreamLogger("output_log.txt")
+
+
+
+--- Contenido de watchdog.py ---
+
+import utime
+from machine import WDT, reset
+from log_manager import LogManager
+
+log_manager = LogManager("logs.txt", max_size_kb=50)
+wdt = WDT(timeout=30000)  # 30 segundos
+
+def feed_watchdog():
+    wdt.feed()
+    log_manager.write_log("Watchdog alimentado a las " + str(utime.time()))
+
+def restart_device():
+    log_manager.write_log("Solicitando reinicio del dispositivo a las " + str(utime.time()))
+    reset()
+
+def handle_exception(e):
+    log_manager.write_log("Ocurrio una excepción: " + str(e))
+
+
+
+--- Contenido de webserver.py ---
+
+import socket
+import uasyncio as asyncio
+from log_manager import LogManager
+
+async def http_server(_, __):
+    addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(addr)
+    s.listen(5)
+    LogManager().write_log("Servidor HTTP iniciado en " + str(addr))
+
+    while True:
+        try:
+            client, _ = await asyncio.get_event_loop().sock_accept(s)
+            create_safe_task(handle_client, client)
+        except Exception as e:
+            LogManager().write_log(f"Error accepting client connection: {e}")
+
+
+async def handle_client(client):
+    try:
+        stream = client.makefile('rwb', 0)
+        request_line = await stream.readline()
+        if request_line:
+            request = request_line.decode().strip().split()
+            method, path, protocol = request[0], request[1], request[2]
+            response = process_request(path)
+            client.sendall(f'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n{response}'.encode())
+        else:
+            LogManager().write_log("Received empty request from client.")
+    except Exception as e:
+        LogManager().write_log(f"Error handling client: {e}")
+    finally:
+        client.close()
+
+async def safe_task(coro):
+    try:
+        await coro()
+    except Exception as e:
+        LogManager().write_log(f"Task failed: {e}")
+
+def create_safe_task(coro):
+    asyncio.create_task(safe_task(coro))
+
+def process_request(path):
+    if path == '/memory':
+        return memory_status()
+    elif path == '/output':
+        return read_output_log()
+    elif path == '/logs':
+        return read_logs()
+    return '404 Not Found'
+
+def memory_status():
+    import gc
+    gc.collect()
+    total = gc.mem_alloc() + gc.mem_free()
+    return f"Memory Total: {total} bytes, Used: {gc.mem_alloc()} bytes, Free: {gc.mem_free()} bytes"
+
+def read_output_log():
+    try:
+        with open("output_log.txt", "r") as file:
+            return file.read()
+    except Exception as e:
+        return f"Error reading output log: {str(e)}"
+
+def read_logs():
+    try:
+        with open("logs.txt", "r") as file:
+            return file.read()
+    except Exception as e:
+        return f"Error reading logs: {str(e)}"
+
+
+--- Contenido de wifi_manager.py ---
+
+import time
+import network # type: ignore
+import urequests # type: ignore
+from log_manager import LogManager
+
+class WiFiManager:
+    def __init__(self, ssid, password, logger):
+        self.ssid = ssid
+        self.password = password
+        self.logger = logger
+        self.sta_if = network.WLAN(network.STA_IF)
+        self.wifi_connected = False
+
+    def connect_wifi(self):
+        if not self.sta_if.isconnected():
+            self.sta_if.active(True)
+            self.sta_if.connect(self.ssid, self.password)
+            while not self.sta_if.isconnected():
+                time.sleep(1)  # Use sleep to yield time to other tasks
+            self.logger.write_log(f"WiFi conectado en {self.sta_if.ifconfig()[0]}")
+            self.wifi_connected = True
+
+    def check_connection(self):
+        if not self.sta_if.isconnected():
+            self.logger.write_log("Conexion WiFi perdida. Reconectando...")
+            self.connect_wifi()
+
+    def get_current_time(self):
+        self.check_connection()
+        current_time = self._get_world_time()
+        return current_time
+
+    def _get_world_time(self):
+        try:
+            response = urequests.get("http://worldtimeapi.org/api/timezone/America/Lima")
+            data = response.json()
+            current_datetime = data["datetime"]
+            response.close()
+            return self._format_datetime(current_datetime)
+        except Exception as e:
+            self.logger.write_log(f"Error al obtener la fecha y hora: {e}")
+            return None
+
+    def _format_datetime(self, datetime_str):
+        year, month, day = datetime_str[:10].split("-")
+        time_str = datetime_str[11:19]
+        return f"{day}-{month}-{year} a las {time_str}"
+
+

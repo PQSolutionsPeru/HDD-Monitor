@@ -1,4 +1,3 @@
-import time
 import network # type: ignore
 import urequests # type: ignore
 from log_manager import LogManager
@@ -12,12 +11,14 @@ class WiFiManager:
         self.wifi_connected = False
 
     def connect_wifi(self):
+        self.logger.write_log("Conectando a WiFi...")
         if not self.sta_if.isconnected():
             self.sta_if.active(True)
             self.sta_if.connect(self.ssid, self.password)
             while not self.sta_if.isconnected():
-                time.sleep(1)  # Use sleep to yield time to other tasks
-            self.logger.write_log(f"WiFi conectado en {self.sta_if.ifconfig()[0]}")
+                pass
+            ip_address = self.sta_if.ifconfig()[0]
+            self.logger.write_log(f"WiFi conectado en {ip_address}")
             self.wifi_connected = True
 
     def check_connection(self):

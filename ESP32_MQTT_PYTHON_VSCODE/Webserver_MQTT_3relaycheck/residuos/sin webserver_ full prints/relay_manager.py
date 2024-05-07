@@ -24,3 +24,4 @@ class RelayManager:
             self.logger.write_log(f"Estado del relevador {pin_num} cambiado a {pin.value()}")
             print(f"Estado del relevador {pin_num} cambiado a {pin.value()}")
             self.last_trigger_time[pin_num] = current_time
+

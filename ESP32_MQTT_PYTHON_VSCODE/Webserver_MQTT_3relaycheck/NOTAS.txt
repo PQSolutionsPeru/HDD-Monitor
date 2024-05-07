@@ -1,2 +1,0 @@
-Eventos del ESP32 para almacenar y enviar cuando vuelva a conectarse
-"No se pudo conectar a WiFi después de varios intentos."
