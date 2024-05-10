@@ -2,7 +2,6 @@ import machine
 import utime
 import network
 import urequests
-import _thread
 
 class WiFiManager:
     SSID = "PABLO-2.4G"
@@ -11,24 +10,16 @@ class WiFiManager:
     def __init__(self):
         self.sta_if = network.WLAN(network.STA_IF)
         self.wifi_connected = False
-        self.lock = _thread.allocate_lock()  # Mutex para controlar el acceso a la conexión
 
     def connect_wifi(self):
-        with self.lock:  # Asegurar acceso exclusivo al proceso de conexión
-            if not self.sta_if.isconnected():
-                print("Conectando a WiFi...")
-                self.sta_if.active(True)
-                self.sta_if.connect(self.SSID, self.PASSWORD)
-                start_time = utime.ticks_ms()
-                while not self.sta_if.isconnected():
-                    if utime.ticks_diff(utime.ticks_ms(), start_time) > 10000:  # Timeout después de 10 segundos
-                        print("Timeout al intentar conectar a WiFi")
-                        return
-                    utime.sleep(1)
-                print("Conectado a WiFi")
-                self.wifi_connected = True
-            else:
-                print("Already connected to WiFi")
+        if not self.sta_if.isconnected():
+            print("Conectando a WiFi...")
+            self.sta_if.active(True)
+            self.sta_if.connect(self.SSID, self.PASSWORD)
+            while not self.sta_if.isconnected():
+                utime.sleep(1)
+            print("Conectado a WiFi")
+            self.wifi_connected = True
 
     def check_connection(self):
         if not self.sta_if.isconnected():

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flut_hdd_monitor/services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({Key? key}) : super(key: key);
 
   @override
   _LoginScreenState createState() => _LoginScreenState();
@@ -11,36 +11,17 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _auth = FirebaseAuth.instance;
+  final AuthService _authService = AuthService();
 
   void _login() async {
     try {
-      final user = await _auth.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+      await _authService.signInWithEmailAndPassword(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
       );
-      if (user != null) {
-        Navigator.pushReplacementNamed(context, '/dashboard');
-      }
     } catch (e) {
-      String errorMessage;
-      if (e is FirebaseAuthException) {
-        switch (e.code) {
-          case 'user-not-found':
-            errorMessage = 'No hay un usuario con ese correo electrónico.';
-            break;
-          case 'wrong-password':
-            errorMessage = 'Contraseña incorrecta.';
-            break;
-          default:
-            errorMessage = 'Error al iniciar sesión: ${e.message}';
-            break;
-        }
-      } else {
-        errorMessage = 'Error al iniciar sesión: ${e.toString()}';
-      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
+        SnackBar(content: Text('Error al iniciar sesión: ${e.toString()}')),
       );
     }
   }
@@ -57,7 +38,6 @@ class _LoginScreenState extends State<LoginScreen> {
             TextField(
               controller: _emailController,
               decoration: const InputDecoration(labelText: 'Correo electrónico'),
-              keyboardType: TextInputType.emailAddress,
             ),
             TextField(
               controller: _passwordController,

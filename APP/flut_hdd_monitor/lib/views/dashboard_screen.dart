@@ -1,20 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({Key? key}) : super(key: key);
+
+  void _logout(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    Navigator.of(context).pushReplacementNamed('/login');
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: const Text('Dashboard', style: TextStyle(color: Colors.white, fontSize: 20)),
+        backgroundColor: Colors.redAccent,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.exit_to_app),
+            onPressed: () => _logout(context),
+            tooltip: 'Logout',
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            _buildPanel(context),
-          ],
+      body: Container(
+        color: Colors.white,
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              _buildPanel(context),
+            ],
+          ),
         ),
       ),
     );
@@ -26,45 +43,117 @@ class DashboardScreen extends StatelessWidget {
           .doc('hdd-monitor/accounts/clients/client_1/panels/panel_1')
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Text('Error: ${snapshot.error}');
+        if (snapshot.hasError) return Text('Error: ${snapshot.error}', style: TextStyle(color: Colors.black, fontSize: 16));
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Text('Cargando panel...');
+          return const Text('Cargando panel...', style: TextStyle(color: Colors.black, fontSize: 16));
         }
         if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const Text('Datos del panel no encontrados');
+          return const Text('Datos del panel no encontrados', style: TextStyle(color: Colors.black, fontSize: 16));
         }
         var panelData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-        bool alarma = panelData['alarma'] as bool? ?? false;
-        bool supervision = panelData['supervision'] as bool? ?? false;
-        bool problema = panelData['problema'] as bool? ?? false;
-        String lastEvent = panelData['lastEvent'] as String? ?? 'Desconocido';
-        String lastEventDescription = panelData['lastEventDescription'] as String? ?? 'No hay descripción';
-        String lastEventTime = panelData['lastEventTime'] as String? ?? 'No especificado';
 
         return Card(
-          child: ExpansionTile(
-            leading: Icon(Icons.dashboard, color: Colors.green),
-            title: Text(panelData['name'] ?? 'Panel Desconocido'),
-            subtitle: Text('Ubicación: ${panelData['location']}'),
-            children: <Widget>[
+          color: Colors.white,
+          child: Column(
+            children: [
               ListTile(
-                title: const Text('Estado de los relays'),
-                subtitle: Wrap(
-                  spacing: 8, // space between two icons
-                  children: <Widget>[
-                    Icon(alarma ? Icons.check_circle : Icons.remove_circle, color: alarma ? Colors.green : Colors.red),
-                    Icon(supervision ? Icons.check_circle : Icons.remove_circle, color: supervision ? Colors.green : Colors.red),
-                    Icon(problema ? Icons.check_circle : Icons.remove_circle, color: problema ? Colors.green : Colors.red),
+                leading: const Icon(Icons.dashboard, color: Colors.black),
+                title: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(panelData['name'] ?? 'Panel Desconocido', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
+                          Text('Ubicación: ${panelData['location']}', style: TextStyle(color: Colors.black, fontSize: 16)),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _relayStatus(context, 'Alarma'),
+                        _relayStatus(context, 'Problema'),
+                        _relayStatus(context, 'Supervision'),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              ListTile(
-                title: const Text('Último Evento'),
-                subtitle: Text('$lastEvent - $lastEventDescription - Fecha: $lastEventTime'),
+              ExpansionTile(
+                title: const Text('Detalles', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14.5)),
+                children: [_buildLastEvent(context)],
+                iconColor: Colors.black,
+                collapsedIconColor: Colors.black,
               ),
             ],
           ),
         );
+      },
+    );
+  }
+
+  Widget _relayStatus(BuildContext context, String relayName) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .doc('hdd-monitor/accounts/clients/client_1/panels/panel_1/relays/$relayName')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const CircularProgressIndicator();
+        }
+        if (snapshot.hasData) {
+          var data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+          bool isOk = data['status'] == 'OK';
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(isOk ? Icons.check_circle : Icons.remove_circle, color: isOk ? Colors.green : Colors.red, size: 24),
+                const SizedBox(width: 8),
+                Text(relayName, style: TextStyle(color: Colors.black, fontSize: 16)),
+              ],
+            ),
+          );
+        } else {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.error, color: Colors.red, size: 24),
+                SizedBox(width: 8),
+                Text('Error loading', style: TextStyle(color: Colors.black, fontSize: 16)),
+              ],
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildLastEvent(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .doc('hdd-monitor/accounts/clients/client_1/panels/panel_1/panel_events/event_1')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const CircularProgressIndicator();
+        }
+        if (snapshot.hasData) {
+          var eventData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+          return ListTile(
+            title: Text('Último Evento: ${eventData['type'] ?? 'Desconocido'}', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+            subtitle: Text('Descripción: ${eventData['description']} - ${eventData['date_time']}', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.black, fontSize: 15)),
+          );
+        } else {
+          return const ListTile(
+            title: Text('No hay eventos recientes', style: TextStyle(color: Colors.black, fontSize: 16)),
+          );
+        }
       },
     );
   }
