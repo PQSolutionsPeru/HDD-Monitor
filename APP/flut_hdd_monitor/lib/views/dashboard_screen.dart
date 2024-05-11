@@ -1,6 +1,9 @@
+import 'package:flut_hdd_monitor/main.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flut_hdd_monitor/views/bluetooth_screen.dart';
+
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -17,6 +20,13 @@ class DashboardScreen extends StatelessWidget {
         title: const Text('Dashboard', style: TextStyle(color: Colors.white, fontSize: 20)),
         backgroundColor: Colors.redAccent,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bluetooth),
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => BluetoothScreen()));
+            },
+            tooltip: 'Configurar Bluetooth',
+          ),
           IconButton(
             icon: const Icon(Icons.exit_to_app),
             onPressed: () => _logout(context),
@@ -96,9 +106,7 @@ class DashboardScreen extends StatelessWidget {
 
   Widget _relayStatus(BuildContext context, String relayName) {
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .doc('hdd-monitor/accounts/clients/client_1/panels/panel_1/relays/$relayName')
-          .snapshots(),
+      stream: FirebaseFirestore.instance.doc('hdd-monitor/accounts/clients/client_1/panels/panel_1/relays/$relayName').snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const CircularProgressIndicator();
@@ -106,6 +114,15 @@ class DashboardScreen extends StatelessWidget {
         if (snapshot.hasData) {
           var data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
           bool isOk = data['status'] == 'OK';
+          // Trigger notification on status change
+          if (!isOk) {
+            NotificationService.showNotification(
+              1, 
+              'Alerta de Relay', 
+              'El estado del relay $relayName ha cambiado a no OK!', 
+              'relay_$relayName'
+            );
+          }
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 2.0),
             child: Row(

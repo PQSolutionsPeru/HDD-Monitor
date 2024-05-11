@@ -1,81 +1,76 @@
 import urequests
 import utime
 import json
-import _thread
 from wifi_manager import WiFiManager
 from mqtt_manager import MQTTManager
 from relay_manager import RelayManager
 from watchdog_manager import WatchdogManager
-from machine import Timer
 import gc
 
-# Configuration
+# Configuración
 RELAY_PINS = [32, 33, 25]
 RELAY_NAMES = {32: "Alarma", 33: "Problema", 25: "Supervision"}
 
 # Managers
 wifi_manager = WiFiManager()
-mqtt_manager = MQTTManager()
+mqtt_manager = MQTTManager(wifi_manager)
 relay_manager = RelayManager()
 watchdog_manager = WatchdogManager()
 
-# Memory Management
-memory_timer = Timer(-1)
-
-def memory_watchdog(timer):
-    gc.collect()
-    free_memory = gc.mem_free()
-    print(f"Memoria libre actual: {free_memory} bytes")
-    if free_memory < 50000:
-        print("Posible fuga de memoria detectada.")
-
-memory_timer.init(period=60000, mode=Timer.PERIODIC, callback=memory_watchdog)
-
-def network_thread():
-    while True:
-        print("Checking WiFi connection...")
-        wifi_manager.check_connection()
-        utime.sleep(5)
+cached_datetime = None
+last_datetime_update = utime.ticks_ms()
+memory_report_enabled = True  # Cambiar a False para desactivar los informes de memoria
 
 def get_current_datetime():
+    global cached_datetime, last_datetime_update
+    current_ticks = utime.ticks_ms()
+    if utime.ticks_diff(current_ticks, last_datetime_update) > 600000 or cached_datetime is None:  # 10 minutos
+        update_datetime()
+    return cached_datetime
+
+def update_datetime():
+    global cached_datetime, last_datetime_update
     try:
-        print("Fetching current datetime from worldtimeapi.org...")
-        response = urequests.get("http://worldtimeapi.org/api/timezone/America/Lima")
-        data = response.json()
-        current_datetime = data["datetime"]
-        response.close()
-        print(f"Current datetime fetched successfully: {current_datetime}")
-        return current_datetime
+        cached_datetime = wifi_manager.get_current_time()
+        print(f"Fecha y hora actuales actualizadas a: {cached_datetime}")
     except Exception as e:
-        print(f"Error al obtener la fecha y hora: {e}")
-        return None
+        print(f"Error al obtener fecha y hora, usando última conocida o 'unknown': {e}")
+        cached_datetime = cached_datetime if cached_datetime else "unknown"
+    last_datetime_update = utime.ticks_ms()
+
 
 def relay_callback(pin, pin_num):
-    print(f"Relay callback triggered for pin {pin_num}.")
-    current_datetime = get_current_datetime()
-    if current_datetime:
-        message = {
-            "date_time": current_datetime[:19],
-            "name": RELAY_NAMES.get(pin_num, "Unknown Relay"),
-            "status": "DISC" if pin.value() else "OK"
-        }
-        print(f"Preparing to send MQTT message: {message}")
-        mqtt_manager.publish_event(f"EMPRESA_TEST/{mqtt_manager.MQTT_CLIENT_ID}/eventos", json.dumps(message))
+    gc.collect()  # Recolectar basura antes de procesar
+    print(f"Callback de relay activado para el pin {pin_num}.")
+    wifi_manager.ensure_wifi_connected()  # Verificar conexión WiFi antes de proceder
+    current_datetime = get_current_datetime()  # Asegurarse de usar la fecha y hora formateada
+    status = "DISC" if pin.value() else "OK"
+    message = {
+        "date_time": current_datetime,  # Usar la fecha y hora formateada
+        "name": RELAY_NAMES.get(pin_num, "Relay Desconocido"),
+        "status": status
+    }
+    print(f"Enviando mensaje MQTT: {message}")
+    mqtt_manager.publish_event(f"EMPRESA_TEST/{mqtt_manager.MQTT_CLIENT_ID}/eventos", json.dumps(message))
+
+
 
 def main():
-    _thread.start_new_thread(network_thread, ())
-    wifi_manager.connect_wifi()
+    last_memory_report_time = utime.ticks_ms()
+    while not wifi_manager.sta_if.isconnected():
+        wifi_manager.connect_wifi()
     mqtt_manager.ensure_client()
     for relay_pin in RELAY_PINS:
         pin = relay_manager.setup_relay(relay_pin, relay_callback)
-    last_feed_time = utime.ticks_ms()
     while True:
-        current_time = utime.ticks_ms()
-        if utime.ticks_diff(current_time, last_feed_time) > 5000:
-            watchdog_manager.feed()
-            print("Watchdog fed.")
-            last_feed_time = current_time
         utime.sleep(1)
+        watchdog_manager.feed()
+        current_time = utime.ticks_ms()
+        if memory_report_enabled and utime.ticks_diff(current_time, last_memory_report_time) > 60000:  # 1 minuto
+            free_memory = gc.mem_free()
+            print(f"Reporte de memoria libre: {free_memory} bytes")
+            last_memory_report_time = current_time
+            gc.collect()  # Recolección de basura para mantener la memoria limpia
 
 if __name__ == "__main__":
     main()

@@ -2,7 +2,6 @@ import machine
 import utime
 import network
 import urequests
-import _thread
 
 class WiFiManager:
     SSID = "PABLO-2.4G"
@@ -10,30 +9,28 @@ class WiFiManager:
 
     def __init__(self):
         self.sta_if = network.WLAN(network.STA_IF)
-        self.wifi_connected = False
-        self.lock = _thread.allocate_lock()  # Mutex para controlar el acceso a la conexión
+        self.sta_if.active(True)
 
     def connect_wifi(self):
-        with self.lock:  # Asegurar acceso exclusivo al proceso de conexión
-            if not self.sta_if.isconnected():
-                print("Conectando a WiFi...")
-                self.sta_if.active(True)
-                self.sta_if.connect(self.SSID, self.PASSWORD)
-                start_time = utime.ticks_ms()
-                while not self.sta_if.isconnected():
-                    if utime.ticks_diff(utime.ticks_ms(), start_time) > 10000:  # Timeout después de 10 segundos
-                        print("Timeout al intentar conectar a WiFi")
-                        return
-                    utime.sleep(1)
-                print("Conectado a WiFi")
-                self.wifi_connected = True
+        while not self.sta_if.isconnected():
+            print("Conectando a WiFi...")
+            self.sta_if.connect(self.SSID, self.PASSWORD)
+            start_time = utime.ticks_ms()
+            while not self.sta_if.isconnected() and utime.ticks_diff(utime.ticks_ms(), start_time) < 10000:
+                utime.sleep(1)
+            if self.sta_if.isconnected():
+                print("Conectado a WiFi.")
             else:
-                print("Already connected to WiFi")
+                print("Reintentando conectar a WiFi...")
+                utime.sleep(5)  # Espera antes de reintentar
+
+    def ensure_wifi_connected(self):
+        if not self.sta_if.isconnected():
+            print("WiFi desconectado, intentando reconectar...")
+            self.connect_wifi()
 
     def check_connection(self):
-        if not self.sta_if.isconnected():
-            print("Reconectando a WiFi...")
-            self.connect_wifi()
+        self.ensure_wifi_connected()
 
     def get_current_time(self):
         self.check_connection()
