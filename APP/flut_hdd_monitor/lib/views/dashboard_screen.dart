@@ -1,12 +1,10 @@
-import 'package:flut_hdd_monitor/main.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flut_hdd_monitor/views/bluetooth_screen.dart';
-
+import 'package:flut_hdd_monitor/main.dart';
 
 class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({Key? key}) : super(key: key);
+  const DashboardScreen({super.key});
 
   void _logout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
@@ -20,13 +18,6 @@ class DashboardScreen extends StatelessWidget {
         title: const Text('Dashboard', style: TextStyle(color: Colors.white, fontSize: 20)),
         backgroundColor: Colors.redAccent,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.bluetooth),
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (context) => BluetoothScreen()));
-            },
-            tooltip: 'Configurar Bluetooth',
-          ),
           IconButton(
             icon: const Icon(Icons.exit_to_app),
             onPressed: () => _logout(context),
@@ -53,7 +44,7 @@ class DashboardScreen extends StatelessWidget {
           .doc('hdd-monitor/accounts/clients/client_1/panels/panel_1')
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Text('Error: ${snapshot.error}', style: TextStyle(color: Colors.black, fontSize: 16));
+        if (snapshot.hasError) return Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.black, fontSize: 16));
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Text('Cargando panel...', style: TextStyle(color: Colors.black, fontSize: 16));
         }
@@ -75,8 +66,8 @@ class DashboardScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(panelData['name'] ?? 'Panel Desconocido', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
-                          Text('Ubicación: ${panelData['location']}', style: TextStyle(color: Colors.black, fontSize: 16)),
+                          Text(panelData['name'] ?? 'Panel Desconocido', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
+                          Text('Ubicación: ${panelData['location']}', style: const TextStyle(color: Colors.black, fontSize: 16)),
                         ],
                       ),
                     ),
@@ -93,9 +84,9 @@ class DashboardScreen extends StatelessWidget {
               ),
               ExpansionTile(
                 title: const Text('Detalles', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14.5)),
-                children: [_buildLastEvent(context)],
                 iconColor: Colors.black,
                 collapsedIconColor: Colors.black,
+                children: [_buildLastEvent(context)],
               ),
             ],
           ),
@@ -130,16 +121,16 @@ class DashboardScreen extends StatelessWidget {
               children: [
                 Icon(isOk ? Icons.check_circle : Icons.remove_circle, color: isOk ? Colors.green : Colors.red, size: 24),
                 const SizedBox(width: 8),
-                Text(relayName, style: TextStyle(color: Colors.black, fontSize: 16)),
+                Text(relayName, style: const TextStyle(color: Colors.black, fontSize: 16)),
               ],
             ),
           );
         } else {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2.0),
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 2.0),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: const [
+              children: [
                 Icon(Icons.error, color: Colors.red, size: 24),
                 SizedBox(width: 8),
                 Text('Error loading', style: TextStyle(color: Colors.black, fontSize: 16)),
@@ -163,8 +154,8 @@ class DashboardScreen extends StatelessWidget {
         if (snapshot.hasData) {
           var eventData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
           return ListTile(
-            title: Text('Último Evento: ${eventData['type'] ?? 'Desconocido'}', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-            subtitle: Text('Descripción: ${eventData['description']} - ${eventData['date_time']}', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.black, fontSize: 15)),
+            title: Text('Último Evento: ${eventData['type'] ?? 'Desconocido'}', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+            subtitle: Text('Descripción: ${eventData['description']} - ${eventData['date_time']}', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.black, fontSize: 15)),
           );
         } else {
           return const ListTile(

@@ -18,7 +18,7 @@ class FirebaseService {
       return false;
     } catch (e) {
       print('Error al verificar los paneles para el usuario actual: $e');
-      throw e;
+      rethrow;
     }
   }
 
@@ -33,7 +33,7 @@ class FirebaseService {
       }
     } catch (e) {
       print('Error al agregar el panel a Firebase: $e');
-      throw e;
+      rethrow;
     }
   }
 }

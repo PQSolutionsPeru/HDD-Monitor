@@ -7,13 +7,15 @@ import 'package:flut_hdd_monitor/services/auth_service.dart';
 class AuthGuard extends StatelessWidget {
   final AuthService _authService = AuthService();
 
+  AuthGuard({super.key});
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(
+          return const Scaffold(
             body: Center(
               child: CircularProgressIndicator(),
             ),
@@ -22,10 +24,10 @@ class AuthGuard extends StatelessWidget {
 
         // Si el usuario está autenticado, redirigir al dashboard
         if (snapshot.hasData) {
-          return DashboardScreen();
+          return const DashboardScreen();
         } else {
           // Si el usuario no está autenticado, mostrar la pantalla de inicio de sesión
-          return LoginScreen();
+          return const LoginScreen();
         }
       },
     );
