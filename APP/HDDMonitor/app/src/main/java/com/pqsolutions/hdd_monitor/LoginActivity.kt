@@ -1,10 +1,10 @@
-package com.pqsolutions.hddmonitor
+package com.pqsolutions.hdd_monitor
 
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.auth.FirebaseAuth
-import com.pqsolutions.hddmonitor.databinding.ActivityLoginBinding
+import com.pqsolutions.hdd_monitor.databinding.ActivityLoginBinding
 
 class LoginActivity : AppCompatActivity() {
     private lateinit var auth: FirebaseAuth

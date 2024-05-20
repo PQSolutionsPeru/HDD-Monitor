@@ -1,3 +1,16 @@
+buildscript {
+    ext.kotlin_version = '1.8.21'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath libs.gradle.v840
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath libs.google.services
+    }
+}
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -5,10 +18,12 @@ plugins {
 }
 
 android {
+    namespace 'com.pqsolutions.hdd_monitor'
+
     compileSdkVersion 34
 
     defaultConfig {
-        applicationId "com.pqsolutions.hddmonitor"
+        applicationId "com.pqsolutions.hdd_monitor"
         minSdkVersion 26
         targetSdkVersion 34
         versionCode 1
@@ -45,8 +60,6 @@ android {
     viewBinding {
         enabled = true
     }
-
-    namespace 'com.pqsolutions.hddmonitor'
 }
 
 dependencies {
@@ -74,7 +87,7 @@ dependencies {
     testImplementation libs.junit
     testImplementation libs.kotlin.test
     testImplementation libs.kotlin.test.junit
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.8.1'
+    testImplementation libs.junit.jupiter
 
     // Dependencias para pruebas instrumentadas
     androidTestImplementation libs.androidx.junit
@@ -84,3 +97,10 @@ dependencies {
 }
 
 apply plugin: 'com.google.gms.google-services'
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

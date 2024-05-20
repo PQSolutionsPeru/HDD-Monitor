@@ -1,13 +1,16 @@
-package com.pqsolutions.hddmonitor
+package com.pqsolutions.hdd_monitor
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.firebase.firestore.FirebaseFirestore
-import com.pqsolutions.hddmonitor.databinding.ActivityMainBinding
+import com.google.firebase.firestore.ListenerRegistration
+import com.pqsolutions.hdd_monitor.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var firestore: FirebaseFirestore
+    private var relayListeners = mutableListOf<ListenerRegistration>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -16,20 +19,54 @@ class MainActivity : AppCompatActivity() {
 
         firestore = FirebaseFirestore.getInstance()
 
+        binding.recyclerView.layoutManager = LinearLayoutManager(this)
         binding.recyclerView.setHasFixedSize(true)
 
-        loadRelays() // Llamar al método para cargar los datos al iniciar la actividad
+        loadRelays()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        relayListeners.forEach { it.remove() }
     }
 
     private fun loadRelays() {
-        firestore.collection("clientes").document("clienteId").collection("relays")
-            .get()
-            .addOnSuccessListener { documents ->
-                val relays = documents.map { it.toObject(Relay::class.java) }
-                binding.recyclerView.adapter = RelayAdapter(relays) // Usar binding.recyclerView
-            }
-            .addOnFailureListener { _ ->
-                // Manejar errores
-            }
+        val relayCollections = listOf("Alarma", "Problema", "Supervision")
+        val relays = mutableMapOf<String, Relay>()
+
+        for (collection in relayCollections) {
+            val listenerRegistration = firestore.collection("hdd-monitor")
+                .document("accounts")
+                .collection("clients")
+                .document("client_1")
+                .collection("panels")
+                .document("panel_1")
+                .collection("relays")
+                .document(collection)
+                .addSnapshotListener { document, error ->
+                    if (error != null) {
+                        // Maneja el error
+                        error.printStackTrace()
+                        return@addSnapshotListener
+                    }
+                    document?.let {
+                        val relay = it.toObject(Relay::class.java)
+                        relay?.let { r ->
+                            r.name = collection // Usamos el nombre del documento como el nombre del relay
+                            relays[collection] = r
+                            updateRecyclerView(relays.values.toList())
+                        }
+                    }
+                }
+            relayListeners.add(listenerRegistration)
+        }
+    }
+
+    private fun updateRecyclerView(relays: List<Relay>) {
+        binding.recyclerView.adapter?.let {
+            (it as RelayAdapter).updateRelays(relays)
+        } ?: run {
+            binding.recyclerView.adapter = RelayAdapter(relays)
+        }
     }
 }
