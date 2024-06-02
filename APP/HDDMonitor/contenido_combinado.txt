@@ -183,58 +183,6 @@ allprojects {
 
 
 
---- Contenido de google-services.json ---
-
-{
-  "project_info": {
-    "project_number": "1002136032862",
-    "project_id": "fir-hdd-monitor-d00de",
-    "storage_bucket": "fir-hdd-monitor-d00de.appspot.com"
-  },
-  "client": [
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:1002136032862:android:9c878bdb32958e7f3dc6cf",
-        "android_client_info": {
-          "package_name": "com.example.hdd_monitor"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyAPiiWUSZUrDs3RTx7RtV-AvwyLzR1jko4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:1002136032862:android:44e8c6751e458dca3dc6cf",
-        "android_client_info": {
-          "package_name": "com.pqsolutions.hdd_monitor"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyAPiiWUSZUrDs3RTx7RtV-AvwyLzR1jko4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    }
-  ],
-  "configuration_version": "1"
-}
-
-
 --- Contenido de AndroidManifest.xml ---
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -1937,11 +1885,9 @@ class UserManagementActivity : AppCompatActivity() {
             android:id="@+id/bottom_navigation"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            app:layout_constraintTop_toBottomOf="@id/saveButton"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"
             app:menu="@menu/bottom_nav_menu"
             android:background="@color/colorPrimary"
             app:itemIconTint="@color/navItemColor"
@@ -2179,42 +2125,45 @@ class UserManagementActivity : AppCompatActivity() {
             android:id="@+id/editText_event_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@android:color/darker_gray"
             android:hint="Nombre del Evento"
+            android:minHeight="48dp"
             android:textColor="@android:color/black"
             android:textColorHint="@color/gray"
-            android:backgroundTint="@android:color/darker_gray"
-            android:layout_marginTop="16dp"
-            app:layout_constraintTop_toBottomOf="@id/schedulerTitle"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
+            app:layout_constraintTop_toBottomOf="@id/schedulerTitle" />
 
         <EditText
             android:id="@+id/editText_event_date"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@android:color/darker_gray"
             android:hint="Fecha"
             android:inputType="date"
+            android:minHeight="48dp"
             android:textColor="@android:color/black"
             android:textColorHint="@color/gray"
-            android:backgroundTint="@android:color/darker_gray"
-            android:layout_marginTop="16dp"
-            app:layout_constraintTop_toBottomOf="@id/editText_event_name"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
+            app:layout_constraintTop_toBottomOf="@id/editText_event_name" />
 
         <EditText
             android:id="@+id/editText_event_time"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="@android:color/darker_gray"
             android:hint="Hora"
             android:inputType="time"
+            android:minHeight="48dp"
             android:textColor="@android:color/black"
             android:textColorHint="@color/gray"
-            android:backgroundTint="@android:color/darker_gray"
-            android:layout_marginTop="8dp"
-            app:layout_constraintTop_toBottomOf="@id/editText_event_date"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
+            app:layout_constraintTop_toBottomOf="@id/editText_event_date" />
 
         <Button
             android:id="@+id/button_schedule_event"
@@ -2232,11 +2181,9 @@ class UserManagementActivity : AppCompatActivity() {
             android:id="@+id/bottom_navigation"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            app:layout_constraintTop_toBottomOf="@id/button_schedule_event"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"
             app:menu="@menu/bottom_nav_menu"
             android:background="@color/colorPrimary"
             app:itemIconTint="@color/navItemColor"

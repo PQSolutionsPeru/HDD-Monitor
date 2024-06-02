@@ -1,0 +1,186 @@
+[
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_item_event.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_event.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-hdpi_ic_launcher_foreground.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-hdpi/ic_launcher_foreground.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_alert_management.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_alert_management.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xxxhdpi_ic_launcher_round.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xxxhdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_event_history.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_event_history.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-mdpi_ic_launcher_foreground.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-mdpi/ic_launcher_foreground.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-mdpi_ic_launcher_round.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-mdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_close_red_bk.png.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_close_red_bk.png"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_event_scheduler.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_event_scheduler.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_check_green.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_check_green.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-mdpi_ic_launcher.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-mdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xxhdpi_ic_launcher.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xxhdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xxxhdpi_ic_launcher_foreground.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xxxhdpi/ic_launcher_foreground.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-hdpi_ic_launcher.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-hdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/menu_bottom_nav_menu.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/menu/bottom_nav_menu.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_check_green_bk.png.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_check_green_bk.png"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_login.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_login.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_close_red.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_close_red.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_create_alert.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_create_alert.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xxxhdpi_ic_launcher.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xxxhdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_item_alert.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_alert.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_manage_users.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_manage_users.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xhdpi_ic_launcher_foreground.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xhdpi/ic_launcher_foreground.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_item_relay.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_relay.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_user_management.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_user_management.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_add_edit_alert.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_add_edit_alert.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_main.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_item_report.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_report.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_report.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_report.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_item_user.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_user.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xhdpi_ic_launcher.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xhdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_admin_main.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_admin_main.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xxhdpi_ic_launcher_round.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xxhdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xhdpi_ic_launcher_round.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xhdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_add_edit_user.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_add_edit_user.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/xml_backup_rules.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/xml/backup_rules.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xxhdpi_ic_launcher_foreground.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-xxhdpi/ic_launcher_foreground.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-hdpi_ic_launcher_round.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-hdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_panel_icon.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_panel_icon.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_schedule_event.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_schedule_event.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/xml_data_extraction_rules.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/xml/data_extraction_rules.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_create_user.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_create_user.xml"
+    }
+]

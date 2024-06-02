@@ -1,0 +1,6 @@
+com.pqsolutions.hdd_monitor.test.app-annotation-experimental-1.4.0-0 C:\Users\Pablo\.gradle\caches\transforms-4\70633b6809b44d37b74d84955410d766\transformed\annotation-experimental-1.4.0\res
+com.pqsolutions.hdd_monitor.test.app-core-1.5.0-1 C:\Users\Pablo\.gradle\caches\transforms-4\99bda42dce7cc3efa42676699cc1090f\transformed\core-1.5.0\res
+com.pqsolutions.hdd_monitor.test.app-androidTest-2 E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\build\generated\res\resValues\androidTest\debug
+com.pqsolutions.hdd_monitor.test.app-mergeDebugAndroidTestResources-3 E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+com.pqsolutions.hdd_monitor.test.app-mergeDebugAndroidTestResources-4 E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+com.pqsolutions.hdd_monitor.test.app-debugAndroidTest-5 E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources

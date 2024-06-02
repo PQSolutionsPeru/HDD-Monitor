@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+                                                                   
+
+    
+                 
+                        
+                                                      
+           
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="8dp" android:tag="layout/item_event_0" xmlns:android="http://schemas.android.com/apk/res/android">
+
+        <TextView
+            android:id="@+id/eventDateTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:tag="binding_1"          
+            android:textStyle="bold"
+            android:textSize="16sp"/>
+
+        <TextView
+            android:id="@+id/eventType"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:tag="binding_2"     
+            android:textSize="14sp"/>
+
+        <TextView
+            android:id="@+id/eventDescription"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:tag="binding_3"            
+            android:textSize="14sp"/>
+
+        <TextView
+            android:id="@+id/eventSolvedStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:tag="binding_4"                             
+            android:textSize="14sp"/>
+
+    </LinearLayout>
+         

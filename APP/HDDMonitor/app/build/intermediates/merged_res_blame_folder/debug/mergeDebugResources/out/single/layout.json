@@ -1,0 +1,62 @@
+[
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_user_management.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_user_management.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/item_report.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_report.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_add_edit_alert.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_add_edit_alert.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/item_alert.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_alert.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/item_relay.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_relay.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_event_scheduler.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_event_scheduler.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_event_history.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_event_history.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_admin_main.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_admin_main.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_add_edit_user.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_add_edit_user.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_report.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_report.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_alert_management.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_alert_management.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_login.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_login.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/item_user.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_user.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/item_event.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_event.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_main.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_main.xml"
+    }
+]

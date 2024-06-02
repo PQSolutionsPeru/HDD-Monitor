@@ -1,0 +1,3 @@
+com.pqsolutions.hdd_monitor.test
+style WhiteBackgroundDialogTheme
+style WhiteBackgroundTheme

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="report_types">
+        <item>Eventos de Alarma</item>
+        <item>Estado del Sistema</item>
+        <item>Registros de Mantenimiento</item>
+    </string-array>
+    <color name="black">#FF000000</color>
+    <color name="colorAccent">#FF4081</color>
+    <color name="colorPrimary">#D32F2F</color>
+    <color name="colorPrimaryDark">#B71C1C</color>
+    <color name="gray">#6C6C6C</color>
+    <color name="ic_launcher_background">#000000</color>
+    <color name="navItemColor">#FFFFFF</color>
+    <color name="navItemColorInactive">#BDBDBD</color>
+    <color name="panel_background">#FFFFFF</color>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="red">#D32F2F</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="white">#FFFFFFFF</color>
+    <string name="alarm_icon">Alarma</string>
+    <string name="app_name">HDD Monitor</string>
+    <string name="dashboard_title">Dashboard</string>
+    <string name="gcm_defaultSenderId" translatable="false">1002136032862</string>
+    <string name="google_api_key" translatable="false">AIzaSyAPiiWUSZUrDs3RTx7RtV-AvwyLzR1jko4</string>
+    <string name="google_app_id" translatable="false">1:1002136032862:android:44e8c6751e458dca3dc6cf</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyAPiiWUSZUrDs3RTx7RtV-AvwyLzR1jko4</string>
+    <string name="google_storage_bucket" translatable="false">fir-hdd-monitor-d00de.appspot.com</string>
+    <string name="panel_icon">Panel Icon</string>
+    <string name="problem_icon">Problema</string>
+    <string name="project_id" translatable="false">fir-hdd-monitor-d00de</string>
+    <string name="supervision_icon">Supervision</string>
+    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+    <style name="AppTheme.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+    <style name="Theme.HDDMonitor" parent="android:Theme.Material.Light.NoActionBar"/>
+</resources>

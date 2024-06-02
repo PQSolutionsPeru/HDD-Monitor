@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+                                                       
+                                                  
+                                            
+
+    
+                                                        
+           
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"
+        android:background="@android:color/white" android:tag="layout/activity_event_scheduler_0" xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" xmlns:tools="http://schemas.android.com/tools" tools:context=".EventSchedulerActivity">
+
+        <TextView
+            android:id="@+id/schedulerTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Programar Evento"
+            android:textSize="24sp"
+            android:textColor="@android:color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/editText_event_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@android:color/darker_gray"
+            android:hint="Nombre del Evento"
+            android:minHeight="48dp"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/schedulerTitle" />
+
+        <EditText
+            android:id="@+id/editText_event_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@android:color/darker_gray"
+            android:hint="Fecha"
+            android:inputType="date"
+            android:minHeight="48dp"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/editText_event_name" />
+
+        <EditText
+            android:id="@+id/editText_event_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="@android:color/darker_gray"
+            android:hint="Hora"
+            android:inputType="time"
+            android:minHeight="48dp"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/editText_event_date" />
+
+        <Button
+            android:id="@+id/button_schedule_event"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Programar Evento"
+            android:textColor="@android:color/white"
+            android:backgroundTint="@color/red"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/editText_event_time"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:menu="@menu/bottom_nav_menu"
+            android:background="@color/colorPrimary"
+            app:itemIconTint="@color/navItemColor"
+            app:itemTextColor="@color/navItemColor"
+            app:labelVisibilityMode="labeled" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+         
