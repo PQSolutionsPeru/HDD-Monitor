@@ -1,6 +1,6 @@
 package com.pqsolutions.hdd_monitor
 
-import com.pqsolutions.hddmonitor.Relay
+import com.pqsolutions.hdd_monitor.Relay
 
 data class Panel(
     val name: String = "",

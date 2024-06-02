@@ -1,0 +1,7 @@
+<resources>
+    <string-array name="report_types">
+        <item>Eventos de Alarma</item>
+        <item>Estado del Sistema</item>
+        <item>Registros de Mantenimiento</item>
+    </string-array>
+</resources>

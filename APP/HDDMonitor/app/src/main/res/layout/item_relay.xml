@@ -1,34 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layout xmlns:android="http://schemas.android.com/apk/res/android">
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <data>
-
+        <variable
+            name="relay"
+            type="com.pqsolutions.hdd_monitor.Relay" />
     </data>
 
-    <LinearLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="8dp">
 
         <TextView
-            android:id="@+id/relayName"
+            android:id="@+id/relayNameTextView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="@{relay.name}"
+            android:textSize="16sp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/relayStatusImageView"
+            android:layout_marginEnd="8dp" />
+
+        <ImageView
+            android:id="@+id/relayStatusImageView"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Relay Name"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/relayStatus"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Relay Status" />
-
-        <TextView
-            android:id="@+id/relayDateTime"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Relay Date Time" />
-
-    </LinearLayout>
+            android:src="@{relay.status.equals(`OK`) ? @drawable/ic_check_green : @drawable/ic_close_red}"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
 </layout>

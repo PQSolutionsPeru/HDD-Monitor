@@ -1,3 +1,9 @@
 <resources>
-    <string name="app_name">HDD-Monitor</string>
+    <string name="app_name">HDD Monitor</string>
+    <string name="dashboard_title">Dashboard</string>
+    <string name="alarm_icon">Alarma</string>
+    <string name="problem_icon">Problema</string>
+    <string name="supervision_icon">Supervision</string>
+    <string name="panel_icon">Panel Icon</string>
 </resources>
+

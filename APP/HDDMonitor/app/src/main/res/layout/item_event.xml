@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <data>
+        <variable
+            name="event"
+            type="com.pqsolutions.hdd_monitor.Event"/>
+    </data>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/eventDateTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{event.date_time}"
+            android:textStyle="bold"
+            android:textSize="16sp"/>
+
+        <TextView
+            android:id="@+id/eventType"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{event.type}"
+            android:textSize="14sp"/>
+
+        <TextView
+            android:id="@+id/eventDescription"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{event.description}"
+            android:textSize="14sp"/>
+
+        <TextView
+            android:id="@+id/eventSolvedStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text='@{"Resuelto: " + event.solved_status}'
+            android:textSize="14sp"/>
+
+    </LinearLayout>
+</layout>

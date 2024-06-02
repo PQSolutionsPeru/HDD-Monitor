@@ -60,12 +60,14 @@ android {
     viewBinding {
         enabled = true
     }
+    buildToolsVersion '34.0.0'
 }
 
 dependencies {
     implementation platform(libs.firebase.bom)
     implementation libs.google.firebase.auth
     implementation libs.firebase.firestore.ktx
+    implementation libs.firebase.messaging
     implementation libs.androidx.appcompat
     implementation libs.material
     implementation libs.androidx.constraintlayout
@@ -82,6 +84,7 @@ dependencies {
     implementation libs.androidx.hilt.navigation.compose
     implementation libs.androidx.lifecycle.viewmodel.compose
     implementation libs.androidx.material3.android
+    implementation libs.androidx.recyclerview
 
     // Dependencias para pruebas unitarias
     testImplementation libs.junit

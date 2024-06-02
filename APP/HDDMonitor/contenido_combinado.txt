@@ -1,0 +1,2974 @@
+--- Contenido de build.gradle ---
+
+buildscript {
+    ext.kotlin_version = '1.8.21'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath libs.gradle.v840 // Usa la versión más reciente disponible
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath 'com.google.gms:google-services:4.4.1'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+
+
+--- Contenido de firebase.json ---
+
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}
+
+
+
+--- Contenido de settings.gradle ---
+
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "HDDMonitor"
+include ':app'
+
+
+
+--- Contenido de build.gradle ---
+
+buildscript {
+    ext.kotlin_version = '1.8.21'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath libs.gradle.v840
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath libs.google.services
+    }
+}
+
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.google.gms.google-services'
+}
+
+android {
+    namespace 'com.pqsolutions.hdd_monitor'
+
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "com.pqsolutions.hdd_monitor"
+        minSdkVersion 26
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        dataBinding true
+        compose true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.4.7'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    viewBinding {
+        enabled = true
+    }
+    buildToolsVersion '34.0.0'
+}
+
+dependencies {
+    implementation platform(libs.firebase.bom)
+    implementation libs.google.firebase.auth
+    implementation libs.firebase.firestore.ktx
+    implementation libs.firebase.messaging
+    implementation libs.androidx.appcompat
+    implementation libs.material
+    implementation libs.androidx.constraintlayout
+    implementation libs.androidx.lifecycle.livedata.ktx
+    implementation libs.androidx.lifecycle.viewmodel.ktx
+    implementation libs.androidx.activity.ktx
+    implementation libs.androidx.core.ktx
+    implementation libs.ui
+    implementation libs.androidx.material
+    implementation libs.ui.tooling.preview
+    implementation libs.androidx.runtime.livedata
+    implementation libs.androidx.runtime.rxjava2
+    implementation libs.androidx.navigation.compose
+    implementation libs.androidx.hilt.navigation.compose
+    implementation libs.androidx.lifecycle.viewmodel.compose
+    implementation libs.androidx.material3.android
+    implementation libs.androidx.recyclerview
+
+    // Dependencias para pruebas unitarias
+    testImplementation libs.junit
+    testImplementation libs.kotlin.test
+    testImplementation libs.kotlin.test.junit
+    testImplementation libs.junit.jupiter
+
+    // Dependencias para pruebas instrumentadas
+    androidTestImplementation libs.androidx.junit
+    androidTestImplementation libs.androidx.espresso.core
+    androidTestImplementation libs.androidx.rules
+    androidTestImplementation libs.androidx.runner
+}
+
+apply plugin: 'com.google.gms.google-services'
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+
+
+--- Contenido de google-services.json ---
+
+{
+  "project_info": {
+    "project_number": "1002136032862",
+    "project_id": "fir-hdd-monitor-d00de",
+    "storage_bucket": "fir-hdd-monitor-d00de.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1002136032862:android:9c878bdb32958e7f3dc6cf",
+        "android_client_info": {
+          "package_name": "com.example.hdd_monitor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPiiWUSZUrDs3RTx7RtV-AvwyLzR1jko4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1002136032862:android:44e8c6751e458dca3dc6cf",
+        "android_client_info": {
+          "package_name": "com.pqsolutions.hdd_monitor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPiiWUSZUrDs3RTx7RtV-AvwyLzR1jko4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+
+
+--- Contenido de AndroidManifest.xml ---
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.pqsolutions.hdd_monitor">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity android:name=".LoginActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity android:name=".EventHistoryActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity android:name=".AdminMainActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity android:name=".AddEditUserActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity android:name=".AlertManagementActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity android:name=".AddEditAlertActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity android:name=".ReportActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity android:name=".EventSchedulerActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity android:name=".UserManagementActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <service
+            android:name=".MyFirebaseMessagingService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>
+
+
+
+--- Contenido de AddEditAlertActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityAddEditAlertBinding
+
+class AddEditAlertActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityAddEditAlertBinding
+    private lateinit var firestore: FirebaseFirestore
+    private var alertId: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityAddEditAlertBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        firestore = FirebaseFirestore.getInstance()
+
+        alertId = intent.getStringExtra("ALERT_ID")
+
+        if (alertId != null) {
+            loadAlertData(alertId!!)
+        }
+
+        binding.saveButton.setOnClickListener {
+            saveAlertData()
+        }
+
+        binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_create_user -> {
+                    startActivity(Intent(this, AddEditUserActivity::class.java))
+                    true
+                }
+                R.id.nav_create_alert -> {
+                    // Already on this screen, do nothing
+                    true
+                }
+                R.id.nav_schedule_event -> {
+                    startActivity(Intent(this, EventSchedulerActivity::class.java))
+                    true
+                }
+                R.id.nav_manage_users -> {
+                    startActivity(Intent(this, UserManagementActivity::class.java))
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun loadAlertData(alertId: String) {
+        val alertDocRef = firestore.collection("hdd-monitor")
+            .document("accounts")
+            .collection("admins")
+            .document("admin_1")
+            .collection("custom_notifications")
+            .document(alertId)
+
+        alertDocRef.get().addOnSuccessListener { document ->
+            if (document.exists()) {
+                val alert = document.toObject(Alert::class.java)
+                binding.alert = alert
+            } else {
+                Toast.makeText(this, "Alert not found", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun saveAlertData() {
+        val alert = binding.alert ?: return
+
+        if (alert.title.isEmpty() || alert.text.isEmpty() || alert.status.isEmpty()) {
+            Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (alertId == null) {
+            // Add new alert
+            firestore.collection("hdd-monitor")
+                .document("accounts")
+                .collection("admins")
+                .document("admin_1")
+                .collection("custom_notifications")
+                .add(alert)
+                .addOnSuccessListener {
+                    Toast.makeText(this, "Alert added successfully", Toast.LENGTH_SHORT).show()
+                    finish()
+                }
+                .addOnFailureListener {
+                    Toast.makeText(this, "Failed to add alert", Toast.LENGTH_SHORT).show()
+                }
+        } else {
+            // Update existing alert
+            firestore.collection("hdd-monitor")
+                .document("accounts")
+                .collection("admins")
+                .document("admin_1")
+                .collection("custom_notifications")
+                .document(alertId!!)
+                .set(alert)
+                .addOnSuccessListener {
+                    Toast.makeText(this, "Alert updated successfully", Toast.LENGTH_SHORT).show()
+                    finish()
+                }
+                .addOnFailureListener {
+                    Toast.makeText(this, "Failed to update alert", Toast.LENGTH_SHORT).show()
+                }
+        }
+    }
+}
+
+
+
+--- Contenido de AddEditUserActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityAddEditUserBinding
+
+class AddEditUserActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityAddEditUserBinding
+    private lateinit var firestore: FirebaseFirestore
+    private var userId: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityAddEditUserBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        firestore = FirebaseFirestore.getInstance()
+
+        userId = intent.getStringExtra("USER_ID")
+
+        if (userId != null) {
+            loadUserData(userId!!)
+        } else {
+            binding.user = User() // Inicializa un nuevo usuario si no hay userId
+        }
+
+        binding.saveButton.setOnClickListener {
+            saveUserData()
+        }
+    }
+
+    private fun loadUserData(userId: String) {
+        val userDocRef = firestore.collection("hdd-monitor")
+            .document("accounts")
+            .collection("clients")
+            .document("client_1")
+            .collection("users")
+            .document(userId)
+
+        userDocRef.get().addOnSuccessListener { document ->
+            if (document.exists()) {
+                val user = document.toObject(User::class.java)
+                binding.user = user
+            } else {
+                Toast.makeText(this, "User not found", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun saveUserData() {
+        val user = binding.user
+        if (user != null) {
+            if (user.username.isEmpty() || user.email.isEmpty() || user.password.isEmpty() || user.role.isEmpty()) {
+                Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            if (userId == null) {
+                // Add new user
+                firestore.collection("hdd-monitor")
+                    .document("accounts")
+                    .collection("clients")
+                    .document("client_1")
+                    .collection("users")
+                    .add(user)
+                    .addOnSuccessListener {
+                        Toast.makeText(this, "User added successfully", Toast.LENGTH_SHORT).show()
+                        finish()
+                    }
+                    .addOnFailureListener {
+                        Toast.makeText(this, "Failed to add user", Toast.LENGTH_SHORT).show()
+                    }
+            } else {
+                // Update existing user
+                firestore.collection("hdd-monitor")
+                    .document("accounts")
+                    .collection("clients")
+                    .document("client_1")
+                    .collection("users")
+                    .document(userId!!)
+                    .set(user)
+                    .addOnSuccessListener {
+                        Toast.makeText(this, "User updated successfully", Toast.LENGTH_SHORT).show()
+                        finish()
+                    }
+                    .addOnFailureListener {
+                        Toast.makeText(this, "Failed to update user", Toast.LENGTH_SHORT).show()
+                    }
+            }
+        }
+    }
+}
+
+
+
+--- Contenido de AdminMainActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.content.Intent
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityAdminMainBinding
+
+class AdminMainActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityAdminMainBinding
+    private lateinit var firestore: FirebaseFirestore
+    private lateinit var userAdapter: UserAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityAdminMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        firestore = FirebaseFirestore.getInstance()
+        userAdapter = UserAdapter(emptyList()) {
+            // Handle user item click for editing or deleting
+        }
+        binding.usersRecyclerView.apply {
+            layoutManager = LinearLayoutManager(this@AdminMainActivity)
+            adapter = userAdapter
+        }
+
+        binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_create_user -> {
+                    startActivity(Intent(this, AddEditUserActivity::class.java))
+                    true
+                }
+                R.id.nav_create_alert -> {
+                    startActivity(Intent(this, AddEditAlertActivity::class.java))
+                    true
+                }
+                R.id.nav_schedule_event -> {
+                    startActivity(Intent(this, EventSchedulerActivity::class.java))
+                    true
+                }
+                R.id.nav_manage_users -> {
+                    startActivity(Intent(this, UserManagementActivity::class.java))
+                    true
+                }
+                else -> false
+            }
+        }
+
+        loadUsers()
+    }
+
+    private fun loadUsers() {
+        val usersCollectionRef = firestore.collection("hdd-monitor")
+            .document("accounts")
+            .collection("clients")
+            .document("client_1")
+            .collection("users")
+
+        usersCollectionRef.get().addOnSuccessListener { snapshots ->
+            val users = snapshots.documents.mapNotNull { it.toObject(User::class.java) }
+            userAdapter.updateUsers(users)
+        }
+    }
+}
+
+
+
+--- Contenido de Alert.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+data class Alert(
+    var title: String = "",
+    var text: String = "",
+    var status: String = ""
+)
+
+
+
+--- Contenido de AlertAdapter.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.pqsolutions.hdd_monitor.databinding.ItemAlertBinding
+
+class AlertAdapter(private var alerts: List<Alert>, private val itemClickListener: (Alert) -> Unit) : RecyclerView.Adapter<AlertAdapter.AlertViewHolder>() {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AlertViewHolder {
+        val binding = ItemAlertBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return AlertViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: AlertViewHolder, position: Int) {
+        holder.bind(alerts[position], itemClickListener)
+    }
+
+    override fun getItemCount(): Int = alerts.size
+
+    fun updateAlerts(newAlerts: List<Alert>) {
+        alerts = newAlerts
+        notifyDataSetChanged()
+    }
+
+    inner class AlertViewHolder(private val binding: ItemAlertBinding) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(alert: Alert, clickListener: (Alert) -> Unit) {
+            binding.apply {
+                alertTitle.text = alert.title
+                alertText.text = alert.text
+                alertStatus.text = alert.status
+                root.setOnClickListener { clickListener(alert) }
+            }
+        }
+    }
+}
+
+
+
+--- Contenido de AlertManagementActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.content.Intent
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityAlertManagementBinding
+
+class AlertManagementActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityAlertManagementBinding
+    private lateinit var firestore: FirebaseFirestore
+    private lateinit var alertAdapter: AlertAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityAlertManagementBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        firestore = FirebaseFirestore.getInstance()
+        alertAdapter = AlertAdapter(emptyList()) {
+            // Handle alert item click for editing or deleting
+        }
+        binding.alertsRecyclerView.apply {
+            layoutManager = LinearLayoutManager(this@AlertManagementActivity)
+            adapter = alertAdapter
+        }
+
+        binding.createAlertButton.setOnClickListener {
+            val intent = Intent(this, AddEditAlertActivity::class.java)
+            startActivity(intent)
+        }
+
+        loadAlerts()
+    }
+
+    private fun loadAlerts() {
+        val alertsCollectionRef = firestore.collection("hdd-monitor")
+            .document("accounts")
+            .collection("admins")
+            .document("admin_1")
+            .collection("custom_notifications")
+
+        alertsCollectionRef.get().addOnSuccessListener { snapshots ->
+            val alerts = snapshots.documents.mapNotNull { it.toObject(Alert::class.java) }
+            alertAdapter.updateAlerts(alerts)
+        }
+    }
+}
+
+
+
+--- Contenido de Event.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+data class Event(
+    val date_time: String = "",
+    val description: String = "",
+    val solved_status: String = "",
+    val type: String = ""
+)
+
+
+
+--- Contenido de EventAdapter.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.pqsolutions.hdd_monitor.databinding.ItemEventBinding
+
+class EventAdapter(private var events: List<Event>) : RecyclerView.Adapter<EventAdapter.EventViewHolder>() {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): EventViewHolder {
+        val binding = ItemEventBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return EventViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: EventViewHolder, position: Int) {
+        holder.bind(events[position])
+    }
+
+    override fun getItemCount(): Int = events.size
+
+    fun updateEvents(newEvents: List<Event>) {
+        events = newEvents
+        notifyDataSetChanged()
+    }
+
+    inner class EventViewHolder(private val binding: ItemEventBinding) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(event: Event) {
+            binding.event = event
+            binding.executePendingBindings()
+        }
+    }
+}
+
+
+
+--- Contenido de EventHistoryActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityEventHistoryBinding
+
+class EventHistoryActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityEventHistoryBinding
+    private lateinit var firestore: FirebaseFirestore
+    private lateinit var eventAdapter: EventAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityEventHistoryBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        firestore = FirebaseFirestore.getInstance()
+        eventAdapter = EventAdapter(emptyList())
+        binding.recyclerView.apply {
+            layoutManager = LinearLayoutManager(this@EventHistoryActivity)
+            adapter = eventAdapter
+        }
+
+        loadEventHistory()
+    }
+
+    private fun loadEventHistory() {
+        val eventsCollectionRef = firestore.collection("hdd-monitor")
+            .document("accounts")
+            .collection("clients")
+            .document("client_1")
+            .collection("panels")
+            .document("panel_1")
+            .collection("panel_events_log")
+
+        eventsCollectionRef.get().addOnSuccessListener { snapshots ->
+            val events = snapshots.documents.mapNotNull { it.toObject(Event::class.java) }
+            eventAdapter.updateEvents(events)
+        }
+    }
+}
+
+
+
+--- Contenido de EventSchedulerActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityEventSchedulerBinding
+
+class EventSchedulerActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityEventSchedulerBinding
+    private lateinit var firestore: FirebaseFirestore
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityEventSchedulerBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        firestore = FirebaseFirestore.getInstance()
+
+        binding.buttonScheduleEvent.setOnClickListener {
+            val eventName = binding.editTextEventName.text.toString()
+            val eventDate = binding.editTextEventDate.text.toString()
+            val eventTime = binding.editTextEventTime.text.toString()
+
+            if (eventName.isNotEmpty() && eventDate.isNotEmpty() && eventTime.isNotEmpty()) {
+                scheduleEvent(eventName, eventDate, eventTime)
+            } else {
+                Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_create_user -> {
+                    startActivity(Intent(this, AddEditUserActivity::class.java))
+                    true
+                }
+                R.id.nav_create_alert -> {
+                    startActivity(Intent(this, AddEditAlertActivity::class.java))
+                    true
+                }
+                R.id.nav_schedule_event -> {
+                    // Already on this screen, do nothing
+                    true
+                }
+                R.id.nav_manage_users -> {
+                    startActivity(Intent(this, UserManagementActivity::class.java))
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun scheduleEvent(eventName: String, eventDate: String, eventTime: String) {
+        val event = hashMapOf(
+            "name" to eventName,
+            "date" to eventDate,
+            "time" to eventTime,
+            "timestamp" to com.google.firebase.Timestamp.now()
+        )
+
+        firestore.collection("scheduled_events")
+            .add(event)
+            .addOnSuccessListener {
+                Toast.makeText(this, "Event scheduled successfully", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+            .addOnFailureListener {
+                Toast.makeText(this, "Failed to schedule event", Toast.LENGTH_SHORT).show()
+            }
+    }
+}
+
+
+
+--- Contenido de LoginActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.content.Intent
+import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityLoginBinding
+
+class LoginActivity : AppCompatActivity() {
+    private lateinit var auth: FirebaseAuth
+    private lateinit var binding: ActivityLoginBinding
+    private lateinit var firestore: FirebaseFirestore
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityLoginBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Initialize Firebase Auth and Firestore
+        auth = FirebaseAuth.getInstance()
+        firestore = FirebaseFirestore.getInstance()
+
+        binding.loginButton.setOnClickListener {
+            val email = binding.emailEditText.text.toString().trim()
+            val password = binding.passwordEditText.text.toString().trim()
+            if (email.isNotEmpty() && password.isNotEmpty()) {
+                signIn(email, password)
+            } else {
+                Toast.makeText(this, "Please enter email and password", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun signIn(email: String, password: String) {
+        auth.signInWithEmailAndPassword(email, password)
+            .addOnCompleteListener(this) { task ->
+                if (task.isSuccessful) {
+                    // Sign in success, now check the user role
+                    Log.d(TAG, "signInWithEmail:success")
+                    checkUserRole(email)
+                } else {
+                    // If sign in fails, display a message to the user.
+                    Log.w(TAG, "signInWithEmail:failure", task.exception)
+                    Toast.makeText(baseContext, "Authentication failed.",
+                        Toast.LENGTH_SHORT).show()
+                }
+            }
+    }
+
+    private fun checkUserRole(email: String) {
+        // Check if the user is an admin
+        firestore.collection("hdd-monitor").document("accounts")
+            .collection("admins")
+            .whereEqualTo("email", email)
+            .get()
+            .addOnSuccessListener { documents ->
+                if (documents.isEmpty) {
+                    // If not an admin, check if the user is a client
+                    checkClientRole(email)
+                } else {
+                    // User is an admin
+                    navigateToAdminMain()
+                }
+            }
+            .addOnFailureListener { exception ->
+                Log.w(TAG, "Error getting documents: ", exception)
+                Toast.makeText(baseContext, "Error verifying user role.",
+                    Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun checkClientRole(email: String) {
+        firestore.collection("hdd-monitor").document("accounts")
+            .collection("clients")
+            .get()
+            .addOnSuccessListener { clients ->
+                for (client in clients) {
+                    client.reference.collection("users")
+                        .whereEqualTo("email", email)
+                        .get()
+                        .addOnSuccessListener { documents ->
+                            if (documents.isEmpty) {
+                                // No user found
+                                Toast.makeText(baseContext, "No user found with the provided email.",
+                                    Toast.LENGTH_SHORT).show()
+                            } else {
+                                // User is a client
+                                navigateToMain()
+                            }
+                        }
+                        .addOnFailureListener { exception ->
+                            Log.w(TAG, "Error getting documents: ", exception)
+                            Toast.makeText(baseContext, "Error verifying user role.",
+                                Toast.LENGTH_SHORT).show()
+                        }
+                }
+            }
+            .addOnFailureListener { exception ->
+                Log.w(TAG, "Error getting documents: ", exception)
+                Toast.makeText(baseContext, "Error verifying user role.",
+                    Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun navigateToAdminMain() {
+        val intent = Intent(this, AdminMainActivity::class.java)
+        startActivity(intent)
+        finish()
+    }
+
+    private fun navigateToMain() {
+        val intent = Intent(this, MainActivity::class.java)
+        startActivity(intent)
+        finish()
+    }
+
+    companion object {
+        private const val TAG = "LoginActivity"
+    }
+}
+
+
+
+--- Contenido de MainActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.content.Intent
+import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.messaging.FirebaseMessaging
+import com.pqsolutions.hdd_monitor.databinding.ActivityMainBinding
+
+class MainActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var firestore: FirebaseFirestore
+    private var panelListener: ListenerRegistration? = null
+    private var relaysListener: ListenerRegistration? = null
+    private lateinit var auth: FirebaseAuth
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Initialize Firebase Auth
+        auth = FirebaseAuth.getInstance()
+
+        // Subscribe to relay-status topic
+        FirebaseMessaging.getInstance().subscribeToTopic("relay-status")
+            .addOnCompleteListener { task ->
+                if (!task.isSuccessful) {
+                    Toast.makeText(this, "Subscription to notifications failed", Toast.LENGTH_SHORT).show()
+                } else {
+                    Log.d("MainActivity", "Subscribed to relay-status")
+                }
+            }
+
+        // Check if user is signed in (non-null) and update UI accordingly.
+        if (auth.currentUser == null) {
+            // Redirect to LoginActivity if the user is not signed in
+            val intent = Intent(this, LoginActivity::class.java)
+            startActivity(intent)
+            finish()
+        } else {
+            // User is signed in, proceed with loading data
+            firestore = FirebaseFirestore.getInstance()
+            loadPanelInfo()
+            loadRelays()
+        }
+
+        // Set up event history button click listener
+        binding.viewEventHistoryButton.setOnClickListener {
+            val intent = Intent(this, EventHistoryActivity::class.java)
+            startActivity(intent)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Check if user is signed in (non-null) and update UI accordingly.
+        if (auth.currentUser == null) {
+            // Redirect to LoginActivity if the user is not signed in
+            val intent = Intent(this, LoginActivity::class.java)
+            startActivity(intent)
+            finish()
+        }
+    }
+
+    @Deprecated("This method has been deprecated in favor of using the\n      {@link OnBackPressedDispatcher} via {@link #getOnBackPressedDispatcher()}.\n      The OnBackPressedDispatcher controls how back button events are dispatched\n      to one or more {@link OnBackPressedCallback} objects.")
+    override fun onBackPressed() {
+        super.onBackPressed()
+        moveTaskToBack(true)
+    }
+
+    private fun loadPanelInfo() {
+        val panelDocRef = firestore.collection("hdd-monitor")
+            .document("accounts")
+            .collection("clients")
+            .document("client_1")
+            .collection("panels")
+            .document("panel_1")
+
+        panelListener = panelDocRef.addSnapshotListener { snapshot, e ->
+            if (e != null) {
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null && snapshot.exists()) {
+                val panelName = snapshot.getString("name") ?: "Unknown Panel"
+                val panelLocation = snapshot.getString("location") ?: "Unknown Location"
+                binding.panelName.text = panelName
+                binding.panelLocation.text = panelLocation
+            }
+        }
+    }
+
+    private fun loadRelays() {
+        val relaysCollectionRef = firestore.collection("hdd-monitor")
+            .document("accounts")
+            .collection("clients")
+            .document("client_1")
+            .collection("panels")
+            .document("panel_1")
+            .collection("relays")
+
+        relaysListener = relaysCollectionRef.addSnapshotListener { snapshots, e ->
+            if (e != null) {
+                return@addSnapshotListener
+            }
+
+            if (snapshots != null && !snapshots.isEmpty) {
+                for (document in snapshots.documents) {
+                    val relayName = document.id
+                    val relayStatus = document.getString("status") ?: "Unknown"
+                    val iconRes = if (relayStatus == "OK") {
+                        R.drawable.ic_check_green
+                    } else {
+                        R.drawable.ic_close_red
+                    }
+
+                    when (relayName) {
+                        "Alarma" -> {
+                            binding.relayAlarmaIcon.setImageResource(iconRes)
+                            binding.relayAlarmaText.text = relayName
+                        }
+                        "Problema" -> {
+                            binding.relayProblemaIcon.setImageResource(iconRes)
+                            binding.relayProblemaText.text = relayName
+                        }
+                        "Supervision" -> {
+                            binding.relaySupervisionIcon.setImageResource(iconRes)
+                            binding.relaySupervisionText.text = relayName
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        panelListener?.remove()
+        relaysListener?.remove()
+        super.onDestroy()
+    }
+}
+
+
+
+--- Contenido de MyFirebaseMessagingService.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
+
+class MyFirebaseMessagingService : FirebaseMessagingService() {
+
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        super.onMessageReceived(remoteMessage)
+
+        // Check if message contains a notification payload.
+        remoteMessage.notification?.let {
+            sendNotification(it.title, it.body)
+        }
+    }
+
+    private fun sendNotification(title: String?, body: String?) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val channelId = "Default"
+        val notificationBuilder = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        // Since android Oreo notification channel is needed.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Default channel",
+                NotificationManager.IMPORTANCE_DEFAULT
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        notificationManager.notify(0, notificationBuilder.build())
+    }
+}
+
+
+
+--- Contenido de Panel.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import com.pqsolutions.hdd_monitor.Relay
+
+data class Panel(
+    val name: String = "",
+    val location: String = "",
+    val status: String = "",
+    val relays: Map<String, Relay> = emptyMap()
+)
+
+
+
+--- Contenido de Relay.kt ---
+
+package com.pqsolutions.hddmonitor
+
+data class Relay(
+    val status: String = "",
+    val date_time: String = ""
+)
+
+
+
+--- Contenido de RelayAdapter.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.pqsolutions.hdd_monitor.databinding.ItemRelayBinding
+
+data class Relay(
+    val name: String = "",
+    val status: String = "",
+    val dateTime: String = ""
+)
+
+class RelayAdapter(private val relays: List<Relay>) : RecyclerView.Adapter<RelayAdapter.RelayViewHolder>() {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RelayViewHolder {
+        val binding = ItemRelayBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return RelayViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: RelayViewHolder, position: Int) {
+        holder.bind(relays[position])
+    }
+
+    override fun getItemCount(): Int = relays.size
+
+    inner class RelayViewHolder(private val binding: ItemRelayBinding) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(relay: Relay) {
+            binding.relay = relay
+            binding.executePendingBindings()
+        }
+    }
+}
+
+
+
+--- Contenido de Report.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+data class Report(
+    val date_time: String = "",
+    val description: String = "",
+    val status: String = "",
+    val details: String = ""
+)
+
+
+
+--- Contenido de ReportActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.os.Bundle
+import android.widget.ArrayAdapter
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityReportBinding
+
+class ReportActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityReportBinding
+    private lateinit var firestore: FirebaseFirestore
+    private lateinit var reportAdapter: ReportAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityReportBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        firestore = FirebaseFirestore.getInstance()
+
+        // Set up the report type spinner
+        ArrayAdapter.createFromResource(
+            this,
+            R.array.report_types,
+            android.R.layout.simple_spinner_item
+        ).also { adapter ->
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            binding.spinnerReportType.adapter = adapter
+        }
+
+        reportAdapter = ReportAdapter(emptyList())
+        binding.recyclerView.layoutManager = LinearLayoutManager(this)
+        binding.recyclerView.adapter = reportAdapter
+
+        binding.buttonGenerateReport.setOnClickListener {
+            binding.spinnerReportType.selectedItem.toString()
+            val startDate = binding.editTextStartDate.text.toString()
+            val endDate = binding.editTextEndDate.text.toString()
+
+            if (startDate.isNotEmpty() && endDate.isNotEmpty()) {
+                generateReport(startDate, endDate)
+            } else {
+                Toast.makeText(this, "Please enter start and end dates", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun generateReport(startDate: String, endDate: String) {
+        firestore.collection("hdd-monitor/accounts/clients/client_1/panels/panel_1/panel_events_log")
+            .whereGreaterThanOrEqualTo("date_time", startDate)
+            .whereLessThanOrEqualTo("date_time", endDate)
+            .get()
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val documents = task.result?.documents?.mapNotNull { it.toObject(Report::class.java) }
+                    reportAdapter.updateReports(documents ?: emptyList())
+                } else {
+                    Toast.makeText(this, "Failed to generate report", Toast.LENGTH_SHORT).show()
+                }
+            }
+    }
+}
+
+
+
+--- Contenido de ReportAdapter.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.pqsolutions.hdd_monitor.databinding.ItemReportBinding
+
+class ReportAdapter(private var reports: List<Report>) : RecyclerView.Adapter<ReportAdapter.ReportViewHolder>() {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ReportViewHolder {
+        val binding = ItemReportBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return ReportViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: ReportViewHolder, position: Int) {
+        holder.bind(reports[position])
+    }
+
+    override fun getItemCount(): Int = reports.size
+
+    fun updateReports(newReports: List<Report>) {
+        reports = newReports
+        notifyDataSetChanged()
+    }
+
+    inner class ReportViewHolder(private val binding: ItemReportBinding) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(report: Report) {
+            binding.apply {
+                dateTimeTextView.text = report.date_time
+                descriptionTextView.text = report.description
+                statusTextView.text = "Estado: ${report.status}"
+                detailsTextView.text = report.details
+            }
+        }
+    }
+}
+
+
+
+--- Contenido de User.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+data class User(
+    var username: String = "",
+    var email: String = "",
+    var password: String = "",
+    var role: String = ""
+)
+
+
+
+--- Contenido de UserAdapter.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.pqsolutions.hdd_monitor.databinding.ItemUserBinding
+
+class UserAdapter(private var users: List<User>, private val itemClickListener: (User) -> Unit) : RecyclerView.Adapter<UserAdapter.UserViewHolder>() {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): UserViewHolder {
+        val binding = ItemUserBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return UserViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: UserViewHolder, position: Int) {
+        holder.bind(users[position], itemClickListener)
+    }
+
+    override fun getItemCount(): Int = users.size
+
+    fun updateUsers(newUsers: List<User>) {
+        users = newUsers
+        notifyDataSetChanged()
+    }
+
+    inner class UserViewHolder(private val binding: ItemUserBinding) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(user: User, clickListener: (User) -> Unit) {
+            binding.user = user
+            binding.executePendingBindings()
+            binding.root.setOnClickListener { clickListener(user) }
+        }
+    }
+}
+
+
+
+--- Contenido de UserManagementActivity.kt ---
+
+package com.pqsolutions.hdd_monitor
+
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.databinding.ActivityUserManagementBinding
+
+class UserManagementActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityUserManagementBinding
+    private lateinit var firestore: FirebaseFirestore
+    private lateinit var userAdapter: UserAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityUserManagementBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        firestore = FirebaseFirestore.getInstance()
+        userAdapter = UserAdapter(emptyList()) {
+            // Handle user item click for editing or deleting
+        }
+        binding.userRecyclerView.apply {
+            layoutManager = LinearLayoutManager(this@UserManagementActivity)
+            adapter = userAdapter
+        }
+
+        binding.addUserButton.setOnClickListener {
+            val intent = Intent(this, AddEditUserActivity::class.java)
+            startActivity(intent)
+        }
+
+        binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_create_user -> {
+                    startActivity(Intent(this, AddEditUserActivity::class.java))
+                    true
+                }
+                R.id.nav_create_alert -> {
+                    startActivity(Intent(this, AddEditAlertActivity::class.java))
+                    true
+                }
+                R.id.nav_schedule_event -> {
+                    startActivity(Intent(this, EventSchedulerActivity::class.java))
+                    true
+                }
+                R.id.nav_manage_users -> {
+                    // Already on this screen, do nothing
+                    true
+                }
+                else -> false
+            }
+        }
+
+        loadUsers()
+    }
+
+    private fun loadUsers() {
+        val usersCollectionRef = firestore.collection("hdd-monitor")
+            .document("accounts")
+            .collection("clients")
+            .document("client_1")
+            .collection("users")
+
+        usersCollectionRef.get().addOnSuccessListener { snapshots ->
+            val users = snapshots.documents.mapNotNull { it.toObject(User::class.java) }
+            userAdapter.updateUsers(users)
+        }
+    }
+}
+
+
+
+--- Contenido de ic_check_green.xml ---
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M9,16.2L4.8,12l-1.4,1.4L9,19l12-12-1.4-1.4L9,16.2z"/>
+</vector>
+
+
+
+--- Contenido de ic_close_red.xml ---
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#F44336"
+        android:pathData="M12,2C6.5,2 2,6.5 2,12s4.5,10 10,10 10-4.5 10-10S17.5,2 12,2zM13,17h-2v-2h2V17zM13,13h-2V7h2V13z"/>
+</vector>
+
+
+
+--- Contenido de ic_create_alert.xml ---
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 17c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm1-4h-2V7h2v8z"/>
+</vector>
+
+
+
+--- Contenido de ic_create_user.xml ---
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm-6-6H4V5h5V2l5 5-5 5V8z"/>
+</vector>
+
+
+
+--- Contenido de ic_launcher_background.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#3DDC84"
+        android:pathData="M0,0h108v108h-108z" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M9,0L9,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,0L19,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M29,0L29,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M39,0L39,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M49,0L49,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M59,0L59,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M69,0L69,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M79,0L79,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M89,0L89,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M99,0L99,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,9L108,9"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,19L108,19"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,29L108,29"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,39L108,39"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,49L108,49"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,59L108,59"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,69L108,69"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,79L108,79"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,89L108,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,99L108,99"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,29L89,29"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,39L89,39"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,49L89,49"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,59L89,59"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,69L89,69"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,79L89,79"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M29,19L29,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M39,19L39,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M49,19L49,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M59,19L59,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M69,19L69,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M79,19L79,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+</vector>
+
+
+
+--- Contenido de ic_launcher_foreground.xml ---
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M31,63.928c0,0 6.4,-11 12.1,-13.1c7.2,-2.6 26,-1.4 26,-1.4l38.1,38.1L107,108.928l-32,-1L31,63.928z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="85.84757"
+                android:endY="92.4963"
+                android:startX="42.9492"
+                android:startY="49.59793"
+                android:type="linear">
+                <item
+                    android:color="#44000000"
+                    android:offset="0.0" />
+                <item
+                    android:color="#00000000"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="nonZero"
+        android:pathData="M65.3,45.828l3.8,-6.6c0.2,-0.4 0.1,-0.9 -0.3,-1.1c-0.4,-0.2 -0.9,-0.1 -1.1,0.3l-3.9,6.7c-6.3,-2.8 -13.4,-2.8 -19.7,0l-3.9,-6.7c-0.2,-0.4 -0.7,-0.5 -1.1,-0.3C38.8,38.328 38.7,38.828 38.9,39.228l3.8,6.6C36.2,49.428 31.7,56.028 31,63.928h46C76.3,56.028 71.8,49.428 65.3,45.828zM43.4,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2c-0.3,-0.7 -0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C45.3,56.528 44.5,57.328 43.4,57.328L43.4,57.328zM64.6,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2s-0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C66.5,56.528 65.6,57.328 64.6,57.328L64.6,57.328z"
+        android:strokeWidth="1"
+        android:strokeColor="#00000000" />
+</vector>
+
+
+--- Contenido de ic_manage_users.xml ---
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+</vector>
+
+
+
+--- Contenido de ic_panel_icon.xml ---
+
+<!-- res/drawable/ic_panel.xml -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M3,3h8v10H3zM13,3h8v5h-8zM13,10h8v10h-8zM3,15h8v5H3z" />
+</vector>
+
+
+
+--- Contenido de ic_schedule_event.xml ---
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zM7 12h5v5H7z"/>
+</vector>
+
+
+
+--- Contenido de activity_add_edit_alert.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".AddEditAlertActivity">
+
+    <data>
+        <variable
+            name="alert"
+            type="com.pqsolutions.hdd_monitor.Alert" />
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"
+        android:background="@android:color/white">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Crear / Editar Alerta"
+            android:textSize="24sp"
+            android:textColor="@android:color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/editText_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@android:color/darker_gray"
+            android:hint="Título"
+            android:minHeight="48dp"
+            android:text="@={alert.title}"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/title" />
+
+        <EditText
+            android:id="@+id/editText_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@android:color/darker_gray"
+            android:hint="Texto"
+            android:minHeight="48dp"
+            android:text="@={alert.text}"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/editText_title" />
+
+        <EditText
+            android:id="@+id/editText_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@android:color/darker_gray"
+            android:hint="Estado"
+            android:minHeight="48dp"
+            android:text="@={alert.status}"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/editText_text" />
+
+        <Button
+            android:id="@+id/saveButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Guardar Alerta"
+            android:textColor="@android:color/white"
+            android:backgroundTint="@color/red"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/editText_status"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/saveButton"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:menu="@menu/bottom_nav_menu"
+            android:background="@color/colorPrimary"
+            app:itemIconTint="@color/navItemColor"
+            app:itemTextColor="@color/navItemColor"
+            app:labelVisibilityMode="labeled" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de activity_add_edit_user.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".AddEditUserActivity">
+
+    <data>
+        <variable
+            name="user"
+            type="com.pqsolutions.hdd_monitor.User" />
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp">
+
+        <EditText
+            android:id="@+id/usernameEditText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="Username"
+            android:text="@={user.username}"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <EditText
+            android:id="@+id/emailEditText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="Email"
+            android:text="@={user.email}"
+            app:layout_constraintTop_toBottomOf="@id/usernameEditText"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <EditText
+            android:id="@+id/passwordEditText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="Password"
+            android:text="@={user.password}"
+            app:layout_constraintTop_toBottomOf="@id/emailEditText"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <EditText
+            android:id="@+id/roleEditText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="Role"
+            android:text="@={user.role}"
+            app:layout_constraintTop_toBottomOf="@id/passwordEditText"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <Button
+            android:id="@+id/saveButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save"
+            app:layout_constraintTop_toBottomOf="@id/roleEditText"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de activity_admin_main.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".AdminMainActivity">
+
+    <data>
+        <!-- Data binding variables if needed -->
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"
+        android:background="@android:color/white">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/usersRecyclerView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/bottom_navigation"
+            android:layout_marginBottom="16dp"/>
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:menu="@menu/bottom_nav_menu"
+            android:background="@color/colorPrimary"
+            app:itemIconTint="@color/navItemColor"
+            app:itemTextColor="@color/navItemColor"
+            app:labelVisibilityMode="labeled" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de activity_alert_management.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".AlertManagementActivity">
+
+    <data>
+        <!-- Data binding variables if needed -->
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/alertManagementTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Gestión de Alertas"
+            android:textSize="24sp"
+            android:textColor="@color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/alertsRecyclerView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            app:layout_constraintTop_toBottomOf="@id/alertManagementTitle"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toTopOf="@+id/createAlertButton"
+            android:layout_margin="16dp" />
+
+        <Button
+            android:id="@+id/createAlertButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Crear Alerta"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginBottom="16dp" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de activity_event_history.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
+    <data>
+        <!-- Data binding variables if needed -->
+    </data>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"/>
+
+    </LinearLayout>
+</layout>
+
+
+
+--- Contenido de activity_event_scheduler.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".EventSchedulerActivity">
+
+    <data>
+        <!-- Define data binding variables if needed -->
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"
+        android:background="@android:color/white">
+
+        <TextView
+            android:id="@+id/schedulerTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Programar Evento"
+            android:textSize="24sp"
+            android:textColor="@android:color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/editText_event_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Nombre del Evento"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            android:backgroundTint="@android:color/darker_gray"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/schedulerTitle"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/editText_event_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Fecha"
+            android:inputType="date"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            android:backgroundTint="@android:color/darker_gray"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/editText_event_name"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/editText_event_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Hora"
+            android:inputType="time"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            android:backgroundTint="@android:color/darker_gray"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/editText_event_date"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <Button
+            android:id="@+id/button_schedule_event"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Programar Evento"
+            android:textColor="@android:color/white"
+            android:backgroundTint="@color/red"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/editText_event_time"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/button_schedule_event"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:menu="@menu/bottom_nav_menu"
+            android:background="@color/colorPrimary"
+            app:itemIconTint="@color/navItemColor"
+            app:itemTextColor="@color/navItemColor"
+            app:labelVisibilityMode="labeled" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de activity_login.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".LoginActivity">
+
+    <data>
+        <!-- Define your data bindings here -->
+    </data>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <androidx.appcompat.widget.AppCompatEditText
+            android:id="@+id/emailEditText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Email"
+            android:inputType="textEmailAddress"
+            android:minHeight="48dp" />
+
+        <androidx.appcompat.widget.AppCompatEditText
+            android:id="@+id/passwordEditText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Password"
+            android:inputType="textPassword"
+            android:minHeight="48dp" />
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/loginButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Login"/>
+    </LinearLayout>
+
+</layout>
+
+
+
+--- Contenido de activity_main.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/white"
+    tools:context=".MainActivity">
+
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:background="@color/red"
+        android:gravity="center_vertical"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <TextView
+            android:id="@+id/appName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="HDD Monitor"
+            android:textColor="@color/white"
+            android:textSize="20sp"
+            android:fontFamily="sans-serif-medium" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/panelIcon"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginTop="16dp"
+        android:src="@drawable/ic_panel_icon"
+        android:contentDescription="@string/panel_icon"
+        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginStart="16dp"/>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="16dp"
+        android:gravity="center_vertical"
+        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintStart_toEndOf="@id/panelIcon"
+        app:layout_constraintEnd_toStartOf="@id/relaysLayout">
+
+        <TextView
+            android:id="@+id/panelName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Panel de Incendios Piso 10"
+            android:textColor="@color/black"
+            android:textSize="18sp"
+            android:fontFamily="sans-serif-medium" />
+
+        <TextView
+            android:id="@+id/panelLocation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Piso 10 - Torre D"
+            android:textColor="@color/gray"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/relaysLayout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="16dp"
+        android:gravity="center_vertical"
+        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <ImageView
+                android:id="@+id/relayAlarmaIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_check_green"
+                android:contentDescription="@string/alarm_icon" />
+
+            <TextView
+                android:id="@+id/relayAlarmaText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Alarma"
+                android:textColor="@color/black"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <ImageView
+                android:id="@+id/relayProblemaIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_close_red"
+                android:contentDescription="@string/problem_icon" />
+
+            <TextView
+                android:id="@+id/relayProblemaText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Problema"
+                android:textColor="@color/black"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/relaySupervisionIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_check_green"
+                android:contentDescription="@string/supervision_icon" />
+
+            <TextView
+                android:id="@+id/relaySupervisionText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Supervision"
+                android:textColor="@color/black"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/viewEventHistoryButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Ver Historial de Eventos"
+        android:layout_margin="16dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+--- Contenido de activity_report.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".ReportActivity">
+
+    <data>
+        <!-- Define data binding variables if needed -->
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"
+        android:background="@android:color/white">
+
+        <TextView
+            android:id="@+id/reportTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Generar Informe"
+            android:textSize="24sp"
+            android:textColor="@android:color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <Spinner
+            android:id="@+id/spinner_report_type"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/reportTitle"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/editText_start_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Fecha de inicio"
+            android:inputType="date"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            android:backgroundTint="@android:color/darker_gray"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/spinner_report_type"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/editText_end_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Fecha de fin"
+            android:inputType="date"
+            android:textColor="@android:color/black"
+            android:textColorHint="@color/gray"
+            android:backgroundTint="@android:color/darker_gray"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/editText_start_date"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <Button
+            android:id="@+id/button_generate_report"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Generar Informe"
+            android:textColor="@android:color/white"
+            android:backgroundTint="@color/red"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/editText_end_date"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/button_generate_report"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/bottom_navigation" />
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/recyclerView"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:menu="@menu/bottom_nav_menu" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de activity_user_management.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".UserManagementActivity">
+
+    <data>
+        <!-- Data binding variables if needed -->
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"
+        android:background="@android:color/white">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Gestión de Usuarios"
+            android:textSize="24sp"
+            android:textColor="@color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="16dp"/>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/userRecyclerView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            app:layout_constraintTop_toBottomOf="@id/title"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/bottom_navigation"
+            android:layout_margin="16dp"/>
+
+        <Button
+            android:id="@+id/addUserButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Agregar Usuario"
+            app:layout_constraintBottom_toTopOf="@id/bottom_navigation"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginBottom="16dp"/>
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:menu="@menu/bottom_nav_menu"
+            android:background="@color/colorPrimary"
+            app:itemIconTint="@color/navItemColor"
+            app:itemTextColor="@color/navItemColor"
+            app:labelVisibilityMode="labeled" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de item_alert.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <data>
+        <!-- Data binding variables if needed -->
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/alertTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textSize="18sp"
+            android:textColor="@color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <TextView
+            android:id="@+id/alertText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="@color/gray"
+            app:layout_constraintTop_toBottomOf="@id/alertTitle"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <TextView
+            android:id="@+id/alertStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="@color/gray"
+            app:layout_constraintTop_toBottomOf="@id/alertText"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de item_event.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <data>
+        <variable
+            name="event"
+            type="com.pqsolutions.hdd_monitor.Event"/>
+    </data>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/eventDateTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{event.date_time}"
+            android:textStyle="bold"
+            android:textSize="16sp"/>
+
+        <TextView
+            android:id="@+id/eventType"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{event.type}"
+            android:textSize="14sp"/>
+
+        <TextView
+            android:id="@+id/eventDescription"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{event.description}"
+            android:textSize="14sp"/>
+
+        <TextView
+            android:id="@+id/eventSolvedStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text='@{"Resuelto: " + event.solved_status}'
+            android:textSize="14sp"/>
+
+    </LinearLayout>
+</layout>
+
+
+
+--- Contenido de item_relay.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <data>
+        <variable
+            name="relay"
+            type="com.pqsolutions.hdd_monitor.Relay" />
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/relayNameTextView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="@{relay.name}"
+            android:textSize="16sp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/relayStatusImageView"
+            android:layout_marginEnd="8dp" />
+
+        <ImageView
+            android:id="@+id/relayStatusImageView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@{relay.status.equals(`OK`) ? @drawable/ic_check_green : @drawable/ic_close_red}"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de item_report.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/dateTimeTextView"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@{report.date_time}"
+        android:textSize="18sp"
+        android:textColor="@color/black"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <TextView
+        android:id="@+id/descriptionTextView"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@{report.description}"
+        android:textSize="14sp"
+        android:textColor="@color/gray"
+        app:layout_constraintTop_toBottomOf="@id/dateTimeTextView"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <TextView
+        android:id="@+id/statusTextView"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@{report.status}"
+        android:textSize="14sp"
+        android:textColor="@color/gray"
+        app:layout_constraintTop_toBottomOf="@id/descriptionTextView"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <TextView
+        android:id="@+id/detailsTextView"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@{report.details}"
+        android:textSize="14sp"
+        android:textColor="@color/gray"
+        app:layout_constraintTop_toBottomOf="@id/statusTextView"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+--- Contenido de item_user.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <data>
+        <variable
+            name="user"
+            type="com.pqsolutions.hdd_monitor.User" />
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/usernameTextView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="@{user.username}"
+            android:textSize="18sp"
+            android:textColor="@color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/emailTextView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="@{user.email}"
+            android:textSize="14sp"
+            android:textColor="@color/gray"
+            app:layout_constraintTop_toBottomOf="@id/usernameTextView"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <TextView
+            android:id="@+id/roleTextView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="@{user.role}"
+            android:textSize="14sp"
+            android:textColor="@color/gray"
+            app:layout_constraintTop_toBottomOf="@id/emailTextView"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+
+
+
+--- Contenido de array.xml ---
+
+<resources>
+    <string-array name="report_types">
+        <item>Eventos de Alarma</item>
+        <item>Estado del Sistema</item>
+        <item>Registros de Mantenimiento</item>
+    </string-array>
+</resources>
+
+
+
+--- Contenido de colors.xml ---
+
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="red">#D32F2F</color>
+    <color name="gray">#6C6C6C</color>
+    <color name="colorPrimary">#D32F2F</color>
+    <color name="colorPrimaryDark">#B71C1C</color>
+    <color name="colorAccent">#FF4081</color>
+    <color name="panel_background">#FFFFFF</color>
+    <color name="navItemColor">#FFFFFF</color>
+    <color name="navItemColorInactive">#BDBDBD</color>
+</resources>
+
+
+
+--- Contenido de ic_launcher_background.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#000000</color>
+</resources>
+
+
+--- Contenido de strings.xml ---
+
+<resources>
+    <string name="app_name">HDD Monitor</string>
+    <string name="dashboard_title">Dashboard</string>
+    <string name="alarm_icon">Alarma</string>
+    <string name="problem_icon">Problema</string>
+    <string name="supervision_icon">Supervision</string>
+    <string name="panel_icon">Panel Icon</string>
+</resources>
+
+
+
+
+--- Contenido de styles.xml ---
+
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+</resources>
+
+
+
+--- Contenido de themes.xml ---
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.HDDMonitor" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
+

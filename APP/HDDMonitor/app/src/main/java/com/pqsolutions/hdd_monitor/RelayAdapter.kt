@@ -2,17 +2,16 @@ package com.pqsolutions.hdd_monitor
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.pqsolutions.hdd_monitor.databinding.ItemRelayBinding
 
 data class Relay(
-    var name: String = "",
+    val name: String = "",
     val status: String = "",
     val dateTime: String = ""
 )
 
-class RelayAdapter(private var relays: List<Relay>) : RecyclerView.Adapter<RelayAdapter.RelayViewHolder>() {
+class RelayAdapter(private val relays: List<Relay>) : RecyclerView.Adapter<RelayAdapter.RelayViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RelayViewHolder {
         val binding = ItemRelayBinding.inflate(LayoutInflater.from(parent.context), parent, false)
@@ -27,22 +26,8 @@ class RelayAdapter(private var relays: List<Relay>) : RecyclerView.Adapter<Relay
 
     inner class RelayViewHolder(private val binding: ItemRelayBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(relay: Relay) {
-            binding.relayName.text = relay.name
-            binding.relayStatus.text = relay.status
-            binding.relayDateTime.text = relay.dateTime
-
-            // Cambia el color del estado según el status
-            val color = if (relay.status == "OK") {
-                ContextCompat.getColor(binding.root.context, android.R.color.holo_green_dark)
-            } else {
-                ContextCompat.getColor(binding.root.context, android.R.color.holo_red_dark)
-            }
-            binding.relayStatus.setTextColor(color)
+            binding.relay = relay
+            binding.executePendingBindings()
         }
-    }
-
-    fun updateRelays(newRelays: List<Relay>) {
-        relays = newRelays
-        notifyDataSetChanged()
     }
 }
