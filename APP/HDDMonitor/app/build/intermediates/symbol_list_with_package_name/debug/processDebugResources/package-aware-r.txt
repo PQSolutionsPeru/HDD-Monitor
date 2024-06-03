@@ -3098,6 +3098,7 @@ drawable ic_close_red
 drawable ic_close_red_bk
 drawable ic_create_alert
 drawable ic_create_user
+drawable ic_home
 drawable ic_keyboard_black_24dp
 drawable ic_launcher_background
 drawable ic_launcher_foreground
@@ -3540,6 +3541,7 @@ id multiply
 id nav_controller_view_tag
 id nav_create_alert
 id nav_create_user
+id nav_home
 id nav_manage_users
 id nav_schedule_event
 id navigation_bar_item_active_indicator_view
@@ -3727,6 +3729,7 @@ id textinput_suffix_text
 id time
 id title
 id titleDividerNoCustom
+id titleTextView
 id title_template
 id toggle
 id top

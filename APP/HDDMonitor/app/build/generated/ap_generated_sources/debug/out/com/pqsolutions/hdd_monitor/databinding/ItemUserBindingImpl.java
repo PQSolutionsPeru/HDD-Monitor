@@ -17,7 +17,7 @@ public class ItemUserBindingImpl extends ItemUserBinding  {
     }
     // views
     @NonNull
-    private final androidx.constraintlayout.widget.ConstraintLayout mboundView0;
+    private final androidx.cardview.widget.CardView mboundView0;
     // variables
     // values
     // listeners
@@ -33,7 +33,7 @@ public class ItemUserBindingImpl extends ItemUserBinding  {
             , (android.widget.TextView) bindings[1]
             );
         this.emailTextView.setTag(null);
-        this.mboundView0 = (androidx.constraintlayout.widget.ConstraintLayout) bindings[0];
+        this.mboundView0 = (androidx.cardview.widget.CardView) bindings[0];
         this.mboundView0.setTag(null);
         this.roleTextView.setTag(null);
         this.usernameTextView.setTag(null);

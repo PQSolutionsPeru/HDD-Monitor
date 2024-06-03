@@ -30,37 +30,40 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            app:layout_constraintTop_toBottomOf="@id/reportTitle"
+            android:minHeight="48dp"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
+            app:layout_constraintTop_toBottomOf="@id/reportTitle" />
 
         <EditText
             android:id="@+id/editText_start_date"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@android:color/darker_gray"
             android:hint="Fecha de inicio"
             android:inputType="date"
+            android:minHeight="48dp"
             android:textColor="@android:color/black"
             android:textColorHint="@color/gray"
-            android:backgroundTint="@android:color/darker_gray"
-            android:layout_marginTop="16dp"
-            app:layout_constraintTop_toBottomOf="@id/spinner_report_type"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
+            app:layout_constraintTop_toBottomOf="@id/spinner_report_type" />
 
         <EditText
             android:id="@+id/editText_end_date"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="@android:color/darker_gray"
             android:hint="Fecha de fin"
             android:inputType="date"
+            android:minHeight="48dp"
             android:textColor="@android:color/black"
             android:textColorHint="@color/gray"
-            android:backgroundTint="@android:color/darker_gray"
-            android:layout_marginTop="8dp"
-            app:layout_constraintTop_toBottomOf="@id/editText_start_date"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
+            app:layout_constraintTop_toBottomOf="@id/editText_start_date" />
 
         <Button
             android:id="@+id/button_generate_report"

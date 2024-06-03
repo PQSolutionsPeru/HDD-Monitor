@@ -32,6 +32,10 @@ class EventSchedulerActivity : AppCompatActivity() {
 
         binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
             when (item.itemId) {
+                R.id.nav_home -> {
+                    startActivity(Intent(this, AdminMainActivity::class.java))
+                    true
+                }
                 R.id.nav_create_user -> {
                     startActivity(Intent(this, AddEditUserActivity::class.java))
                     true
@@ -41,7 +45,7 @@ class EventSchedulerActivity : AppCompatActivity() {
                     true
                 }
                 R.id.nav_schedule_event -> {
-                    // Already on this screen, do nothing
+                    startActivity(Intent(this, EventSchedulerActivity::class.java))
                     true
                 }
                 R.id.nav_manage_users -> {

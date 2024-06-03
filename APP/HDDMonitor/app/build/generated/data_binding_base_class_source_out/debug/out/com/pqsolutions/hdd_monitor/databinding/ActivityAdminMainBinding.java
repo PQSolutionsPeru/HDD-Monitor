@@ -4,6 +4,7 @@ package com.pqsolutions.hdd_monitor.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.databinding.DataBindingUtil;
@@ -19,12 +20,17 @@ public abstract class ActivityAdminMainBinding extends ViewDataBinding {
   public final BottomNavigationView bottomNavigation;
 
   @NonNull
+  public final TextView titleTextView;
+
+  @NonNull
   public final RecyclerView usersRecyclerView;
 
   protected ActivityAdminMainBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      BottomNavigationView bottomNavigation, RecyclerView usersRecyclerView) {
+      BottomNavigationView bottomNavigation, TextView titleTextView,
+      RecyclerView usersRecyclerView) {
     super(_bindingComponent, _root, _localFieldCount);
     this.bottomNavigation = bottomNavigation;
+    this.titleTextView = titleTextView;
     this.usersRecyclerView = usersRecyclerView;
   }
 

@@ -24,6 +24,10 @@
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-mdpi/ic_launcher_foreground.webp"
     },
     {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_home.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_home.xml"
+    },
+    {
         "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-mdpi_ic_launcher_round.webp.flat",
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-mdpi/ic_launcher_round.webp"
     },

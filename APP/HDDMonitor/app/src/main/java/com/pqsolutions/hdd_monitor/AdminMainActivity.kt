@@ -18,9 +18,14 @@ class AdminMainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         firestore = FirebaseFirestore.getInstance()
-        userAdapter = UserAdapter(emptyList()) {
+        userAdapter = UserAdapter(emptyList()) { user ->
             // Handle user item click for editing or deleting
+            val intent = Intent(this, AddEditUserActivity::class.java).apply {
+                putExtra("USER_ID", user.ID)
+            }
+            startActivity(intent)
         }
+
         binding.usersRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@AdminMainActivity)
             adapter = userAdapter
@@ -28,6 +33,10 @@ class AdminMainActivity : AppCompatActivity() {
 
         binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
             when (item.itemId) {
+                R.id.nav_home -> {
+                    startActivity(Intent(this, AdminMainActivity::class.java))
+                    true
+                }
                 R.id.nav_create_user -> {
                     startActivity(Intent(this, AddEditUserActivity::class.java))
                     true

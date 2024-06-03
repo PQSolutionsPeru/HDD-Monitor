@@ -23,6 +23,7 @@ drawable ic_close_red
 drawable ic_close_red_bk
 drawable ic_create_alert
 drawable ic_create_user
+drawable ic_home
 drawable ic_launcher_background
 drawable ic_launcher_foreground
 drawable ic_manage_users
@@ -59,6 +60,7 @@ id eventType
 id loginButton
 id nav_create_alert
 id nav_create_user
+id nav_home
 id nav_manage_users
 id nav_schedule_event
 id panelIcon
@@ -83,6 +85,7 @@ id schedulerTitle
 id spinner_report_type
 id statusTextView
 id title
+id titleTextView
 id topBar
 id userRecyclerView
 id usernameEditText

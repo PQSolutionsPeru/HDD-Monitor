@@ -34,6 +34,10 @@ class UserManagementActivity : AppCompatActivity() {
 
         binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
             when (item.itemId) {
+                R.id.nav_home -> {
+                    startActivity(Intent(this, AdminMainActivity::class.java))
+                    true
+                }
                 R.id.nav_create_user -> {
                     startActivity(Intent(this, AddEditUserActivity::class.java))
                     true
@@ -47,7 +51,7 @@ class UserManagementActivity : AppCompatActivity() {
                     true
                 }
                 R.id.nav_manage_users -> {
-                    // Already on this screen, do nothing
+                    startActivity(Intent(this, UserManagementActivity::class.java))
                     true
                 }
                 else -> false
