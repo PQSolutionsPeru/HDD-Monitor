@@ -17,6 +17,7 @@ import com.pqsolutions.hdd_monitor.databinding.ActivityReportBindingImpl;
 import com.pqsolutions.hdd_monitor.databinding.ActivityUserManagementBindingImpl;
 import com.pqsolutions.hdd_monitor.databinding.ItemAlertBindingImpl;
 import com.pqsolutions.hdd_monitor.databinding.ItemEventBindingImpl;
+import com.pqsolutions.hdd_monitor.databinding.ItemPanelBindingImpl;
 import com.pqsolutions.hdd_monitor.databinding.ItemRelayBindingImpl;
 import com.pqsolutions.hdd_monitor.databinding.ItemUserBindingImpl;
 import java.lang.IllegalArgumentException;
@@ -52,11 +53,13 @@ public class DataBinderMapperImpl extends DataBinderMapper {
 
   private static final int LAYOUT_ITEMEVENT = 11;
 
-  private static final int LAYOUT_ITEMRELAY = 12;
+  private static final int LAYOUT_ITEMPANEL = 12;
 
-  private static final int LAYOUT_ITEMUSER = 13;
+  private static final int LAYOUT_ITEMRELAY = 13;
 
-  private static final SparseIntArray INTERNAL_LAYOUT_ID_LOOKUP = new SparseIntArray(13);
+  private static final int LAYOUT_ITEMUSER = 14;
+
+  private static final SparseIntArray INTERNAL_LAYOUT_ID_LOOKUP = new SparseIntArray(14);
 
   static {
     INTERNAL_LAYOUT_ID_LOOKUP.put(com.pqsolutions.hdd_monitor.R.layout.activity_add_edit_alert, LAYOUT_ACTIVITYADDEDITALERT);
@@ -70,6 +73,7 @@ public class DataBinderMapperImpl extends DataBinderMapper {
     INTERNAL_LAYOUT_ID_LOOKUP.put(com.pqsolutions.hdd_monitor.R.layout.activity_user_management, LAYOUT_ACTIVITYUSERMANAGEMENT);
     INTERNAL_LAYOUT_ID_LOOKUP.put(com.pqsolutions.hdd_monitor.R.layout.item_alert, LAYOUT_ITEMALERT);
     INTERNAL_LAYOUT_ID_LOOKUP.put(com.pqsolutions.hdd_monitor.R.layout.item_event, LAYOUT_ITEMEVENT);
+    INTERNAL_LAYOUT_ID_LOOKUP.put(com.pqsolutions.hdd_monitor.R.layout.item_panel, LAYOUT_ITEMPANEL);
     INTERNAL_LAYOUT_ID_LOOKUP.put(com.pqsolutions.hdd_monitor.R.layout.item_relay, LAYOUT_ITEMRELAY);
     INTERNAL_LAYOUT_ID_LOOKUP.put(com.pqsolutions.hdd_monitor.R.layout.item_user, LAYOUT_ITEMUSER);
   }
@@ -149,6 +153,12 @@ public class DataBinderMapperImpl extends DataBinderMapper {
           }
           throw new IllegalArgumentException("The tag for item_event is invalid. Received: " + tag);
         }
+        case  LAYOUT_ITEMPANEL: {
+          if ("layout/item_panel_0".equals(tag)) {
+            return new ItemPanelBindingImpl(component, view);
+          }
+          throw new IllegalArgumentException("The tag for item_panel is invalid. Received: " + tag);
+        }
         case  LAYOUT_ITEMRELAY: {
           if ("layout/item_relay_0".equals(tag)) {
             return new ItemRelayBindingImpl(component, view);
@@ -218,7 +228,7 @@ public class DataBinderMapperImpl extends DataBinderMapper {
   }
 
   private static class InnerLayoutIdLookup {
-    static final HashMap<String, Integer> sKeys = new HashMap<String, Integer>(13);
+    static final HashMap<String, Integer> sKeys = new HashMap<String, Integer>(14);
 
     static {
       sKeys.put("layout/activity_add_edit_alert_0", com.pqsolutions.hdd_monitor.R.layout.activity_add_edit_alert);
@@ -232,6 +242,7 @@ public class DataBinderMapperImpl extends DataBinderMapper {
       sKeys.put("layout/activity_user_management_0", com.pqsolutions.hdd_monitor.R.layout.activity_user_management);
       sKeys.put("layout/item_alert_0", com.pqsolutions.hdd_monitor.R.layout.item_alert);
       sKeys.put("layout/item_event_0", com.pqsolutions.hdd_monitor.R.layout.item_event);
+      sKeys.put("layout/item_panel_0", com.pqsolutions.hdd_monitor.R.layout.item_panel);
       sKeys.put("layout/item_relay_0", com.pqsolutions.hdd_monitor.R.layout.item_relay);
       sKeys.put("layout/item_user_0", com.pqsolutions.hdd_monitor.R.layout.item_user);
     }

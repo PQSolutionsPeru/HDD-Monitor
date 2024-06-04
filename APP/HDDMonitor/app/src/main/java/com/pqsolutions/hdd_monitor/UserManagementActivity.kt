@@ -2,7 +2,6 @@ package com.pqsolutions.hdd_monitor
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.firebase.firestore.FirebaseFirestore
@@ -36,10 +35,6 @@ class UserManagementActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.nav_home -> {
                     startActivity(Intent(this, AdminMainActivity::class.java))
-                    true
-                }
-                R.id.nav_create_user -> {
-                    startActivity(Intent(this, AddEditUserActivity::class.java))
                     true
                 }
                 R.id.nav_create_alert -> {

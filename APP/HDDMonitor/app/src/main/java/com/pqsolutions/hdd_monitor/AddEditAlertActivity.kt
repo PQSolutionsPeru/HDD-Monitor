@@ -35,10 +35,6 @@ class AddEditAlertActivity : AppCompatActivity() {
                     startActivity(Intent(this, AdminMainActivity::class.java))
                     true
                 }
-                R.id.nav_create_user -> {
-                    startActivity(Intent(this, AddEditUserActivity::class.java))
-                    true
-                }
                 R.id.nav_create_alert -> {
                     startActivity(Intent(this, AddEditAlertActivity::class.java))
                     true

@@ -10,7 +10,7 @@ import com.pqsolutions.hdd_monitor.databinding.ActivityAdminMainBinding
 class AdminMainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityAdminMainBinding
     private lateinit var firestore: FirebaseFirestore
-    private lateinit var userAdapter: UserAdapter
+    private lateinit var panelAdapter: PanelAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -18,29 +18,15 @@ class AdminMainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         firestore = FirebaseFirestore.getInstance()
-        userAdapter = UserAdapter(emptyList()) { user ->
-            // Handle user item click for editing or deleting
-            val intent = Intent(this, AddEditUserActivity::class.java).apply {
-                putExtra("USER_ID", user.ID)
-            }
-            startActivity(intent)
-        }
-
-        binding.usersRecyclerView.apply {
+        panelAdapter = PanelAdapter(emptyList())
+        binding.panelsRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@AdminMainActivity)
-            adapter = userAdapter
+            adapter = panelAdapter
         }
 
         binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
             when (item.itemId) {
-                R.id.nav_home -> {
-                    startActivity(Intent(this, AdminMainActivity::class.java))
-                    true
-                }
-                R.id.nav_create_user -> {
-                    startActivity(Intent(this, AddEditUserActivity::class.java))
-                    true
-                }
+                R.id.nav_home -> true
                 R.id.nav_create_alert -> {
                     startActivity(Intent(this, AddEditAlertActivity::class.java))
                     true
@@ -57,19 +43,35 @@ class AdminMainActivity : AppCompatActivity() {
             }
         }
 
-        loadUsers()
+        loadClientData()
     }
 
-    private fun loadUsers() {
-        val usersCollectionRef = firestore.collection("hdd-monitor")
+    private fun loadClientData() {
+        val clientDocRef = firestore.collection("hdd-monitor")
             .document("accounts")
             .collection("clients")
             .document("client_1")
-            .collection("users")
 
-        usersCollectionRef.get().addOnSuccessListener { snapshots ->
-            val users = snapshots.documents.mapNotNull { it.toObject(User::class.java) }
-            userAdapter.updateUsers(users)
+        clientDocRef.collection("users").document("user_1").get().addOnSuccessListener { userSnapshot ->
+            val clientName = userSnapshot.getString("name") ?: "Cliente Desconocido"
+            binding.clientNameTextView.text = "Cliente: $clientName"
+        }
+
+        clientDocRef.collection("panels").get().addOnSuccessListener { panelSnapshots ->
+            val panels = mutableListOf<Panel>()
+            for (documentSnapshot in panelSnapshots.documents) {
+                val panel = documentSnapshot.toObject(Panel::class.java)
+                if (panel != null) {
+                    documentSnapshot.reference.collection("relays").get().addOnSuccessListener { relaySnapshots ->
+                        val relays = relaySnapshots.documents.mapNotNull { relaySnapshot ->
+                            relaySnapshot.toObject(Relay::class.java)?.copy(name = relaySnapshot.id)
+                        }
+                        panel.relays = relays.associateBy { it.name }
+                        panels.add(panel)
+                        panelAdapter.updatePanels(panels)
+                    }
+                }
+            }
         }
     }
 }

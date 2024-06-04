@@ -5,13 +5,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.pqsolutions.hdd_monitor.databinding.ItemRelayBinding
 
-data class Relay(
-    val name: String = "",
-    val status: String = "",
-    val dateTime: String = ""
-)
-
-class RelayAdapter(private val relays: List<Relay>) : RecyclerView.Adapter<RelayAdapter.RelayViewHolder>() {
+class RelayAdapter(private var relays: List<Relay>) : RecyclerView.Adapter<RelayAdapter.RelayViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RelayViewHolder {
         val binding = ItemRelayBinding.inflate(LayoutInflater.from(parent.context), parent, false)

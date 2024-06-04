@@ -20,18 +20,22 @@ public abstract class ActivityAdminMainBinding extends ViewDataBinding {
   public final BottomNavigationView bottomNavigation;
 
   @NonNull
-  public final TextView titleTextView;
+  public final TextView clientNameTextView;
 
   @NonNull
-  public final RecyclerView usersRecyclerView;
+  public final RecyclerView panelsRecyclerView;
+
+  @NonNull
+  public final TextView titleTextView;
 
   protected ActivityAdminMainBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      BottomNavigationView bottomNavigation, TextView titleTextView,
-      RecyclerView usersRecyclerView) {
+      BottomNavigationView bottomNavigation, TextView clientNameTextView,
+      RecyclerView panelsRecyclerView, TextView titleTextView) {
     super(_bindingComponent, _root, _localFieldCount);
     this.bottomNavigation = bottomNavigation;
+    this.clientNameTextView = clientNameTextView;
+    this.panelsRecyclerView = panelsRecyclerView;
     this.titleTextView = titleTextView;
-    this.usersRecyclerView = usersRecyclerView;
   }
 
   @NonNull

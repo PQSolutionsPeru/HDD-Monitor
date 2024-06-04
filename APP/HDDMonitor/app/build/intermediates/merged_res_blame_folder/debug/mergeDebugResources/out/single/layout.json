@@ -32,6 +32,10 @@
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_admin_main.xml"
     },
     {
+        "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/item_panel.xml",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_panel.xml"
+    },
+    {
         "merged": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-77:/layout/activity_add_edit_user.xml",
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_add_edit_user.xml"
     },

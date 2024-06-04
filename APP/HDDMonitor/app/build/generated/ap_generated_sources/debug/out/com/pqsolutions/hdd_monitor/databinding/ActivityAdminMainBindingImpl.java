@@ -15,8 +15,9 @@ public class ActivityAdminMainBindingImpl extends ActivityAdminMainBinding  {
         sIncludes = null;
         sViewsWithIds = new android.util.SparseIntArray();
         sViewsWithIds.put(R.id.titleTextView, 1);
-        sViewsWithIds.put(R.id.usersRecyclerView, 2);
-        sViewsWithIds.put(R.id.bottom_navigation, 3);
+        sViewsWithIds.put(R.id.clientNameTextView, 2);
+        sViewsWithIds.put(R.id.panelsRecyclerView, 3);
+        sViewsWithIds.put(R.id.bottom_navigation, 4);
     }
     // views
     @NonNull
@@ -27,13 +28,14 @@ public class ActivityAdminMainBindingImpl extends ActivityAdminMainBinding  {
     // Inverse Binding Event Handlers
 
     public ActivityAdminMainBindingImpl(@Nullable androidx.databinding.DataBindingComponent bindingComponent, @NonNull View root) {
-        this(bindingComponent, root, mapBindings(bindingComponent, root, 4, sIncludes, sViewsWithIds));
+        this(bindingComponent, root, mapBindings(bindingComponent, root, 5, sIncludes, sViewsWithIds));
     }
     private ActivityAdminMainBindingImpl(androidx.databinding.DataBindingComponent bindingComponent, View root, Object[] bindings) {
         super(bindingComponent, root, 0
-            , (com.google.android.material.bottomnavigation.BottomNavigationView) bindings[3]
+            , (com.google.android.material.bottomnavigation.BottomNavigationView) bindings[4]
+            , (android.widget.TextView) bindings[2]
+            , (androidx.recyclerview.widget.RecyclerView) bindings[3]
             , (android.widget.TextView) bindings[1]
-            , (androidx.recyclerview.widget.RecyclerView) bindings[2]
             );
         this.mboundView0 = (androidx.constraintlayout.widget.ConstraintLayout) bindings[0];
         this.mboundView0.setTag(null);
