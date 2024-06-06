@@ -1,0 +1,59 @@
+BUSCAR WIFI
+Inicialización: El ESP32 intenta conectarse a la red Wi-Fi utilizando la configuración almacenada en NVS.
+Modo AP y Configuración:
+    Si no hay configuración de Wi-Fi en NVS, el ESP32 se inicializa en modo AP y se inicia el servidor web.
+    Los usuarios se conectan al AP y acceden al servidor web para ingresar las credenciales de Wi-Fi.
+Guardar y Conectar:
+    El ESP32 guarda las credenciales de Wi-Fi en NVS y se reinicia.
+    En el reinicio, el ESP32 lee las credenciales de NVS y se conecta a la red especificada.
+
+Reiniciar el ESP32: Proporcionar una ruta para reiniciar el dispositivo.
+Gestionar Archivos: Subir, descargar y eliminar archivos en el sistema de archivos del ESP32 (SPIFFS, LittleFS).
+Controlar el Programa Principal: Iniciar y detener el archivo main.py u otros scripts.
+Monitorear Estado: Ver el estado actual de diversos sensores y variables.
+Configurar Parámetros: Cambiar configuraciones del programa en tiempo real.
+Registro y Diagnóstico: Ver registros de eventos y diagnósticos.
+Control de GPIO: Encender y apagar pines GPIO.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ok pero el webserver debe estar fuera del main, quiero que sea un proceso separado que permita:
+- Inicialización: El ESP32 intenta conectarse a la red Wi-Fi utilizando la configuración almacenada en NVS.
+Modo AP y Configuración:
+    Si no hay configuración de Wi-Fi en NVS, el ESP32 se inicializa en modo AP y se inicia el servidor web.
+    Los usuarios se conectan al AP y acceden al servidor web para ingresar las credenciales de Wi-Fi.
+Guardar y Conectar:
+    El ESP32 guarda las credenciales de Wi-Fi en NVS y se reinicia.
+    En el reinicio, el ESP32 lee las credenciales de NVS y se conecta a la red especificada.
+- Reiniciar el ESP32: Proporcionar una ruta para reiniciar el dispositivo.
+- Gestionar Archivos: Subir, descargar y eliminar archivos en el sistema de archivos del ESP32 (SPIFFS, LittleFS).
+- Controlar el Programa Principal: Iniciar y detener el archivo main.py u otros scripts.
+- Monitorear Estado: Ver el estado actual de diversos sensores y variables.
+- Configurar Parámetros: Cambiar configuraciones del programa en tiempo real.
+- Registro y Diagnóstico: Ver registros de eventos y diagnósticos.
+- Control de GPIO: Encender y apagar pines GPIO.
+
+porque tendré otro programa corriendo 24/7 en el ESP32 basado en micropython
