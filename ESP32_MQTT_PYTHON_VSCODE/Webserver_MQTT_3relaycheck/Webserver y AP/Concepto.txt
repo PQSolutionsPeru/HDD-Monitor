@@ -20,10 +20,29 @@ Control de GPIO: Encender y apagar pines GPIO.
 
 
 
+def iniciar_ap(self):
+        self.ap_if.active(True)
+        # Configurar IP estática
+        ip = '192.168.168.192'
+        netmask = '255.255.255.0'
+        gateway = '192.168.168.192'
+        self.ap_if.ifconfig((ip, netmask, gateway, gateway))
+        self.ap_if.config(essid='admin', password='1234556')
+        print('Configuración del Access Point:', self.ap_if.ifconfig())
+        return self.ap_if
 
 
 
 
+Resumen de Configuración en Google Cloud Console
+Nombre del Proveedor: HDD Monitor OIDC Provider
+ID del Proveedor: hdd-monitor-oidc-provider
+Emisor (URL): https://accounts.google.com
+Archivo JWK (JSON): Sube el archivo google_jwk.json que descargaste.
+Atributos del Proveedor:
+Google 1: google.subject
+OIDC 1: assertion.sub
+Condiciones de Atributos: Opcional, agrega condiciones si deseas restringir la autenticación a un subconjunto de identidades.
 
 
 

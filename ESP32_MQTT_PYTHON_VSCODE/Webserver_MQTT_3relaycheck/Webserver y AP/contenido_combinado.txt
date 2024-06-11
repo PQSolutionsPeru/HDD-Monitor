@@ -1,0 +1,948 @@
+--- Contenido de boot.py ---
+
+import webserver
+import machine
+
+# Iniciar el servidor web al inicio
+webserver.iniciar()
+
+
+
+--- Contenido de generate_cert_pip_cryptography.py ---
+
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+from datetime import datetime, timedelta
+
+# Generar la clave privada
+private_key = rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=2048,
+)
+
+# Guardar la clave privada en un archivo
+with open("key.pem", "wb") as f:
+    f.write(private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    ))
+
+# Generar un certificado autofirmado
+subject = issuer = x509.Name([
+    x509.NameAttribute(NameOID.COUNTRY_NAME, u"PE"),
+    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"Lima"),
+    x509.NameAttribute(NameOID.LOCALITY_NAME, u"Lima"),
+    x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"HDD Fire and Technology"),
+    x509.NameAttribute(NameOID.COMMON_NAME, u"localhost"),
+])
+cert = x509.CertificateBuilder().subject_name(
+    subject
+).issuer_name(
+    issuer
+).public_key(
+    private_key.public_key()
+).serial_number(
+    x509.random_serial_number()
+).not_valid_before(
+    datetime.utcnow()
+).not_valid_after(
+    # Certificado válido por 365 días
+    datetime.utcnow() + timedelta(days=365)
+).add_extension(
+    x509.SubjectAlternativeName([x509.DNSName(u"localhost")]),
+    critical=False,
+).sign(private_key, hashes.SHA256())
+
+# Guardar el certificado en un archivo
+with open("cert.pem", "wb") as f:
+    f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+
+
+--- Contenido de log_manager.py ---
+
+import os
+import utime
+
+LOG_DIR = '/logs'
+LOG_FILE = LOG_DIR + '/log.txt'
+LOG_MAX_SIZE = 256 * 1024  # 256 KB
+LOG_MAX_FILES = 4
+
+class LogManager:
+    def __init__(self):
+        self.ensure_log_dir()
+
+    def ensure_log_dir(self):
+        try:
+            os.mkdir(LOG_DIR)
+        except OSError as e:
+            if e.args[0] != 17:  # 17 significa que el directorio ya existe
+                raise
+
+    def log(self, message):
+        timestamp = utime.strftime('%Y-%m-%d %H:%M:%S', utime.localtime())
+        log_message = f"{timestamp} - {message}\n"
+        with open(LOG_FILE, 'a') as f:
+            f.write(log_message)
+        self.check_log_size()
+
+    def check_log_size(self):
+        if os.stat(LOG_FILE)[6] > LOG_MAX_SIZE:
+            self.rotate_logs()
+
+    def rotate_logs(self):
+        for i in range(LOG_MAX_FILES - 1, 0, -1):
+            old_file = f"{LOG_FILE}.{i}"
+            new_file = f"{LOG_FILE}.{i + 1}"
+            if os.path.exists(old_file):
+                os.rename(old_file, new_file)
+        os.rename(LOG_FILE, f"{LOG_FILE}.1")
+
+    def delete_old_logs(self):
+        for i in range(LOG_MAX_FILES + 1, 100):
+            old_file = f"{LOG_FILE}.{i}"
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass
+
+log_manager = LogManager()
+
+def log_message(message):
+    log_manager.log(message)
+
+def delete_old_logs():
+    log_manager.delete_old_logs()
+
+
+
+--- Contenido de main.py ---
+
+import urequests
+import utime
+import json
+from wifi_manager import WiFiManager
+from mqtt_manager import MQTTManager
+from relay_manager import RelayManager
+from watchdog_manager import WatchdogManager
+import gc
+import log_manager
+import webserver
+
+# Configuración
+RELAY_PINS = [32, 33, 25]
+RELAY_NAMES = {32: "Alarma", 33: "Problema", 25: "Supervision"}
+
+# Managers
+wifi_manager = WiFiManager()
+mqtt_manager = MQTTManager(wifi_manager)
+relay_manager = RelayManager()
+watchdog_manager = WatchdogManager()
+
+cached_datetime = None
+last_datetime_update = utime.ticks_ms()
+memory_report_enabled = True  # Cambiar a False para desactivar los informes de memoria
+
+# Redirigir print a consola WebSocket y log
+def print_console(*args, **kwargs):
+    message = ' '.join(map(str, args))
+    webserver.send_console_output(message)
+    log_manager.log_message(message)
+
+# Usar la función personalizada en lugar de print
+print = print_console
+
+def obtener_fecha_hora_actual():
+    global cached_datetime, last_datetime_update
+    current_ticks = utime.ticks_ms()
+    if utime.ticks_diff(current_ticks, last_datetime_update) > 600000 or cached_datetime is None:  # 10 minutos
+        actualizar_fecha_hora()
+    return cached_datetime
+
+def actualizar_fecha_hora():
+    global cached_datetime, last_datetime_update
+    try:
+        cached_datetime = wifi_manager.obtener_hora_actual()
+        print(f"Fecha y hora actuales actualizadas a: {cached_datetime}")
+    except Exception as e:
+        print(f"Error al obtener fecha y hora, usando última conocida o 'unknown': {e}")
+        cached_datetime = cached_datetime if cached_datetime else "unknown"
+    last_datetime_update = utime.ticks_ms()
+
+def relay_callback(pin, pin_num):
+    gc.collect()  # Recolectar basura antes de procesar
+    print(f"Callback de relay activado para el pin {pin_num}.")
+    wifi_manager.asegurar_conexion_wifi()  # Verificar conexión WiFi antes de proceder
+    current_datetime = obtener_fecha_hora_actual()  # Asegurarse de usar la fecha y hora formateada
+    status = "DISC" if pin.value() else "OK"
+    message = {
+        "date_time": current_datetime,  # Usar la fecha y hora formateada
+        "name": RELAY_NAMES.get(pin_num, "Relay Desconocido"),
+        "status": status
+    }
+    print(f"Enviando mensaje MQTT: {message}")
+    mqtt_manager.publicar_evento(f"EMPRESA_TEST/{mqtt_manager.MQTT_CLIENT_ID}/eventos", json.dumps(message))
+
+def main():
+    last_memory_report_time = utime.ticks_ms()
+    while not wifi_manager.sta_if.isconnected():
+        wifi_manager.conectar_wifi()
+    mqtt_manager.asegurar_cliente()
+    for relay_pin in RELAY_PINS:
+        pin = relay_manager.configurar_relay(relay_pin, relay_callback)
+    while True:
+        utime.sleep(1)
+        watchdog_manager.alimentar()
+        current_time = utime.ticks_ms()
+        if memory_report_enabled and utime.ticks_diff(current_time, last_memory_report_time) > 60000:  # 1 minuto
+            free_memory = gc.mem_free()
+            print(f"Reporte de memoria libre: {free_memory} bytes")
+            last_memory_report_time = current_time
+            gc.collect()  # Recolección de basura para mantener la memoria limpia
+        delete_old_logs()
+
+if __name__ == "__main__":
+    main()
+
+
+
+--- Contenido de mqtt_manager.py ---
+
+from umqtt.robust import MQTTClient
+import time
+
+class MQTTManager:
+    def __init__(self, wifi_manager):
+        self.wifi_manager = wifi_manager  # Guardar referencia al WiFiManager
+        self.client = None
+        self.message_queue = []  # Cola para mensajes pendientes
+        self.MQTT_BROKER = "node02.myqtthub.com"
+        self.MQTT_PORT = 8883
+        self.MQTT_CLIENT_ID = "ESP32-PQ1"
+        self.MQTT_USER = "ESP32-1"
+        self.MQTT_PASSWORD = "esp32"
+
+    def asegurar_cliente(self):
+        self.wifi_manager.asegurar_conexion_wifi()  # Asegurar conexión WiFi
+        try:
+            if self.client is None or not self.client.isconnected():
+                print("Reinicializando cliente MQTT...")
+                self.reinicializar_cliente()
+        except AttributeError:  # Por si 'isconnected' no está disponible
+            self.reinicializar_cliente()
+
+    def reinicializar_cliente(self):
+        try:
+            self.client = MQTTClient(self.MQTT_CLIENT_ID.encode('utf-8'), self.MQTT_BROKER, self.MQTT_PORT,
+                                     user=self.MQTT_USER.encode('utf-8'), password=self.MQTT_PASSWORD.encode('utf-8'), ssl=True)
+            self.client.connect()
+            print("Conectado al broker MQTT después de la reconexión.")
+        except Exception as e:
+            print(f"No se pudo conectar al broker MQTT: {e}")
+            self.client = None
+
+    def publicar_evento(self, topic, message):
+        self.asegurar_cliente()  # Asegurarse de que el cliente MQTT está conectado
+        try:
+            if self.client:
+                print("Enviando mensaje...")
+                self.client.publish(topic, message, qos=1)
+                print(f"Evento enviado al broker MQTT: {message}")
+        except Exception as e:
+            print(f"Fallo al publicar debido a: {e}")
+            self.message_queue.append({'topic': topic, 'message': message})  # Encolar mensaje si la publicación falla
+            self.client = None
+
+
+
+--- Contenido de performance_monitor.py ---
+
+import gc
+import utime
+
+def chequear_rendimiento(func, *args, **kwargs):
+    gc.collect()  # Recolectar basura y medir memoria libre antes de la ejecución
+    memoria_libre_antes = gc.mem_free()
+    print("Memoria libre antes de la ejecución:", memoria_libre_antes)
+
+    tiempo_inicio = utime.ticks_ms()  # Tiempo de inicio en milisegundos
+    func(*args, **kwargs)  # Ejecutar la función con los argumentos proporcionados
+    tiempo_fin = utime.ticks_ms()  # Tiempo de finalización en milisegundos
+    tiempo_ejecucion = utime.ticks_diff(tiempo_fin, tiempo_inicio)  # Calcular la diferencia de tiempo
+
+    gc.collect()  # Recolectar basura y medir memoria libre después de la ejecución
+    memoria_libre_despues = gc.mem_free()
+    print(f"Tiempo de ejecución de {func.__name__}: {tiempo_ejecucion} ms")
+    print("Memoria libre después de la ejecución:", memoria_libre_despues)
+
+    cambio_memoria = memoria_libre_antes - memoria_libre_despues
+    print(f"Cambio en la memoria usada: {cambio_memoria} bytes")
+
+
+
+--- Contenido de relay_manager.py ---
+
+from machine import Pin
+import time
+
+class RelayManager:
+    def __init__(self):
+        self.relays = {}
+        self.relay_states = {}
+        self.last_trigger_time = {}
+
+    def configurar_relay(self, pin_num, callback):
+        pin = Pin(pin_num, Pin.IN, Pin.PULL_UP)
+        self.relays[pin_num] = pin
+        self.relay_states[pin_num] = pin.value()
+        pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=lambda p: self.debounce(pin_num, p, callback))
+        return pin
+
+    def debounce(self, pin_num, pin, callback):
+        current_time = time.ticks_ms()
+        if current_time - self.last_trigger_time.get(pin_num, 0) > 300 and self.relay_states[pin_num] != pin.value():  # 300 ms de debounce
+            self.relay_states[pin_num] = pin.value()  # Actualizar el estado del relay
+            callback(pin, pin_num)
+            self.last_trigger_time[pin_num] = current_time
+
+
+
+--- Contenido de watchdog_manager.py ---
+
+from machine import WDT
+
+class WatchdogManager:
+    def __init__(self, timeout=120000):
+        # Configura el watchdog con un timeout de 120 segundos por defecto
+        self.watchdog = WDT(timeout=timeout)
+    
+    def alimentar(self):
+        # Alimenta al watchdog para resetear el timer y evitar un reset del sistema
+        self.watchdog.feed()
+
+
+
+--- Contenido de webserver.py ---
+
+import usocket as socket
+import machine
+import ubinascii
+import os
+import esp32
+import json
+from wifi_manager import WiFiManager
+import _thread
+import uasyncio as asyncio
+import log_manager
+from websocket_helper import websocket_handler
+from watchdog_manager import WatchdogManager
+from urllib.parse import unquote_plus
+
+wifi_manager = WiFiManager()
+watchdog_manager = WatchdogManager()
+
+# HTML para las diferentes secciones del servidor web
+html_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+        }}
+        .sidenav {{
+            height: 100%;
+            width: 200px;
+            position: fixed;
+            z-index: 1;
+            top: 0;
+            left: 0;
+            background-color: #111;
+            padding-top: 20px;
+        }}
+        .sidenav a {{
+            padding: 8px 8px 8px 16px;
+            text-decoration: none;
+            font-size: 18px;
+            color: #818181;
+            display: block;
+        }}
+        .sidenav a:hover {{
+            color: #f1f1f1;
+        }}
+        .main {{
+            margin-left: 200px;
+            padding: 0px 10px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="sidenav">
+        <a href="/">Inicio</a>
+        <a href="/config">Configuración Wi-Fi</a>
+        <a href="/reboot">Reiniciar</a>
+        <a href="/start">Iniciar main.py</a>
+        <a href="/stop">Detener main.py</a>
+        <a href="/upload">Subir Archivo</a>
+        <a href="/logs">Logs</a>
+    </div>
+    <div class="main">
+        {content}
+    </div>
+</body>
+</html>
+"""
+
+# Credenciales para autenticación básica
+BASIC_AUTH_CREDENTIALS = "admin:1234556"  # Cambia esto por tus credenciales
+
+# WebSocket clients list
+ws_clients = []
+
+# Servidor HTTP
+def iniciar_servidor():
+    addr = socket.getaddrinfo('0.0.0.0', 8080)[0][-1]
+    s = socket.socket()
+    s.bind(addr)
+    s.listen(5)
+    print('Escuchando en', addr)
+
+    while True:
+        cl, addr = s.accept()
+        print('Cliente conectado desde', addr)
+        try:
+            request = cl.recv(1024).decode()
+            if autenticar(request):
+                if "Upgrade: websocket" in request:
+                    _thread.start_new_thread(manejar_websocket, (cl,))
+                else:
+                    manejar_solicitud(cl, request)
+            else:
+                cl.send('HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="ESP32"\r\n\r\n')
+        except Exception as e:
+            print('Error al manejar la solicitud:', e)
+        finally:
+            cl.close()
+        # Alimentar el watchdog después de cada solicitud
+        watchdog_manager.alimentar()
+
+# Verificar autenticación básica
+def autenticar(request):
+    headers = request.split("\r\n")
+    for header in headers:
+        if header.startswith("Authorization: Basic "):
+            encoded_credentials = header.split(" ")[2]
+            decoded_credentials = ubinascii.a2b_base64(encoded_credentials).decode("utf-8")
+            if decoded_credentials == BASIC_AUTH_CREDENTIALS:
+                return True
+    return False
+
+# Manejar solicitudes HTTP
+def manejar_solicitud(cliente, solicitud):
+    request_line = solicitud.split('\n')[0]
+    method, path, _ = request_line.split()
+    
+    if method == 'GET' and path == '/':
+        response = servir_pagina_principal()
+    elif method == 'GET' and path == '/config':
+        response = servir_pagina_config()
+    elif method == 'POST' and path == '/config':
+        response = manejar_post_config(solicitud)
+    elif method == 'GET' and path == '/reboot':
+        response = servir_pagina_reboot()
+    elif method == 'POST' and path == '/reboot':
+        response = manejar_post_reboot()
+    elif method == 'GET' and path == '/start':
+        response = servir_pagina_start()
+    elif method == 'POST' and path == '/start':
+        response = manejar_post_start()
+    elif method == 'GET' and path == '/stop':
+        response = servir_pagina_stop()
+    elif method == 'POST' and path == '/stop':
+        response = manejar_post_stop()
+    elif method == 'GET' and path == '/upload':
+        response = servir_pagina_upload()
+    elif method == 'POST' and path == '/upload':
+        response = manejar_post_upload(solicitud)
+    elif method == 'GET' and path == '/logs':
+        response = servir_pagina_logs()
+    elif method == 'DELETE' and path.startswith('/file'):
+        response = manejar_delete_file(solicitud, path)
+    else:
+        response = 'HTTP/1.1 404 Not Found\r\n\r\n'
+
+    cliente.send(response)
+
+# Servir página de inicio
+def servir_pagina_principal():
+    content = "<h2>Bienvenido al Monitor de HDD</h2><p>Seleccione una opción del menú.</p>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Servir página de configuración Wi-Fi
+def servir_pagina_config():
+    content = """
+    <h2>Configuración Wi-Fi</h2>
+    <form action="/config" method="post">
+        <label for="ssid">SSID:</label>
+        <input type="text" id="ssid" name="ssid"><br>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password"><br>
+        <input type="submit" value="Submit">
+    </form>
+    """
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar configuración de red Wi-Fi
+def manejar_post_config(solicitud):
+    print(f"Solicitud de configuración recibida: {solicitud}")
+    ssid = parsear_datos_formulario(solicitud, 'ssid')
+    password = parsear_datos_formulario(solicitud, 'password')
+    print(f"SSID obtenido: {ssid}")
+    print(f"Password obtenido: {password}")
+    wifi_manager.guardar_credenciales_wifi(ssid, password)
+    machine.reset()  # Reiniciar el ESP32 para aplicar la nueva configuración
+    return 'HTTP/1.1 200 OK\r\n\r\nConfiguración guardada. Reiniciando...'
+
+# Servir página de reinicio
+def servir_pagina_reboot():
+    content = "<h2>Reiniciar</h2><form action='/reboot' method='post'><input type='submit' value='Reiniciar'></form>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar reinicio del ESP32
+def manejar_post_reboot():
+    machine.reset()
+    return 'HTTP/1.1 200 OK\r\n\r\nReiniciando...'
+
+# Servir página para iniciar main.py
+def servir_pagina_start():
+    content = "<h2>Iniciar main.py</h2><form action='/start' method='post'><input type='submit' value='Iniciar'></form>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar inicio de main.py
+def manejar_post_start():
+    import main
+    _thread.start_new_thread(main.main, ())
+    return 'HTTP/1.1 200 OK\r\n\r\nmain.py iniciado.'
+
+# Servir página para detener main.py
+def servir_pagina_stop():
+    content = "<h2>Detener main.py</h2><form action='/stop' method='post'><input type='submit' value='Detener'></form>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar detención de main.py
+def manejar_post_stop():
+    # No hay un método directo para detener un script en MicroPython
+    # Una opción sería usar un flag compartido o reiniciar el ESP32
+    machine.reset()
+    return 'HTTP/1.1 200 OK\r\n\r\nmain.py detenido.'
+
+# Servir página de subida de archivos
+def servir_pagina_upload():
+    content = """
+    <h2>Subir Archivo</h2>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file"><br>
+        <input type="submit" value="Subir">
+    </form>
+    """
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar subida de archivos
+def manejar_post_upload(solicitud):
+    # Implementar lógica para subir archivos aquí
+    return 'HTTP/1.1 200 OK\r\n\r\nArchivo subido exitosamente.'
+
+# Servir página de logs
+def servir_pagina_logs():
+    try:
+        with open('/logs/log.txt', 'r') as f:
+            logs = f.read()
+    except OSError:
+        logs = 'No se encontraron logs.'
+    content = f"<h2>Logs</h2><pre>{logs}</pre>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Parsear datos del formulario
+def parsear_datos_formulario(solicitud, nombre_campo):
+    try:
+        body = solicitud.split('\r\n\r\n')[1]
+        params = dict(param.split('=') for param in body.split('&'))
+        return unquote_plus(params[nombre_campo])
+    except (IndexError, KeyError):
+        print(f"Error al parsear el campo {nombre_campo}")
+        return ''
+
+# Manejar eliminación de archivos
+def manejar_delete_file(solicitud, path):
+    nombre_archivo = path.split('/file/')[1]
+    try:
+        os.remove(f'/spiffs/{nombre_archivo}')
+        return 'HTTP/1.1 200 OK\r\n\r\nArchivo eliminado exitosamente.'
+    except:
+        return 'HTTP/1.1 500 Internal Server Error\r\n\r\nError al eliminar el archivo.'
+
+# Manejar WebSocket
+def manejar_websocket(cliente):
+    global ws_clients
+    ws_clients.append(cliente)
+    try:
+        while True:
+            msg = cliente.recv(1024)
+            if not msg:
+                break
+            # Procesar mensajes del cliente WebSocket aquí si es necesario
+            send_console_output(msg)
+    finally:
+        ws_clients.remove(cliente)
+
+# Enviar mensaje a todos los clientes WebSocket
+def send_console_output(message):
+    global ws_clients
+    for client in ws_clients:
+        try:
+            client.send(message)
+        except Exception as e:
+            print('Error enviando mensaje a WebSocket:', e)
+
+# Servidor HTTP y WebSocket en el mismo puerto
+def iniciar():
+    wifi_manager.cargar_credenciales_wifi()
+    if wifi_manager.SSID and wifi_manager.PASSWORD:
+        wifi_manager.conectar_wifi()
+    else:
+        wifi_manager.iniciar_ap()
+    
+    iniciar_servidor()
+
+if __name__ == '__main__':
+    iniciar()
+
+
+
+--- Contenido de websocket_helper.py ---
+
+import usocket as socket
+
+def websocket_server(addr, handler):
+    s = socket.socket()
+    s.bind(addr)
+    s.listen(5)
+    while True:
+        cl, addr = s.accept()
+        handler(cl, addr)
+
+def websocket_handler(client, addr):
+    try:
+        while True:
+            msg = client.recv(1024)
+            if not msg:
+                break
+            client.send(msg)  # Echo message back to client (simple handler)
+    except Exception as e:
+        print("WebSocket error:", e)
+    finally:
+        client.close()
+
+
+
+--- Contenido de wifi_manager.py ---
+
+import usocket as socket
+import machine
+import ubinascii
+import os
+import esp32
+import json
+from wifi_manager import WiFiManager
+import _thread
+import uasyncio as asyncio
+import log_manager
+from websocket_helper import websocket_handler
+from watchdog_manager import WatchdogManager
+from urllib.parse import unquote_plus
+
+wifi_manager = WiFiManager()
+watchdog_manager = WatchdogManager()
+
+# HTML para las diferentes secciones del servidor web
+html_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+        }}
+        .sidenav {{
+            height: 100%;
+            width: 200px;
+            position: fixed;
+            z-index: 1;
+            top: 0;
+            left: 0;
+            background-color: #111;
+            padding-top: 20px;
+        }}
+        .sidenav a {{
+            padding: 8px 8px 8px 16px;
+            text-decoration: none;
+            font-size: 18px;
+            color: #818181;
+            display: block;
+        }}
+        .sidenav a:hover {{
+            color: #f1f1f1;
+        }}
+        .main {{
+            margin-left: 200px;
+            padding: 0px 10px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="sidenav">
+        <a href="/">Inicio</a>
+        <a href="/config">Configuración Wi-Fi</a>
+        <a href="/reboot">Reiniciar</a>
+        <a href="/start">Iniciar main.py</a>
+        <a href="/stop">Detener main.py</a>
+        <a href="/upload">Subir Archivo</a>
+        <a href="/logs">Logs</a>
+    </div>
+    <div class="main">
+        {content}
+    </div>
+</body>
+</html>
+"""
+
+# Credenciales para autenticación básica
+BASIC_AUTH_CREDENTIALS = "admin:1234556"  # Cambia esto por tus credenciales
+
+# WebSocket clients list
+ws_clients = []
+
+# Servidor HTTP
+def iniciar_servidor():
+    addr = socket.getaddrinfo('0.0.0.0', 8080)[0][-1]
+    s = socket.socket()
+    s.bind(addr)
+    s.listen(5)
+    print('Escuchando en', addr)
+
+    while True:
+        cl, addr = s.accept()
+        print('Cliente conectado desde', addr)
+        try:
+            request = cl.recv(1024).decode()
+            if autenticar(request):
+                if "Upgrade: websocket" in request:
+                    _thread.start_new_thread(manejar_websocket, (cl,))
+                else:
+                    manejar_solicitud(cl, request)
+            else:
+                cl.send('HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="ESP32"\r\n\r\n')
+        except Exception as e:
+            print('Error al manejar la solicitud:', e)
+        finally:
+            cl.close()
+        # Alimentar el watchdog después de cada solicitud
+        watchdog_manager.alimentar()
+
+# Verificar autenticación básica
+def autenticar(request):
+    headers = request.split("\r\n")
+    for header in headers:
+        if header.startswith("Authorization: Basic "):
+            encoded_credentials = header.split(" ")[2]
+            decoded_credentials = ubinascii.a2b_base64(encoded_credentials).decode("utf-8")
+            if decoded_credentials == BASIC_AUTH_CREDENTIALS:
+                return True
+    return False
+
+# Manejar solicitudes HTTP
+def manejar_solicitud(cliente, solicitud):
+    request_line = solicitud.split('\n')[0]
+    method, path, _ = request_line.split()
+    
+    if method == 'GET' and path == '/':
+        response = servir_pagina_principal()
+    elif method == 'GET' and path == '/config':
+        response = servir_pagina_config()
+    elif method == 'POST' and path == '/config':
+        response = manejar_post_config(solicitud)
+    elif method == 'GET' and path == '/reboot':
+        response = servir_pagina_reboot()
+    elif method == 'POST' and path == '/reboot':
+        response = manejar_post_reboot()
+    elif method == 'GET' and path == '/start':
+        response = servir_pagina_start()
+    elif method == 'POST' and path == '/start':
+        response = manejar_post_start()
+    elif method == 'GET' and path == '/stop':
+        response = servir_pagina_stop()
+    elif method == 'POST' and path == '/stop':
+        response = manejar_post_stop()
+    elif method == 'GET' and path == '/upload':
+        response = servir_pagina_upload()
+    elif method == 'POST' and path == '/upload':
+        response = manejar_post_upload(solicitud)
+    elif method == 'GET' and path == '/logs':
+        response = servir_pagina_logs()
+    elif method == 'DELETE' and path.startswith('/file'):
+        response = manejar_delete_file(solicitud, path)
+    else:
+        response = 'HTTP/1.1 404 Not Found\r\n\r\n'
+
+    cliente.send(response)
+
+# Servir página de inicio
+def servir_pagina_principal():
+    content = "<h2>Bienvenido al Monitor de HDD</h2><p>Seleccione una opción del menú.</p>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Servir página de configuración Wi-Fi
+def servir_pagina_config():
+    content = """
+    <h2>Configuración Wi-Fi</h2>
+    <form action="/config" method="post">
+        <label for="ssid">SSID:</label>
+        <input type="text" id="ssid" name="ssid"><br>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password"><br>
+        <input type="submit" value="Submit">
+    </form>
+    """
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar configuración de red Wi-Fi
+def manejar_post_config(solicitud):
+    print(f"Solicitud de configuración recibida: {solicitud}")
+    ssid = parsear_datos_formulario(solicitud, 'ssid')
+    password = parsear_datos_formulario(solicitud, 'password')
+    print(f"SSID obtenido: {ssid}")
+    print(f"Password obtenido: {password}")
+    wifi_manager.guardar_credenciales_wifi(ssid, password)
+    machine.reset()  # Reiniciar el ESP32 para aplicar la nueva configuración
+    return 'HTTP/1.1 200 OK\r\n\r\nConfiguración guardada. Reiniciando...'
+
+# Servir página de reinicio
+def servir_pagina_reboot():
+    content = "<h2>Reiniciar</h2><form action='/reboot' method='post'><input type='submit' value='Reiniciar'></form>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar reinicio del ESP32
+def manejar_post_reboot():
+    machine.reset()
+    return 'HTTP/1.1 200 OK\r\n\r\nReiniciando...'
+
+# Servir página para iniciar main.py
+def servir_pagina_start():
+    content = "<h2>Iniciar main.py</h2><form action='/start' method='post'><input type='submit' value='Iniciar'></form>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar inicio de main.py
+def manejar_post_start():
+    import main
+    _thread.start_new_thread(main.main, ())
+    return 'HTTP/1.1 200 OK\r\n\r\nmain.py iniciado.'
+
+# Servir página para detener main.py
+def servir_pagina_stop():
+    content = "<h2>Detener main.py</h2><form action='/stop' method='post'><input type='submit' value='Detener'></form>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar detención de main.py
+def manejar_post_stop():
+    # No hay un método directo para detener un script en MicroPython
+    # Una opción sería usar un flag compartido o reiniciar el ESP32
+    machine.reset()
+    return 'HTTP/1.1 200 OK\r\n\r\nmain.py detenido.'
+
+# Servir página de subida de archivos
+def servir_pagina_upload():
+    content = """
+    <h2>Subir Archivo</h2>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file"><br>
+        <input type="submit" value="Subir">
+    </form>
+    """
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Manejar subida de archivos
+def manejar_post_upload(solicitud):
+    # Implementar lógica para subir archivos aquí
+    return 'HTTP/1.1 200 OK\r\n\r\nArchivo subido exitosamente.'
+
+# Servir página de logs
+def servir_pagina_logs():
+    try:
+        with open('/logs/log.txt', 'r') as f:
+            logs = f.read()
+    except OSError:
+        logs = 'No se encontraron logs.'
+    content = f"<h2>Logs</h2><pre>{logs}</pre>"
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
+
+# Parsear datos del formulario
+def parsear_datos_formulario(solicitud, nombre_campo):
+    try:
+        body = solicitud.split('\r\n\r\n')[1]
+        params = dict(param.split('=') for param in body.split('&'))
+        return unquote_plus(params[nombre_campo])
+    except (IndexError, KeyError):
+        print(f"Error al parsear el campo {nombre_campo}")
+        return ''
+
+# Manejar eliminación de archivos
+def manejar_delete_file(solicitud, path):
+    nombre_archivo = path.split('/file/')[1]
+    try:
+        os.remove(f'/spiffs/{nombre_archivo}')
+        return 'HTTP/1.1 200 OK\r\n\r\nArchivo eliminado exitosamente.'
+    except:
+        return 'HTTP/1.1 500 Internal Server Error\r\n\r\nError al eliminar el archivo.'
+
+# Manejar WebSocket
+def manejar_websocket(cliente):
+    global ws_clients
+    ws_clients.append(cliente)
+    try:
+        while True:
+            msg = cliente.recv(1024)
+            if not msg:
+                break
+            # Procesar mensajes del cliente WebSocket aquí si es necesario
+            send_console_output(msg)
+    finally:
+        ws_clients.remove(cliente)
+
+# Enviar mensaje a todos los clientes WebSocket
+def send_console_output(message):
+    global ws_clients
+    for client in ws_clients:
+        try:
+            client.send(message)
+        except Exception as e:
+            print('Error enviando mensaje a WebSocket:', e)
+
+# Servidor HTTP y WebSocket en el mismo puerto
+def iniciar():
+    wifi_manager.cargar_credenciales_wifi()
+    if wifi_manager.SSID and wifi_manager.PASSWORD:
+        wifi_manager.conectar_wifi()
+    else:
+        wifi_manager.iniciar_ap()
+    
+    iniciar_servidor()
+
+if __name__ == '__main__':
+    iniciar()
+
+

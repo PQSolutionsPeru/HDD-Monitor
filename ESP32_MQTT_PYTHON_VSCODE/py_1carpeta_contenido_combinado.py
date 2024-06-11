@@ -1,7 +1,7 @@
 import os
 
 # Establece el directorio donde se encuentran tus archivos .py
-directorio = 'E:\\PQSolutions\\HDD-Monitor\\HDD-Monitor-GitHub\\ESP32_MQTT_PYTHON_VSCODE\\Webserver_MQTT_3relaycheck'  # Cambia esto por la ruta de tu carpeta
+directorio = r'E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\ESP32_MQTT_PYTHON_VSCODE\Webserver_MQTT_3relaycheck\Webserver y AP'  # Cambia esto por la ruta de tu carpeta
 
 # Nombre del archivo de salida donde se guardará todo el contenido
 archivo_salida = 'contenido_combinado.txt'

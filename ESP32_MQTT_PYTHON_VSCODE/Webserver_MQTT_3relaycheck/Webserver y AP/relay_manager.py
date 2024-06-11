@@ -15,8 +15,11 @@ class RelayManager:
         return pin
 
     def debounce(self, pin_num, pin, callback):
-        current_time = time.ticks_ms()
-        if current_time - self.last_trigger_time.get(pin_num, 0) > 300 and self.relay_states[pin_num] != pin.value():  # 300 ms de debounce
-            self.relay_states[pin_num] = pin.value()  # Actualizar el estado del relay
-            callback(pin, pin_num)
-            self.last_trigger_time[pin_num] = current_time
+        try:
+            current_time = time.ticks_ms()
+            if current_time - self.last_trigger_time.get(pin_num, 0) > 300 and self.relay_states[pin_num] != pin.value():  # 300 ms de debounce
+                self.relay_states[pin_num] = pin.value()  # Actualizar el estado del relay
+                callback(pin, pin_num)
+                self.last_trigger_time[pin_num] = current_time
+        except Exception as e:
+            print(f"Error en debounce: {e}")
