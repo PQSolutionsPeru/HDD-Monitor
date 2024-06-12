@@ -8,7 +8,7 @@ from watchdog_manager import WatchdogManager
 import gc
 import log_manager
 import webserver
-from log_manager import delete_old_logs  # Asegúrate de importar la función aquí
+from log_manager import delete_old_logs
 
 # Configuración
 RELAY_PINS = [32, 33, 25]

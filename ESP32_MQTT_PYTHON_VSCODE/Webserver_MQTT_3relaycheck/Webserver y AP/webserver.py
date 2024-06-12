@@ -6,15 +6,12 @@ import esp32
 import json
 from wifi_manager import WiFiManager
 import _thread
-import uasyncio as asyncio
 import log_manager
 from websocket_helper import websocket_handler
 from watchdog_manager import WatchdogManager
-from mqtt_manager import MQTTManager
 
 wifi_manager = WiFiManager()
 watchdog_manager = WatchdogManager()
-mqtt_manager = MQTTManager(wifi_manager)
 
 # HTML para las diferentes secciones del servidor web
 html_template = """
@@ -24,6 +21,8 @@ html_template = """
     <style>
         body {{
             font-family: Arial, sans-serif;
+            background-color: #000;
+            color: #fff;
         }}
         .sidenav {{
             height: 100%;
@@ -50,27 +49,49 @@ html_template = """
             padding: 0px 10px;
         }}
     </style>
+    <script>
+        function setDarkMode() {{
+            document.body.style.backgroundColor = '#000';
+            document.body.style.color = '#fff';
+        }}
+
+        function setLightMode() {{
+            document.body.style.backgroundColor = '#fff';
+            document.body.style.color = '#000';
+        }}
+
+        function toggleDarkMode() {{
+            if (document.body.style.backgroundColor === 'rgb(0, 0, 0)') {{
+                setLightMode();
+                localStorage.setItem('mode', 'light');
+            }} else {{
+                setDarkMode();
+                localStorage.setItem('mode', 'dark');
+            }}
+        }}
+
+        document.addEventListener('DOMContentLoaded', (event) => {{
+            const mode = localStorage.getItem('mode');
+            if (mode === 'dark') {{
+                setDarkMode();
+            }} else {{
+                setLightMode();
+            }}
+        }});
+    </script>
 </head>
 <body>
     <div class="sidenav">
         <a href="/">Inicio</a>
         <a href="/config">Configuración Wi-Fi</a>
         <a href="/reboot">Reiniciar</a>
-        <a href="/start">Iniciar main.py</a>
-        <a href="/stop">Detener main.py</a>
-        <a href="/upload">Subir Archivo</a>
+        <a href="/manage">Gestión de Archivos</a>
         <a href="/logs">Logs</a>
+        <a href="#" onclick="toggleDarkMode()">Modo Oscuro</a>
     </div>
     <div class="main">
         {content}
     </div>
-    <script>
-        function toggleIPFields() {{
-            var checkbox = document.getElementById("enable_static_ip");
-            var ipFields = document.getElementById("ip_fields");
-            ipFields.style.display = checkbox.checked ? "block" : "none";
-        }}
-    </script>
 </body>
 </html>
 """
@@ -123,7 +144,7 @@ def autenticar(request):
 def manejar_solicitud(cliente, solicitud):
     request_line = solicitud.split('\n')[0]
     method, path, _ = request_line.split()
-    
+
     if method == 'GET' and path == '/':
         response = servir_pagina_principal()
     elif method == 'GET' and path == '/config':
@@ -134,22 +155,18 @@ def manejar_solicitud(cliente, solicitud):
         response = servir_pagina_reboot()
     elif method == 'POST' and path == '/reboot':
         response = manejar_post_reboot()
-    elif method == 'GET' and path == '/start':
-        response = servir_pagina_start()
-    elif method == 'POST' and path == '/start':
-        response = manejar_post_start()
-    elif method == 'GET' and path == '/stop':
-        response = servir_pagina_stop()
-    elif method == 'POST' and path == '/stop':
-        response = manejar_post_stop()
-    elif method == 'GET' and path == '/upload':
-        response = servir_pagina_upload()
+    elif method == 'GET' and path == '/manage':
+        response = servir_pagina_gestion_archivos()
     elif method == 'POST' and path == '/upload':
         response = manejar_post_upload(solicitud)
+    elif method == 'POST' and path == '/start':
+        response = manejar_post_start(solicitud)
+    elif method == 'POST' and path == '/stop':
+        response = manejar_post_stop()
+    elif method == 'DELETE' and path.startswith('/file/'):
+        response = manejar_delete_file(solicitud, path)
     elif method == 'GET' and path == '/logs':
         response = servir_pagina_logs()
-    elif method == 'DELETE' and path.startswith('/file'):
-        response = manejar_delete_file(solicitud, path)
     else:
         response = 'HTTP/1.1 404 Not Found\r\n\r\n'
 
@@ -169,18 +186,29 @@ def servir_pagina_config():
         <input type="text" id="ssid" name="ssid"><br>
         <label for="password">Password:</label>
         <input type="password" id="password" name="password"><br>
-        <label for="enable_static_ip">Habilitar IP estática:</label>
-        <input type="checkbox" id="enable_static_ip" name="enable_static_ip" onchange="toggleIPFields()"><br>
-        <div id="ip_fields" style="display: none;">
+        <label for="use_static_ip">Usar IP estática:</label>
+        <input type="checkbox" id="use_static_ip" name="use_static_ip" onchange="toggleStaticIP()"><br>
+        <div id="static_ip_config" style="display: none;">
             <label for="ip">IP:</label>
             <input type="text" id="ip" name="ip"><br>
-            <label for="netmask">Máscara de red:</label>
+            <label for="netmask">Netmask:</label>
             <input type="text" id="netmask" name="netmask"><br>
-            <label for="gateway">Puerta de enlace:</label>
+            <label for="gateway">Gateway:</label>
             <input type="text" id="gateway" name="gateway"><br>
         </div>
         <input type="submit" value="Submit">
     </form>
+    <script>
+        function toggleStaticIP() {
+            var checkBox = document.getElementById("use_static_ip");
+            var staticIPConfig = document.getElementById("static_ip_config");
+            if (checkBox.checked == true){
+                staticIPConfig.style.display = "block";
+            } else {
+                staticIPConfig.style.display = "none";
+            }
+        }
+    </script>
     """
     return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
 
@@ -189,15 +217,13 @@ def manejar_post_config(solicitud):
     print(f"Solicitud de configuración recibida: {solicitud}")
     ssid = parsear_datos_formulario(solicitud, 'ssid')
     password = parsear_datos_formulario(solicitud, 'password')
-    enable_static_ip = parsear_datos_formulario(solicitud, 'enable_static_ip') == 'on'
-    ip = parsear_datos_formulario(solicitud, 'ip') if enable_static_ip else None
-    netmask = parsear_datos_formulario(solicitud, 'netmask') if enable_static_ip else None
-    gateway = parsear_datos_formulario(solicitud, 'gateway') if enable_static_ip else None
+    use_static_ip = 'use_static_ip' in solicitud
+    ip = parsear_datos_formulario(solicitud, 'ip') if use_static_ip else None
+    netmask = parsear_datos_formulario(solicitud, 'netmask') if use_static_ip else None
+    gateway = parsear_datos_formulario(solicitud, 'gateway') if use_static_ip else None
     print(f"SSID obtenido: {ssid}")
     print(f"Password obtenido: {password}")
     print(f"IP obtenida: {ip}")
-    print(f"Máscara de red obtenida: {netmask}")
-    print(f"Puerta de enlace obtenida: {gateway}")
     wifi_manager.guardar_credenciales_wifi(ssid, password, ip, netmask, gateway)
     machine.reset()  # Reiniciar el ESP32 para aplicar la nueva configuración
     return 'HTTP/1.1 200 OK\r\n\r\nConfiguración guardada. Reiniciando...'
@@ -212,44 +238,116 @@ def manejar_post_reboot():
     machine.reset()
     return 'HTTP/1.1 200 OK\r\n\r\nReiniciando...'
 
-# Servir página para iniciar main.py
-def servir_pagina_start():
-    content = "<h2>Iniciar main.py</h2><form action='/start' method='post'><input type='submit' value='Iniciar'></form>"
-    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
-
-# Manejar inicio de main.py
-def manejar_post_start():
-    import main
-    _thread.start_new_thread(main.main, ())
-    return 'HTTP/1.1 200 OK\r\n\r\nmain.py iniciado.'
-
-# Servir página para detener main.py
-def servir_pagina_stop():
-    content = "<h2>Detener main.py</h2><form action='/stop' method='post'><input type='submit' value='Detener'></form>"
-    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
-
-# Manejar detención de main.py
-def manejar_post_stop():
-    # No hay un método directo para detener un script en MicroPython
-    # Una opción sería usar un flag compartido o reiniciar el ESP32
-    machine.reset()
-    return 'HTTP/1.1 200 OK\r\n\r\nmain.py detenido.'
-
-# Servir página de subida de archivos
-def servir_pagina_upload():
-    content = """
-    <h2>Subir Archivo</h2>
-    <form action="/upload" method="post" enctype="multipart/form-data">
-        <input type="file" name="file"><br>
-        <input type="submit" value="Subir">
+# Servir página de gestión de archivos
+def servir_pagina_gestion_archivos():
+    archivos = os.listdir()
+    archivo_list = ''.join([f'<li>{archivo} <button onclick="startScript(\'{archivo}\')">Iniciar</button> <button onclick="deleteFile(\'{archivo}\')">Eliminar</button></li>' for archivo in archivos if archivo.endswith('.py')])
+    content = f"""
+    <h2>Gestión de Archivos</h2>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="file" name="file"><br>
+        <button type="button" onclick="uploadFile()">Subir</button>
     </form>
+    <ul>{archivo_list}</ul>
+    <div id="output"></div>
+    <script>
+        function uploadFile() {{
+            var file = document.getElementById('file').files[0];
+            var formData = new FormData();
+            formData.append('file', file);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+            xhr.onload = function() {{
+                if (xhr.status == 200) {{
+                    document.getElementById('output').innerText = 'Archivo subido exitosamente.';
+                    location.reload();
+                }} else {{
+                    document.getElementById('output').innerText = 'Error al subir archivo.';
+                }}
+            }};
+            xhr.send(formData);
+        }}
+
+        function startScript(filename) {{
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/start', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onload = function() {{
+                if (xhr.status == 200) {{
+                    document.getElementById('output').innerText = 'Script iniciado exitosamente.';
+                }} else {{
+                    document.getElementById('output').innerText = 'Error al iniciar script.';
+                }}
+            }};
+            xhr.send(JSON.stringify({{ filename: filename }}));
+        }}
+
+        function deleteFile(filename) {{
+            var xhr = new XMLHttpRequest();
+            xhr.open('DELETE', '/file/' + filename, true);
+            xhr.onload = function() {{
+                if (xhr.status == 200) {{
+                    document.getElementById('output').innerText = 'Archivo eliminado exitosamente.';
+                    location.reload();
+                }} else {{
+                    document.getElementById('output').innerText = 'Error al eliminar archivo.';
+                }}
+            }};
+            xhr.send();
+        }}
+    </script>
     """
     return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + html_template.format(content=content)
 
+# Manejar inicio de script
+def manejar_post_start(solicitud):
+    try:
+        data = json.loads(solicitud.split('\r\n\r\n')[1])
+        filename = data.get('filename')
+        print(f"Iniciando script: {filename}")
+        import __main__
+        __main__.script = filename
+        _thread.start_new_thread(lambda: exec(open(filename).read(), globals()), ())
+        return 'HTTP/1.1 200 OK\r\n\r\nScript iniciado.'
+    except Exception as e:
+        print(f"Error al iniciar el script: {e}")
+        return 'HTTP/1.1 500 Internal Server Error\r\n\r\nError al iniciar el script.'
+
+# Manejar detención de script
+def manejar_post_stop():
+    try:
+        import __main__
+        __main__.script = None
+        machine.reset()  # Reiniciar para detener cualquier script en ejecución
+        return 'HTTP/1.1 200 OK\r\n\r\nScript detenido.'
+    except Exception as e:
+        print(f"Error al detener el script: {e}")
+        return 'HTTP/1.1 500 Internal Server Error\r\n\r\nError al detener el script.'
+
 # Manejar subida de archivos
 def manejar_post_upload(solicitud):
-    # Implementar lógica para subir archivos aquí
-    return 'HTTP/1.1 200 OK\r\n\r\nArchivo subido exitosamente.'
+    try:
+        boundary = solicitud.split('\r\n')[1]
+        file_data = solicitud.split(boundary)[1]
+        file_header = file_data.split('\r\n')[1]
+        file_content = file_data.split('\r\n\r\n')[1].rsplit('\r\n--', 1)[0]
+        filename = file_header.split('filename=')[1].strip('"')
+        with open(filename, 'wb') as f:
+            f.write(file_content.encode('latin1'))  # Asegurarse de manejar los bytes correctamente
+        return 'HTTP/1.1 200 OK\r\n\r\nArchivo subido exitosamente.'
+    except Exception as e:
+        print(f"Error al subir archivo: {e}")
+        return 'HTTP/1.1 500 Internal Server Error\r\n\r\nError al subir archivo.'
+
+# Manejar eliminación de archivos
+def manejar_delete_file(solicitud, path):
+    nombre_archivo = path.split('/file/')[1]
+    try:
+        os.remove(f'/{nombre_archivo}')
+        return 'HTTP/1.1 200 OK\r\n\r\nArchivo eliminado exitosamente.'
+    except Exception as e:
+        print(f"Error al eliminar archivo: {e}")
+        return 'HTTP/1.1 500 Internal Server Error\r\n\r\nError al eliminar el archivo.'
 
 # Servir página de logs
 def servir_pagina_logs():
@@ -266,32 +364,10 @@ def parsear_datos_formulario(solicitud, nombre_campo):
     try:
         body = solicitud.split('\r\n\r\n')[1]
         params = dict(param.split('=') for param in body.split('&'))
-        return decode_url(params[nombre_campo])
+        return params.get(nombre_campo, '')
     except (IndexError, KeyError):
         print(f"Error al parsear el campo {nombre_campo}")
         return ''
-
-def decode_url(encoded_str):
-    hex_chars = "0123456789ABCDEFabcdef"
-    decoded_str = ''
-    i = 0
-    while i < len(encoded_str):
-        if encoded_str[i] == '%' and i + 2 < len(encoded_str) and encoded_str[i+1] in hex_chars and encoded_str[i+2] in hex_chars:
-            decoded_str += chr(int(encoded_str[i+1:i+3], 16))
-            i += 3
-        else:
-            decoded_str += encoded_str[i]
-            i += 1
-    return decoded_str
-
-# Manejar eliminación de archivos
-def manejar_delete_file(solicitud, path):
-    nombre_archivo = path.split('/file/')[1]
-    try:
-        os.remove(f'/spiffs/{nombre_archivo}')
-        return 'HTTP/1.1 200 OK\r\n\r\nArchivo eliminado exitosamente.'
-    except:
-        return 'HTTP/1.1 500 Internal Server Error\r\n\r\nError al eliminar el archivo.'
 
 # Manejar WebSocket
 def manejar_websocket(cliente):
@@ -302,7 +378,6 @@ def manejar_websocket(cliente):
             msg = cliente.recv(1024)
             if not msg:
                 break
-            # Procesar mensajes del cliente WebSocket aquí si es necesario
             send_console_output(msg)
     finally:
         ws_clients.remove(cliente)

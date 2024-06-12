@@ -32,8 +32,8 @@ class MQTTManager:
             self.client = None
 
     def publicar_evento(self, topic, message):
-        self.asegurar_cliente()  # Asegurarse de que el cliente MQTT está conectado
         try:
+            self.asegurar_cliente()  # Asegurarse de que el cliente MQTT está conectado
             if self.client:
                 print("Enviando mensaje...")
                 self.client.publish(topic, message, qos=1)
