@@ -12,16 +12,16 @@ class MQTTManager:
         self.MQTT_USER = "ESP32-1"
         self.MQTT_PASSWORD = "esp32"
 
-    def asegurar_cliente(self):
-        self.wifi_manager.asegurar_conexion_wifi()  # Asegurar conexión WiFi
+    def ensure_client(self):
+        self.wifi_manager.ensure_wifi_connected()  # Asegurar conexión WiFi
         try:
             if self.client is None or not self.client.isconnected():
                 print("Reinicializando cliente MQTT...")
-                self.reinicializar_cliente()
+                self.reinitialize_client()
         except AttributeError:  # Por si 'isconnected' no está disponible
-            self.reinicializar_cliente()
+            self.reinitialize_client()
 
-    def reinicializar_cliente(self):
+    def reinitialize_client(self):
         try:
             self.client = MQTTClient(self.MQTT_CLIENT_ID.encode('utf-8'), self.MQTT_BROKER, self.MQTT_PORT,
                                      user=self.MQTT_USER.encode('utf-8'), password=self.MQTT_PASSWORD.encode('utf-8'), ssl=True)
@@ -31,9 +31,9 @@ class MQTTManager:
             print(f"No se pudo conectar al broker MQTT: {e}")
             self.client = None
 
-    def publicar_evento(self, topic, message):
+    def publish_event(self, topic, message):
+        self.ensure_client()  # Asegurarse de que el cliente MQTT está conectado
         try:
-            self.asegurar_cliente()  # Asegurarse de que el cliente MQTT está conectado
             if self.client:
                 print("Enviando mensaje...")
                 self.client.publish(topic, message, qos=1)

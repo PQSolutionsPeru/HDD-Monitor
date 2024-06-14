@@ -5,6 +5,6 @@ class WatchdogManager:
         # Configura el watchdog con un timeout de 120 segundos por defecto
         self.watchdog = WDT(timeout=timeout)
     
-    def alimentar(self):
+    def feed(self):
         # Alimenta al watchdog para resetear el timer y evitar un reset del sistema
         self.watchdog.feed()

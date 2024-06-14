@@ -1,120 +1,92 @@
+# wifi_manager.py
 import machine
-import utime
 import network
+import utime
 import urequests
-import json
-from umqtt.robust import MQTTClient
+import uos
 
 class WiFiManager:
-    SSID = None
-    PASSWORD = None
-    IP = None
-    NETMASK = None
-    GATEWAY = None
-    WIFI_CONFIG_FILE = "/wifi_config.json"  # Archivo para almacenar las credenciales Wi-Fi
+    AP_SSID = "ESP32-AP"
+    AP_PASSWORD = "12345678"
+    AP_IP = "192.168.4.1"
+    AP_SUBNET = "255.255.255.0"
+    AP_GATEWAY = "192.168.4.1"
 
     def __init__(self):
         self.sta_if = network.WLAN(network.STA_IF)
-        self.sta_if.active(True)
         self.ap_if = network.WLAN(network.AP_IF)
+        self.sta_if.active(True)
         self.ap_if.active(False)
-        self.cargar_credenciales_wifi()
+        self.SSID = None
+        self.PASSWORD = None
+        self.load_credentials()
 
-    def conectar_wifi(self):
-        if self.SSID and self.PASSWORD:
-            print(f"Conectando a la red Wi-Fi {self.SSID}...")
-            if self.IP and self.NETMASK and self.GATEWAY:
-                print(f"Configurando IP estática: IP={self.IP}, NETMASK={self.NETMASK}, GATEWAY={self.GATEWAY}")
-                self.sta_if.ifconfig((self.IP, self.NETMASK, self.GATEWAY, self.GATEWAY))
-            self.sta_if.connect(self.SSID, self.PASSWORD)
-            for _ in range(10):
-                if self.sta_if.isconnected():
-                    print("Conectado a Wi-Fi")
-                    ip_address = self.obtener_direccion_ip()
-                    print(f"Dirección IP: {ip_address}")
-                    self.publicar_ip(ip_address)
-                    break
-                utime.sleep(1)
-        else:
-            print("No hay credenciales WiFi disponibles.")
-
-    def cargar_credenciales_wifi(self):
+    def load_credentials(self):
         try:
-            with open(self.WIFI_CONFIG_FILE, "r") as f:
-                config = json.load(f)
-                self.SSID = config.get("ssid")
-                self.PASSWORD = config.get("password")
-                self.IP = config.get("ip")
-                self.NETMASK = config.get("netmask")
-                self.GATEWAY = config.get("gateway")
-                print(f"Credenciales WiFi cargadas: SSID={self.SSID}, PASSWORD={self.PASSWORD}, IP={self.IP}, NETMASK={self.NETMASK}, GATEWAY={self.GATEWAY}")
-        except OSError:
-            print("No se encontraron credenciales WiFi guardadas.")
+            with open('wifi_credentials.json', 'r') as f:
+                creds = ujson.load(f)
+                self.SSID = creds.get('ssid')
+                self.PASSWORD = creds.get('password')
+        except (OSError, ValueError):
+            print("No se pudieron cargar las credenciales WiFi.")
 
-    def guardar_credenciales_wifi(self, ssid, password, ip=None, netmask=None, gateway=None):
-        print(f"Guardando credenciales WiFi: SSID={ssid}, PASSWORD={password}, IP={ip}, NETMASK={netmask}, GATEWAY={gateway}")
+    def save_credentials(self, ssid, password):
         self.SSID = ssid
         self.PASSWORD = password
-        self.IP = ip
-        self.NETMASK = netmask
-        self.GATEWAY = gateway
-        try:
-            with open(self.WIFI_CONFIG_FILE, "w") as f:
-                json.dump({"ssid": ssid, "password": password, "ip": ip, "netmask": netmask, "gateway": gateway}, f)
-            print(f"Credenciales WiFi guardadas: SSID={ssid}, PASSWORD={password}, IP={ip}, NETMASK={netmask}, GATEWAY={gateway}")
-        except Exception as e:
-            print(f"Error al guardar credenciales WiFi: {e}")
+        with open('wifi_credentials.json', 'w') as f:
+            ujson.dump({'ssid': ssid, 'password': password}, f)
 
-    def asegurar_conexion_wifi(self):
-        retry_count = 0
-        while not self.sta_if.isconnected() and retry_count < 5:
-            print("Intentando conectar WiFi...")
-            self.conectar_wifi()
-            retry_count += 1
-            utime.sleep(5)
+    def connect_wifi(self):
+        if not self.SSID or not self.PASSWORD:
+            self.start_ap_mode()
+            return
+
+        self.ap_if.active(False)
+        self.sta_if.active(True)
+        print("Conectando a WiFi...")
+        self.sta_if.connect(self.SSID, self.PASSWORD)
+        start_time = utime.ticks_ms()
+        while not self.sta_if.isconnected() and utime.ticks_diff(utime.ticks_ms(), start_time) < 10000:
+            utime.sleep(1)
+        if self.sta_if.isconnected():
+            print("Conectado a WiFi con IP:", self.sta_if.ifconfig()[0])
+        else:
+            print("No se pudo conectar a WiFi, iniciando modo AP...")
+            self.start_ap_mode()
+
+    def start_ap_mode(self):
+        print("Iniciando modo AP...")
+        self.ap_if.active(True)
+        self.ap_if.config(essid=self.AP_SSID, password=self.AP_PASSWORD)
+        self.ap_if.ifconfig((self.AP_IP, self.AP_SUBNET, self.AP_GATEWAY, self.AP_GATEWAY))
+        print(f"AP iniciado con SSID: {self.AP_SSID}, IP: {self.AP_IP}")
+
+    def ensure_wifi_connected(self):
         if not self.sta_if.isconnected():
-            print("No se pudo conectar a WiFi después de varios intentos. Reiniciando...")
-            machine.reset()
+            print("WiFi desconectado, intentando reconectar...")
+            self.connect_wifi()
 
-    def obtener_hora_actual(self):
-        self.asegurar_conexion_wifi()
+    def check_connection(self):
+        self.ensure_wifi_connected()
+
+    def get_current_time(self):
+        self.check_connection()
+        current_time = self._get_world_time()
+        return current_time
+
+    def _get_world_time(self):
         try:
             response = urequests.get("http://worldtimeapi.org/api/timezone/America/Lima")
             data = response.json()
+            current_datetime = data["datetime"]
             response.close()
-            return data["datetime"]
+            return self._format_datetime(current_datetime)
         except Exception as e:
             print("Error al obtener la fecha y hora:", e)
             return None
 
-    def iniciar_ap(self):
-        self.ap_if.active(True)
-        # Configurar IP estática
-        ip = '192.168.168.192'
-        netmask = '255.255.255.0'
-        gateway = '192.168.168.192'
-        self.ap_if.ifconfig((ip, netmask, gateway, gateway))
-        self.ap_if.config(essid='HDD-Monitor', password='1234556')
-        print('Configuración del Access Point:', self.ap_if.ifconfig())
-        return self.ap_if
-
-    def iniciar(self):
-        self.cargar_credenciales_wifi()
-        if self.SSID and self.PASSWORD:
-            self.conectar_wifi()
-        else:
-            self.iniciar_ap()
-
-    def obtener_direccion_ip(self):
-        return self.sta_if.ifconfig()[0]
-
-    def publicar_ip(self, ip):
-        try:
-            mqtt_client = MQTTClient("ESP32-PQ1", "node02.myqtthub.com", port=8883, user="ESP32-1", password="esp32", ssl=True)
-            mqtt_client.connect()
-            message = {"date_time": self.obtener_hora_actual(), "name": "ESP32 IP", "status": ip}
-            mqtt_client.publish("EMPRESA_TEST/ESP32-PQ1/eventos", json.dumps(message))
-            mqtt_client.disconnect()
-            print(f"IP publicada al broker MQTT: {ip}")
-        except Exception as e:
-            print(f"Error al publicar IP al broker MQTT: {e}")
+    def _format_datetime(self, datetime_str):
+        # Formatear la fecha y hora según los requisitos
+        year, month, day = datetime_str[:10].split("-")
+        time_str = datetime_str[11:19]
+        return f"el {day}-{month}-{year} a las {time_str}"
