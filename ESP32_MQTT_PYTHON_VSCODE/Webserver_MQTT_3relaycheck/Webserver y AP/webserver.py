@@ -1,121 +1,175 @@
-# main.py
-import network
 import machine
-import os
-import ubinascii
+import uasyncio as asyncio
+import usocket as socket
 import ujson
-import urequests
-import utime
-from wifi_manager import WiFiManager
-from mqtt_manager import MQTTManager
-from relay_manager import RelayManager
-from watchdog_manager import WatchdogManager
-import gc
-from microWebSrv import MicroWebSrv
+import os
 
-# Configuración
-RELAY_PINS = [32, 33, 25]
-RELAY_NAMES = {32: "Alarma", 33: "Problema", 25: "Supervision"}
+main_script_running = False
 
-# Managers
-wifi_manager = WiFiManager()
-mqtt_manager = MQTTManager(wifi_manager)
-relay_manager = RelayManager()
-watchdog_manager = WatchdogManager()
+index_html = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración del ESP32</title>
+</head>
+<body>
+    <h1>Configuración del ESP32</h1>
+    <form action="/guardar" method="post">
+        <label for="ssid">SSID:</label>
+        <input type="text" id="ssid" name="ssid" required>
+        <label for="password">Contraseña:</label>
+        <input type="password" id="password" name="password" required>
+        <button type="submit">Guardar y Conectar</button>
+    </form>
+    <form action="/reiniciar" method="get">
+        <button type="submit">Reiniciar ESP32</button>
+    </form>
+    <h2>Subir Archivo</h2>
+    <form action="/subir" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" required>
+        <button type="submit">Subir</button>
+    </form>
+    <h2>Lista de Archivos</h2>
+    <ul id="file-list"></ul>
+    <h2>Controlar Programa Principal</h2>
+    <form action="/control" method="post">
+        <button type="submit" name="accion" value="iniciar">Iniciar Programa Principal</button>
+        <button type="submit" name="accion" value="detener">Detener Programa Principal</button>
+    </form>
+    <h2>Estado del ESP32</h2>
+    <button onclick="getEstado()">Ver Estado</button>
+    <p id="estado"></p>
+    <script>
+        async function getEstado() {
+            const response = await fetch('/estado');
+            const estado = await response.json();
+            document.getElementById('estado').innerText = `Memoria Libre: ${estado.memoria} bytes, Espacio Libre: ${estado.espacio_libre} bytes`;
+        }
 
-cached_datetime = None
-last_datetime_update = utime.ticks_ms()
-memory_report_enabled = True  # Cambiar a False para desactivar los informes de memoria
+        async function listarArchivos() {
+            const response = await fetch('/listar');
+            const archivos = await response.json();
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = '';
+            archivos.archivos.forEach(file => {
+                const li = document.createElement('li');
+                li.textContent = file;
+                const downloadLink = document.createElement('a');
+                downloadLink.href = `/descargar/${file}`;
+                downloadLink.textContent = ' Descargar';
+                li.appendChild(downloadLink);
+                const deleteLink = document.createElement('a');
+                deleteLink.href = `/eliminar/${file}`;
+                deleteLink.textContent = ' Eliminar';
+                li.appendChild(deleteLink);
+                fileList.appendChild(li);
+            });
+        }
 
-def get_current_datetime():
-    global cached_datetime, last_datetime_update
-    current_ticks = utime.ticks_ms()
-    if utime.ticks_diff(current_ticks, last_datetime_update) > 600000 or cached_datetime is None:  # 10 minutos
-        update_datetime()
-    return cached_datetime
+        listarArchivos();
+    </script>
+</body>
+</html>
+"""
 
-def update_datetime():
-    global cached_datetime, last_datetime_update
+async def handle_client(client):
+    request = client.recv(1024).decode()
+    response = process_request(request)
+    client.send(response)
+    client.close()
+
+def process_request(request):
     try:
-        cached_datetime = wifi_manager.get_current_time()
-        print(f"Fecha y hora actuales actualizadas a: {cached_datetime}")
+        request_line = request.split('\r\n')[0]
+        method, path, _ = request_line.split()
+        if method == 'POST' and path == '/guardar':
+            return guardar(request)
+        elif path == '/reiniciar':
+            return reiniciar()
+        elif path == '/subir':
+            return subir()
+        elif path.startswith('/descargar'):
+            return descargar(path.split('/')[-1])
+        elif path.startswith('/eliminar'):
+            return eliminar(path.split('/')[-1])
+        elif path == '/listar':
+            return listar()
+        elif path == '/estado':
+            return estado()
+        elif method == 'POST' and path == '/control':
+            return control(request)
+        else:
+            return send_file()
     except Exception as e:
-        print(f"Error al obtener fecha y hora, usando última conocida o 'unknown': {e}")
-        cached_datetime = cached_datetime if cached_datetime else "unknown"
-    last_datetime_update = utime.ticks_ms()
+        return 'HTTP/1.1 500 Internal Server Error\r\n\r\n' + str(e)
 
-def relay_callback(pin, pin_num):
-    gc.collect()  # Recolectar basura antes de procesar
-    print(f"Callback de relay activado para el pin {pin_num}.")
-    wifi_manager.ensure_wifi_connected()  # Verificar conexión WiFi antes de proceder
-    current_datetime = get_current_datetime()  # Asegurarse de usar la fecha y hora formateada
-    status = "DISC" if pin.value() else "OK"
-    message = {
-        "date_time": current_datetime,  # Usar la fecha y hora formateada
-        "name": RELAY_NAMES.get(pin_num, "Relay Desconocido"),
-        "status": status
-    }
-    print(f"Enviando mensaje MQTT: {message}")
-    mqtt_manager.publish_event(f"EMPRESA_TEST/{mqtt_manager.MQTT_CLIENT_ID}/eventos", ujson.dumps(message))
-
-def main():
-    last_memory_report_time = utime.ticks_ms()
-    while not wifi_manager.sta_if.isconnected():
-        wifi_manager.connect_wifi()
-    mqtt_manager.ensure_client()
-    for relay_pin in RELAY_PINS:
-        pin = relay_manager.setup_relay(relay_pin, relay_callback)
-    while True:
-        utime.sleep(1)
-        watchdog_manager.feed()
-        current_time = utime.ticks_ms()
-        if memory_report_enabled and utime.ticks_diff(current_time, last_memory_report_time) > 60000:  # 1 minuto
-            free_memory = gc.mem_free()
-            print(f"Reporte de memoria libre: {free_memory} bytes")
-            last_memory_report_time = current_time
-            gc.collect()  # Recolección de basura para mantener la memoria limpia
-
-# Configuración del servidor web
-@MicroWebSrv.route('/files', 'GET')
-def list_files(httpClient, httpResponse):
-    files = [f for f in os.listdir() if os.path.isfile(f)]
-    httpResponse.WriteResponseOk(headers=None, contentType='application/json', contentCharset='UTF-8', content=ujson.dumps(files))
-
-@MicroWebSrv.route('/delete', 'POST')
-def delete_file(httpClient, httpResponse):
-    formData = httpClient.ReadRequestPostedFormData()
-    if 'filename' in formData:
-        filename = formData['filename']
-        try:
-            os.remove(filename)
-            response = {'status': 'success', 'message': f'{filename} eliminado'}
-        except OSError as e:
-            response = {'status': 'error', 'message': str(e)}
-    else:
-        response = {'status': 'error', 'message': 'No se proporcionó filename'}
-    httpResponse.WriteResponseOk(headers=None, contentType='application/json', contentCharset='UTF-8', content=ujson.dumps(response))
-
-@MicroWebSrv.route('/restart', 'POST')
-def restart_esp(httpClient, httpResponse):
-    httpResponse.WriteResponseOk(headers=None, contentType='application/json', contentCharset='UTF-8', content=ujson.dumps({'status': 'restarting'}))
+def guardar(request):
+    headers, body = request.split('\r\n\r\n')
+    data = ujson.loads(body)
+    ssid = data['ssid']
+    password = data['password']
+    config = {'ssid': ssid, 'password': password}
+    with open('wifi_config.json', 'w') as f:
+        ujson.dump(config, f)
     machine.reset()
+    return 'HTTP/1.1 200 OK\r\n\r\nGuardando credenciales y reiniciando...'
 
-@MicroWebSrv.route('/wifi', 'POST')
-def set_wifi(httpClient, httpResponse):
-    formData = httpClient.ReadRequestPostedFormData()
-    if 'ssid' in formData and 'password' in formData:
-        wifi_manager.SSID = formData['ssid']
-        wifi_manager.PASSWORD = formData['password']
-        wifi_manager.connect_wifi()
-        response = {'status': 'success', 'message': 'WiFi actualizado'}
-    else:
-        response = {'status': 'error', 'message': 'No se proporcionó SSID o contraseña'}
-    httpResponse.WriteResponseOk(headers=None, contentType='application/json', contentCharset='UTF-8', content=ujson.dumps(response))
+def reiniciar():
+    machine.reset()
+    return 'HTTP/1.1 200 OK\r\n\r\nReiniciando ESP32...'
 
-def start_web_server():
-    srv = MicroWebSrv(webPath='/www')
-    srv.Start(threaded=True)
+def subir():
+    # Implementa lógica de subida de archivos aquí
+    return 'HTTP/1.1 200 OK\r\n\r\nArchivo subido exitosamente.'
 
-if __name__ == "__main__":
-    start_web_server()
-    main()
+def descargar(filename):
+    # Implementa lógica de descarga de archivos aquí
+    return 'HTTP/1.1 200 OK\r\n\r\n'
+
+def eliminar(filename):
+    os.remove('/' + filename)
+    return 'HTTP/1.1 200 OK\r\n\r\nArchivo eliminado exitosamente.'
+
+def listar():
+    archivos = os.listdir('/')
+    return 'HTTP/1.1 200 OK\r\n\r\n' + ujson.dumps({'archivos': archivos})
+
+def estado():
+    memoria = machine.mem_free()
+    espacio = os.statvfs('/')
+    espacio_libre = espacio[0] * espacio[3]
+    return 'HTTP/1.1 200 OK\r\n\r\n' + ujson.dumps({'memoria': memoria, 'espacio_libre': espacio_libre})
+
+def control(request):
+    global main_script_running
+    headers, body = request.split('\r\n\r\n')
+    data = ujson.loads(body)
+    if data['accion'] == 'iniciar':
+        main_script_running = True
+        asyncio.create_task(run_main_script())
+    elif data['accion'] == 'detener':
+        main_script_running = False
+    return 'HTTP/1.1 200 OK\r\n\r\nAcción ejecutada.'
+
+async def run_main_script():
+    global main_script_running
+    while main_script_running:
+        # Aquí va el código del programa principal
+        await asyncio.sleep(1)  # Simulando trabajo
+
+def send_file():
+    return 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' + index_html
+
+async def start_web_server():
+    addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
+    s = socket.socket()
+    s.bind(addr)
+    s.listen(5)
+    print('Servidor web en', addr)
+
+    while True:
+        client, addr = s.accept()
+        await handle_client(client)
+

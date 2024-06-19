@@ -1,19 +1,28 @@
-BUSCAR WIFI
-Inicialización: El ESP32 intenta conectarse a la red Wi-Fi utilizando la configuración almacenada en NVS.
-Modo AP y Configuración:
+Tengo un ESP32 que estará corriendo un main.py (que ya tengo) que usará otros archivos .py para monitorear los estados de 3 relevadores de un panel contra incendios las 24 Horas. 
+Lo que necesito es que crees un servidor web ligero con uasyncio, para micropython (tengo el último v1.23.0 (2024-06-02) .bin desde https://micropython.org/download/ESP32_GENERIC/); en donde se pueda:
+- Inicializar NVS al inicio.
+- Guardar y leer credenciales solo durante el inicio.
+- Inicialización: El ESP32 intenta conectarse a la red Wi-Fi utilizando la configuración almacenada en NVS.
+- Modo AP y Configuración:
     Si no hay configuración de Wi-Fi en NVS, el ESP32 se inicializa en modo AP y se inicia el servidor web.
     Los usuarios se conectan al AP y acceden al servidor web para ingresar las credenciales de Wi-Fi.
-Guardar y Conectar:
+- Guardar y Conectar:
     El ESP32 guarda las credenciales de Wi-Fi en NVS y se reinicia.
     En el reinicio, el ESP32 lee las credenciales de NVS y se conecta a la red especificada.
+- Reiniciar el ESP32: Proporcionar una ruta para reiniciar el dispositivo.
+- Gestionar Archivos: Subir, descargar y eliminar archivos del ESP32.
+- Controlar el Programa Principal: Iniciar y detener el archivo main.py u otros scripts.
+- Monitorear Estado: Ver el estado actual de la memoria y el espacio del ESP32.
 
-Reiniciar el ESP32: Proporcionar una ruta para reiniciar el dispositivo.
-Gestionar Archivos: Subir, descargar y eliminar archivos en el sistema de archivos del ESP32 (SPIFFS, LittleFS).
-Controlar el Programa Principal: Iniciar y detener el archivo main.py u otros scripts.
-Monitorear Estado: Ver el estado actual de diversos sensores y variables.
-Configurar Parámetros: Cambiar configuraciones del programa en tiempo real.
-Registro y Diagnóstico: Ver registros de eventos y diagnósticos.
-Control de GPIO: Encender y apagar pines GPIO.
+Ojo no me des ejemplos de cómo se vería un código similar; dame el código que necesito, ya todo corregido y optimizado para usar los menos recursos posibles. Dame un código sólo para copiar y pegar y la interfaz del webserver en español
+
+
+
+
+
+
+
+
 
 
 
