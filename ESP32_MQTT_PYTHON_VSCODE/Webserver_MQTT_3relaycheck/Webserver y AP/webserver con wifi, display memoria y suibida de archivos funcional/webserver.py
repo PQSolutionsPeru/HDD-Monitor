@@ -5,14 +5,10 @@ from machine import reset
 import esp
 import json
 import gc
-import _thread
+
 from esp32 import NVS
-import sys
-import time
-import urllib.parse
 
 nvs = NVS('config')
-output_queue = []
 
 def guardar_credenciales(ssid, password):
     print(f"Guardando credenciales: SSID={ssid}, Password={password}")
@@ -25,8 +21,8 @@ def guardar_credenciales(ssid, password):
 
 def leer_credenciales():
     try:
-        ssid_blob = bytearray(32)
-        password_blob = bytearray(64)
+        ssid_blob = bytearray(32)  # suponer un tamaño máximo de 32 bytes
+        password_blob = bytearray(64)  # suponer un tamaño máximo de 64 bytes
         nvs.get_blob('wifi_ssid', ssid_blob)
         nvs.get_blob('wifi_password', password_blob)
         ssid = ssid_blob.decode('utf-8').rstrip('\x00')
@@ -40,7 +36,7 @@ def leer_credenciales():
 
 async def conectar_wifi():
     ssid, password = leer_credenciales()
-    if (ssid and password) and (ssid.strip() and password.strip()):
+    if ssid and password:
         station = network.WLAN(network.STA_IF)
         station.active(True)
         station.connect(ssid, password)
@@ -60,56 +56,11 @@ async def modo_ap():
     print('Modo AP activado, ESSID=ESP32_Config')
     return ap
 
-threads = {}
-
-def ejecutar_script(nombre_archivo):
-    global output_queue
-    try:
-        with open(nombre_archivo, 'r') as file:
-            script_content = file.read()
-        def custom_print(*args, **kwargs):
-            output_queue.append(" ".join(map(str, args)) + "\n")
-        exec(script_content, {"__name__": "__main__", "print": custom_print, "time": time, "uos": uos, "network": network, "reset": reset, "esp": esp, "json": json, "gc": gc, "_thread": _thread, "sys": sys})
-    except Exception as e:
-        output_queue.append(f"Error ejecutando script: {e}")
-
-def iniciar_archivo(nombre_archivo):
-    try:
-        global threads
-        if nombre_archivo in threads:
-            print(f"{nombre_archivo} ya está en ejecución")
-            return
-        def run_script():
-            print(f"Ejecutando {nombre_archivo}")
-            ejecutar_script(nombre_archivo)
-            print(f"Finalizó {nombre_archivo}")
-        thread = _thread.start_new_thread(run_script, ())
-        threads[nombre_archivo] = thread
-        print(f"{nombre_archivo} iniciado en un nuevo hilo")
-    except Exception as e:
-        print(f"Error al iniciar {nombre_archivo}: {e}")
-
-def detener_archivo(nombre_archivo):
-    global threads
-    if nombre_archivo in threads:
-        _thread.exit()
-        del threads[nombre_archivo]
-        print(f"{nombre_archivo} detenido")
-    else:
-        print(f"{nombre_archivo} no está en ejecución")
-
-async def mostrar_salida():
-    while True:
-        while output_queue:
-            print(output_queue.pop(0), end='')
-        await asyncio.sleep(1)
-
-async def manejar_solicitudes(reader, writer):
-    try:
+async def iniciar_servidor():
+    async def manejar_solicitudes(reader, writer):
         request = await reader.read(1024)
         request = request.decode('utf-8')
         print(f"Solicitud recibida: {request}")
-
         response = ''
         if 'GET / ' in request or 'GET /index.html' in request:
             response = HTML_PAGE
@@ -133,24 +84,15 @@ async def manejar_solicitudes(reader, writer):
             response = json.dumps({'archivos': archivos})
             response = f'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{response}'
         elif 'POST /subir' in request:
-            try:
-                content_length = int([line for line in request.split('\r\n') if 'Content-Length:' in line][0].split(':')[1])
-                body = await reader.read(content_length)
-                body = body.decode('utf-8')
-                params = urllib.parse.parse_qs(body)
-                filename = params['filename'][0]
-                filecontent = params['filecontent'][0]
-                with open(filename, 'w') as f:
-                    f.write(filecontent)
-                response = 'HTTP/1.1 303 See Other\r\nLocation: /\r\n\r\n'
-                print(f"Archivo {filename} subido exitosamente")
-            except Exception as e:
-                response = f'HTTP/1.1 500 Internal Server Error\r\n\r\nError subiendo archivo: {e}'
-                print(f"Error subiendo archivo: {e}")
-            writer.write(response.encode())
-            await writer.drain()
-            await writer.wait_closed()
-            return
+            boundary = request.split('\r\n')[0]
+            parts = request.split(boundary)
+            for part in parts:
+                if 'Content-Disposition: form-data; name="file"; filename=' in part:
+                    filename = part.split('filename=')[1].split('\r\n')[0].strip('"')
+                    content = part.split('\r\n\r\n')[1].split('\r\n')[0]
+                    with open(filename, 'wb') as f:
+                        f.write(content.encode('latin1'))
+                    response = 'HTTP/1.1 303 See Other\r\nLocation: /\r\n\r\n'
         elif 'GET /descargar/' in request:
             filename = request.split('GET /descargar/')[1].split(' ')[0]
             with open(filename, 'rb') as f:
@@ -166,19 +108,15 @@ async def manejar_solicitudes(reader, writer):
         elif 'POST /control' in request:
             content_length = int([line for line in request.split('\r\n') if 'Content-Length:' in line][0].split(':')[1])
             body = request.split('\r\n\r\n')[1][:content_length]
-            params = {k: v for k, v in (x.split('=') for x in body.split('&'))}
-            accion = params['accion']
-            archivo = params['archivo']
+            accion = body.split('=')[1]
             if accion == 'iniciar':
-                print(f"Iniciando {archivo}")
-                iniciar_archivo(archivo)
-                response = f'HTTP/1.1 200 OK\r\n\r\n{archivo} Iniciado'
+                uos.system('python3 main.py &')
+                response = 'HTTP/1.1 200 OK\r\n\r\nPrograma Principal Iniciado'
             elif accion == 'detener':
-                print(f"Deteniendo {archivo}")
-                detener_archivo(archivo)
-                response = f'HTTP/1.1 200 OK\r\n\r\n{archivo} Detenido'
+                # Aquí se debería agregar el código para detener el programa principal
+                response = 'HTTP/1.1 200 OK\r\n\r\nPrograma Principal Detenido'
         elif 'GET /estado' in request:
-            gc.collect()
+            gc.collect()  # Recolectar basura para obtener el estado actual
             memoria_libre = gc.mem_free()
             espacio_libre = uos.statvfs('/')[3] * uos.statvfs('/')[0]
             response = json.dumps({'memoria': memoria_libre, 'espacio_libre': espacio_libre})
@@ -188,17 +126,9 @@ async def manejar_solicitudes(reader, writer):
         writer.write(response.encode())
         await writer.drain()
         await writer.wait_closed()
-    except Exception as e:
-        print(f"Error manejando solicitud: {e}")
-        response = 'HTTP/1.1 500 Internal Server Error\r\n\r\n'
-        writer.write(response.encode())
-        await writer.drain()
-        await writer.wait_closed()
 
-async def iniciar_servidor():
     server = await asyncio.start_server(manejar_solicitudes, '0.0.0.0', 80)
     print('Servidor web iniciado en el puerto 80')
-    asyncio.create_task(mostrar_salida())
     while True:
         await asyncio.sleep(3600)
 
@@ -222,37 +152,16 @@ HTML_PAGE = """\
         <button type="submit">Reiniciar ESP32</button>
     </form>
     <h2>Subir Archivo</h2>
-    <form action="/subir" method="post" enctype="application/x-www-form-urlencoded">
-        <label for="filename">Nombre del archivo:</label>
-        <input type="text" id="filename" name="filename" required>
-        <label for="filecontent">Contenido del archivo:</label>
-        <textarea id="filecontent" name="filecontent" rows="10" cols="30" required></textarea>
+    <form action="/subir" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" required>
         <button type="submit">Subir</button>
     </form>
     <h2>Lista de Archivos</h2>
     <ul id="file-list"></ul>
     <h2>Controlar Programa Principal</h2>
     <form action="/control" method="post">
-        <label for="archivo">Archivo:</label>
-        <select id="archivo" name="archivo">
-            <script>
-                async function listarArchivos() {
-                    const response = await fetch('/listar');
-                    const archivos = await response.json();
-                    const archivoSelect = document.getElementById('archivo');
-                    archivoSelect.innerHTML = '';
-                    archivos.archivos.forEach(file => {
-                        const option = document.createElement('option');
-                        option.value = file;
-                        option.textContent = file;
-                        archivoSelect.appendChild(option);
-                    });
-                }
-                listarArchivos();
-            </script>
-        </select>
-        <button type="submit" name="accion" value="iniciar">Iniciar Archivo</button>
-        <button type="submit" name="accion" value="detener">Detener Archivo</button>
+        <button type="submit" name="accion" value="iniciar">Iniciar Programa Principal</button>
+        <button type="submit" name="accion" value="detener">Detener Programa Principal</button>
     </form>
     <h2>Estado del ESP32</h2>
     <button onclick="getEstado()">Ver Estado</button>
@@ -279,6 +188,7 @@ HTML_PAGE = """\
                 const deleteLink = document.createElement('a');
                 deleteLink.href = `/eliminar/${file}`;
                 deleteLink.textContent = ' Eliminar';
+                li.appendChild(deleteLink);
                 fileList.appendChild(li);
             });
         }
