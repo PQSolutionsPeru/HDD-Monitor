@@ -36,6 +36,7 @@ runtimeRxjava2 = "1.6.7"
 ui = "1.6.7"
 uiToolingPreview = "1.6.7"
 material3Android = "1.2.1"
+playServicesAuth = "21.2.0"
 
 [libraries]
 androidx-activity-ktx = { module = "androidx.activity:activity-ktx", version.ref = "activityKtx" }
@@ -85,6 +86,7 @@ material = { module = "com.google.android.material:material", version.ref = "mat
 ui = { module = "androidx.compose.ui:ui", version.ref = "ui" }
 ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "uiToolingPreview" }
 androidx-material3-android = { group = "androidx.compose.material3", name = "material3-android", version.ref = "material3Android" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

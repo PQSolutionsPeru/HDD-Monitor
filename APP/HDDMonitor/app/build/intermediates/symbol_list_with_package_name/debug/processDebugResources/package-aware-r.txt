@@ -3665,6 +3665,7 @@ id shortcut
 id showCustom
 id showHome
 id showTitle
+id sign_in_button
 id sin
 id skipCollapsed
 id skipped
@@ -4072,6 +4073,7 @@ string copy_toast_msg
 string dashboard_title
 string default_error_message
 string default_popup_window_title
+string default_web_client_id
 string dropdown_menu
 string error_a11y_label
 string error_icon_content_description

@@ -24,13 +24,17 @@ public abstract class ActivityLoginBinding extends ViewDataBinding {
   @NonNull
   public final AppCompatEditText passwordEditText;
 
+  @NonNull
+  public final AppCompatButton signInButton;
+
   protected ActivityLoginBinding(Object _bindingComponent, View _root, int _localFieldCount,
       AppCompatEditText emailEditText, AppCompatButton loginButton,
-      AppCompatEditText passwordEditText) {
+      AppCompatEditText passwordEditText, AppCompatButton signInButton) {
     super(_bindingComponent, _root, _localFieldCount);
     this.emailEditText = emailEditText;
     this.loginButton = loginButton;
     this.passwordEditText = passwordEditText;
+    this.signInButton = signInButton;
   }
 
   @NonNull

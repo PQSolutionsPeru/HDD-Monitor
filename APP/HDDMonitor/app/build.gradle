@@ -85,6 +85,7 @@ dependencies {
     implementation libs.androidx.lifecycle.viewmodel.compose
     implementation libs.androidx.material3.android
     implementation libs.androidx.recyclerview
+    implementation libs.play.services.auth
 
     // Dependencias para pruebas unitarias
     testImplementation libs.junit

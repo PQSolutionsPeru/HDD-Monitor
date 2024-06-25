@@ -4,7 +4,7 @@
             "outputFile": "com.pqsolutions.hdd_monitor.app-mergeDebugResources-76:/values-hdpi-v4/values-hdpi-v4.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\Pablo\\.gradle\\caches\\transforms-4\\1ba503f7da873e10c704aa9a8bc6d97d\\transformed\\appcompat-1.6.1\\res\\values-hdpi-v4\\values-hdpi-v4.xml",
+                    "source": "C:\\Users\\Pablo\\.gradle\\caches\\transforms-4\\b67fe8c93fdde05c098246384c6bba44\\transformed\\appcompat-1.6.1\\res\\values-hdpi-v4\\values-hdpi-v4.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",

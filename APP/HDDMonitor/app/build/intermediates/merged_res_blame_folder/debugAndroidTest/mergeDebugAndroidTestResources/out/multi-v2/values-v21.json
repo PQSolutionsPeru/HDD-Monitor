@@ -4,7 +4,7 @@
             "outputFile": "com.pqsolutions.hdd_monitor.test.app-mergeDebugAndroidTestResources-3:/values-v21/values-v21.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\Pablo\\.gradle\\caches\\transforms-4\\99bda42dce7cc3efa42676699cc1090f\\transformed\\core-1.5.0\\res\\values-v21\\values.xml",
+                    "source": "C:\\Users\\Pablo\\.gradle\\caches\\transforms-4\\447741bac2c86e3a0d4f2dc75769e682\\transformed\\core-1.5.0\\res\\values-v21\\values.xml",
                     "from": {
                         "startLines": "4,13",
                         "startColumns": "0,0",

@@ -86,6 +86,7 @@ id roleEditText
 id roleTextView
 id saveButton
 id schedulerTitle
+id sign_in_button
 id spinner_report_type
 id statusTextView
 id title
@@ -118,6 +119,7 @@ mipmap ic_launcher_round
 string alarm_icon
 string app_name
 string dashboard_title
+string default_web_client_id
 string gcm_defaultSenderId
 string google_api_key
 string google_app_id
