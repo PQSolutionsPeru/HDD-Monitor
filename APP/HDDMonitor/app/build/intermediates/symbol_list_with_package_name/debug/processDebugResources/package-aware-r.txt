@@ -3295,6 +3295,7 @@ id beginning
 id bestChoice
 id blocking
 id bottom
+id bottomNavigation
 id bottom_navigation
 id bounce
 id bounceBoth
@@ -3325,7 +3326,6 @@ id checked
 id chronometer
 id circle_center
 id clear_text
-id clientNameTextView
 id clip_horizontal
 id clip_vertical
 id clockwise
@@ -3590,7 +3590,6 @@ id panelLocation
 id panelLocationTextView
 id panelName
 id panelNameTextView
-id panelsRecyclerView
 id parallax
 id parent
 id parentPanel
@@ -3733,7 +3732,6 @@ id textinput_suffix_text
 id time
 id title
 id titleDividerNoCustom
-id titleTextView
 id title_template
 id toggle
 id top

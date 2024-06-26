@@ -36,10 +36,10 @@ id alertText
 id alertTitle
 id alertsRecyclerView
 id appName
+id bottomNavigation
 id bottom_navigation
 id button_generate_report
 id button_schedule_event
-id clientNameTextView
 id createAlertButton
 id dateTimeTextView
 id descriptionTextView
@@ -68,7 +68,6 @@ id panelLocation
 id panelLocationTextView
 id panelName
 id panelNameTextView
-id panelsRecyclerView
 id passwordEditText
 id recyclerView
 id relayAlarmaIcon
@@ -89,7 +88,6 @@ id schedulerTitle
 id spinner_report_type
 id statusTextView
 id title
-id titleTextView
 id topBar
 id userRecyclerView
 id usernameEditText

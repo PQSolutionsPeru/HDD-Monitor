@@ -1,4 +1,4 @@
-#Mon Jun 10 00:34:10 PET 2024
+#Tue Jun 25 23:40:45 PET 2024
 base.0=E\:\\PQSolutions\\HDD-Monitor\\HDD-Monitor-GitHub\\APP\\HDDMonitor\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
 base.1=E\:\\PQSolutions\\HDD-Monitor\\HDD-Monitor-GitHub\\APP\\HDDMonitor\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
 base.2=E\:\\PQSolutions\\HDD-Monitor\\HDD-Monitor-GitHub\\APP\\HDDMonitor\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\11\\classes.dex

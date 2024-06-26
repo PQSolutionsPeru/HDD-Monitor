@@ -4,12 +4,13 @@ package com.pqsolutions.hdd_monitor.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.databinding.DataBindingUtil;
 import androidx.databinding.ViewDataBinding;
-import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.pqsolutions.hdd_monitor.R;
 import java.lang.Deprecated;
@@ -17,25 +18,64 @@ import java.lang.Object;
 
 public abstract class ActivityAdminMainBinding extends ViewDataBinding {
   @NonNull
+  public final TextView appName;
+
+  @NonNull
   public final BottomNavigationView bottomNavigation;
 
   @NonNull
-  public final TextView clientNameTextView;
+  public final ImageView panelIcon;
 
   @NonNull
-  public final RecyclerView panelsRecyclerView;
+  public final TextView panelLocation;
 
   @NonNull
-  public final TextView titleTextView;
+  public final TextView panelName;
+
+  @NonNull
+  public final ImageView relayAlarmaIcon;
+
+  @NonNull
+  public final TextView relayAlarmaText;
+
+  @NonNull
+  public final ImageView relayProblemaIcon;
+
+  @NonNull
+  public final TextView relayProblemaText;
+
+  @NonNull
+  public final ImageView relaySupervisionIcon;
+
+  @NonNull
+  public final TextView relaySupervisionText;
+
+  @NonNull
+  public final LinearLayout relaysLayout;
+
+  @NonNull
+  public final LinearLayout topBar;
 
   protected ActivityAdminMainBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      BottomNavigationView bottomNavigation, TextView clientNameTextView,
-      RecyclerView panelsRecyclerView, TextView titleTextView) {
+      TextView appName, BottomNavigationView bottomNavigation, ImageView panelIcon,
+      TextView panelLocation, TextView panelName, ImageView relayAlarmaIcon,
+      TextView relayAlarmaText, ImageView relayProblemaIcon, TextView relayProblemaText,
+      ImageView relaySupervisionIcon, TextView relaySupervisionText, LinearLayout relaysLayout,
+      LinearLayout topBar) {
     super(_bindingComponent, _root, _localFieldCount);
+    this.appName = appName;
     this.bottomNavigation = bottomNavigation;
-    this.clientNameTextView = clientNameTextView;
-    this.panelsRecyclerView = panelsRecyclerView;
-    this.titleTextView = titleTextView;
+    this.panelIcon = panelIcon;
+    this.panelLocation = panelLocation;
+    this.panelName = panelName;
+    this.relayAlarmaIcon = relayAlarmaIcon;
+    this.relayAlarmaText = relayAlarmaText;
+    this.relayProblemaIcon = relayProblemaIcon;
+    this.relayProblemaText = relayProblemaText;
+    this.relaySupervisionIcon = relaySupervisionIcon;
+    this.relaySupervisionText = relaySupervisionText;
+    this.relaysLayout = relaysLayout;
+    this.topBar = topBar;
   }
 
   @NonNull
