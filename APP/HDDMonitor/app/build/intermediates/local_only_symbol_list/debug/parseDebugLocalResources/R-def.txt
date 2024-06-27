@@ -66,6 +66,7 @@ id nav_create_alert
 id nav_home
 id nav_manage_users
 id nav_schedule_event
+id noPanelsTextView
 id panelIcon
 id panelLocation
 id panelName
@@ -74,11 +75,10 @@ id passwordEditText
 id recyclerView
 id relayAlarmaIcon
 id relayAlarmaText
-id relayNameTextView
 id relayProblemaIcon
 id relayProblemaText
 id relayStatusIcon
-id relayStatusImageView
+id relayStatusText
 id relaySupervisionIcon
 id relaySupervisionText
 id relaysLayout

@@ -10,28 +10,29 @@
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="8dp">
-
-        <TextView
-            android:id="@+id/relayNameTextView"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:text="@{relay.name}"
-            android:textSize="16sp"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/relayStatusImageView"
-            android:layout_marginEnd="8dp" />
+        android:layout_height="wrap_content">
 
         <ImageView
-            android:id="@+id/relayStatusImageView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:src="@{relay.status.equals(`OK`) ? @drawable/ic_check_green : @drawable/ic_close_red}"
-            app:layout_constraintEnd_toEndOf="parent"
+            android:id="@+id/relayStatusIcon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent" />
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            android:layout_margin="8dp"
+            app:srcCompat="@drawable/ic_check_green" />
+
+        <TextView
+            android:id="@+id/relayStatusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toEndOf="@id/relayStatusIcon"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:text="@{relay.status}" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 </layout>

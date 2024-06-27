@@ -4,6 +4,7 @@ package com.pqsolutions.hdd_monitor.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -16,16 +17,25 @@ import java.lang.Object;
 
 public abstract class ActivityClientPanelBinding extends ViewDataBinding {
   @NonNull
+  public final TextView appName;
+
+  @NonNull
+  public final TextView noPanelsTextView;
+
+  @NonNull
   public final RecyclerView panelRecyclerView;
 
   @NonNull
-  public final TextView titleTextView;
+  public final LinearLayout topBar;
 
   protected ActivityClientPanelBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      RecyclerView panelRecyclerView, TextView titleTextView) {
+      TextView appName, TextView noPanelsTextView, RecyclerView panelRecyclerView,
+      LinearLayout topBar) {
     super(_bindingComponent, _root, _localFieldCount);
+    this.appName = appName;
+    this.noPanelsTextView = noPanelsTextView;
     this.panelRecyclerView = panelRecyclerView;
-    this.titleTextView = titleTextView;
+    this.topBar = topBar;
   }
 
   @NonNull

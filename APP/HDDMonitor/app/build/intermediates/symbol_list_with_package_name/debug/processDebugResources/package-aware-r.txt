@@ -3557,6 +3557,7 @@ id navigation_header_container
 id never
 id neverCompleteToEnd
 id neverCompleteToStart
+id noPanelsTextView
 id noScroll
 id noState
 id none
@@ -3616,11 +3617,10 @@ id rectangles
 id recyclerView
 id relayAlarmaIcon
 id relayAlarmaText
-id relayNameTextView
 id relayProblemaIcon
 id relayProblemaText
 id relayStatusIcon
-id relayStatusImageView
+id relayStatusText
 id relaySupervisionIcon
 id relaySupervisionText
 id relaysLayout

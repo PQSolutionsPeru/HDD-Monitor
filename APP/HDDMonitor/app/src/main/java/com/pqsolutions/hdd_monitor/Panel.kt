@@ -1,11 +1,13 @@
 package com.pqsolutions.hdd_monitor
 
 data class Panel(
-    val ESP32_IP: String = "",
-    val SSID: String = "",
-    val SSID_CON: String = "",
-    val SSID_PW: String = "",
-    val location: String = "",
-    val name: String = "",
-    val relays: List<Relay> = emptyList()
+    var id: String = "",
+    var clientId: String = "", // Agregar este campo
+    var name: String = "",
+    var location: String = "",
+    var ESP32_IP: String = "",
+    var SSID: String = "",
+    var SSID_CON: String = "",
+    var SSID_PW: String = "",
+    var relays: Map<String, Relay> = emptyMap()
 )

@@ -8,24 +8,62 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.databinding.Bindable;
 import androidx.databinding.DataBindingUtil;
 import androidx.databinding.ViewDataBinding;
+import com.pqsolutions.hdd_monitor.Panel;
 import com.pqsolutions.hdd_monitor.R;
 import java.lang.Deprecated;
 import java.lang.Object;
 
 public abstract class ItemPanelBinding extends ViewDataBinding {
   @NonNull
+  public final TextView panelLocation;
+
+  @NonNull
   public final TextView panelName;
 
   @NonNull
-  public final ImageView relayStatusIcon;
+  public final ImageView relayAlarmaIcon;
+
+  @NonNull
+  public final TextView relayAlarmaText;
+
+  @NonNull
+  public final ImageView relayProblemaIcon;
+
+  @NonNull
+  public final TextView relayProblemaText;
+
+  @NonNull
+  public final ImageView relaySupervisionIcon;
+
+  @NonNull
+  public final TextView relaySupervisionText;
+
+  @Bindable
+  protected Panel mPanel;
 
   protected ItemPanelBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      TextView panelName, ImageView relayStatusIcon) {
+      TextView panelLocation, TextView panelName, ImageView relayAlarmaIcon,
+      TextView relayAlarmaText, ImageView relayProblemaIcon, TextView relayProblemaText,
+      ImageView relaySupervisionIcon, TextView relaySupervisionText) {
     super(_bindingComponent, _root, _localFieldCount);
+    this.panelLocation = panelLocation;
     this.panelName = panelName;
-    this.relayStatusIcon = relayStatusIcon;
+    this.relayAlarmaIcon = relayAlarmaIcon;
+    this.relayAlarmaText = relayAlarmaText;
+    this.relayProblemaIcon = relayProblemaIcon;
+    this.relayProblemaText = relayProblemaText;
+    this.relaySupervisionIcon = relaySupervisionIcon;
+    this.relaySupervisionText = relaySupervisionText;
+  }
+
+  public abstract void setPanel(@Nullable Panel panel);
+
+  @Nullable
+  public Panel getPanel() {
+    return mPanel;
   }
 
   @NonNull

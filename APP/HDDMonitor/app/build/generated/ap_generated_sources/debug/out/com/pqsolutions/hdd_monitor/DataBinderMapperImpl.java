@@ -236,14 +236,15 @@ public class DataBinderMapperImpl extends DataBinderMapper {
   }
 
   private static class InnerBrLookup {
-    static final SparseArray<String> sKeys = new SparseArray<String>(5);
+    static final SparseArray<String> sKeys = new SparseArray<String>(6);
 
     static {
       sKeys.put(0, "_all");
       sKeys.put(1, "alert");
       sKeys.put(2, "event");
-      sKeys.put(3, "relay");
-      sKeys.put(4, "user");
+      sKeys.put(3, "panel");
+      sKeys.put(4, "relay");
+      sKeys.put(5, "user");
     }
   }
 

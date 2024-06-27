@@ -13,7 +13,8 @@ public class ItemRelayBindingImpl extends ItemRelayBinding  {
     private static final android.util.SparseIntArray sViewsWithIds;
     static {
         sIncludes = null;
-        sViewsWithIds = null;
+        sViewsWithIds = new android.util.SparseIntArray();
+        sViewsWithIds.put(R.id.relayStatusIcon, 2);
     }
     // views
     @NonNull
@@ -28,13 +29,12 @@ public class ItemRelayBindingImpl extends ItemRelayBinding  {
     }
     private ItemRelayBindingImpl(androidx.databinding.DataBindingComponent bindingComponent, View root, Object[] bindings) {
         super(bindingComponent, root, 0
-            , (android.widget.TextView) bindings[1]
             , (android.widget.ImageView) bindings[2]
+            , (android.widget.TextView) bindings[1]
             );
         this.mboundView0 = (androidx.constraintlayout.widget.ConstraintLayout) bindings[0];
         this.mboundView0.setTag(null);
-        this.relayNameTextView.setTag(null);
-        this.relayStatusImageView.setTag(null);
+        this.relayStatusText.setTag(null);
         setRootTag(root);
         // listeners
         invalidateAll();
@@ -93,47 +93,23 @@ public class ItemRelayBindingImpl extends ItemRelayBinding  {
             dirtyFlags = mDirtyFlags;
             mDirtyFlags = 0;
         }
-        java.lang.String relayName = null;
-        boolean relayStatusEqualsJavaLangStringOK = false;
         com.pqsolutions.hdd_monitor.Relay relay = mRelay;
         java.lang.String relayStatus = null;
-        android.graphics.drawable.Drawable relayStatusEqualsJavaLangStringOKRelayStatusImageViewAndroidDrawableIcCheckGreenRelayStatusImageViewAndroidDrawableIcCloseRed = null;
 
         if ((dirtyFlags & 0x3L) != 0) {
 
 
 
                 if (relay != null) {
-                    // read relay.name
-                    relayName = relay.getName();
                     // read relay.status
                     relayStatus = relay.getStatus();
                 }
-
-
-                if (relayStatus != null) {
-                    // read relay.status.equals("OK")
-                    relayStatusEqualsJavaLangStringOK = relayStatus.equals("OK");
-                }
-            if((dirtyFlags & 0x3L) != 0) {
-                if(relayStatusEqualsJavaLangStringOK) {
-                        dirtyFlags |= 0x8L;
-                }
-                else {
-                        dirtyFlags |= 0x4L;
-                }
-            }
-
-
-                // read relay.status.equals("OK") ? @android:drawable/ic_check_green : @android:drawable/ic_close_red
-                relayStatusEqualsJavaLangStringOKRelayStatusImageViewAndroidDrawableIcCheckGreenRelayStatusImageViewAndroidDrawableIcCloseRed = ((relayStatusEqualsJavaLangStringOK) ? (androidx.appcompat.content.res.AppCompatResources.getDrawable(relayStatusImageView.getContext(), R.drawable.ic_check_green)) : (androidx.appcompat.content.res.AppCompatResources.getDrawable(relayStatusImageView.getContext(), R.drawable.ic_close_red)));
         }
         // batch finished
         if ((dirtyFlags & 0x3L) != 0) {
             // api target 1
 
-            androidx.databinding.adapters.TextViewBindingAdapter.setText(this.relayNameTextView, relayName);
-            androidx.databinding.adapters.ImageViewBindingAdapter.setImageDrawable(this.relayStatusImageView, relayStatusEqualsJavaLangStringOKRelayStatusImageViewAndroidDrawableIcCheckGreenRelayStatusImageViewAndroidDrawableIcCloseRed);
+            androidx.databinding.adapters.TextViewBindingAdapter.setText(this.relayStatusText, relayStatus);
         }
     }
     // Listener Stub Implementations
@@ -143,8 +119,6 @@ public class ItemRelayBindingImpl extends ItemRelayBinding  {
     /* flag mapping
         flag 0 (0x1L): relay
         flag 1 (0x2L): null
-        flag 2 (0x3L): relay.status.equals("OK") ? @android:drawable/ic_check_green : @android:drawable/ic_close_red
-        flag 3 (0x4L): relay.status.equals("OK") ? @android:drawable/ic_check_green : @android:drawable/ic_close_red
     flag mapping end*/
     //end
 }

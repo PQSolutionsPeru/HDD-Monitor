@@ -14,8 +14,10 @@ public class ActivityClientPanelBindingImpl extends ActivityClientPanelBinding  
     static {
         sIncludes = null;
         sViewsWithIds = new android.util.SparseIntArray();
-        sViewsWithIds.put(R.id.titleTextView, 1);
-        sViewsWithIds.put(R.id.panelRecyclerView, 2);
+        sViewsWithIds.put(R.id.topBar, 1);
+        sViewsWithIds.put(R.id.appName, 2);
+        sViewsWithIds.put(R.id.panelRecyclerView, 3);
+        sViewsWithIds.put(R.id.noPanelsTextView, 4);
     }
     // views
     @NonNull
@@ -26,12 +28,14 @@ public class ActivityClientPanelBindingImpl extends ActivityClientPanelBinding  
     // Inverse Binding Event Handlers
 
     public ActivityClientPanelBindingImpl(@Nullable androidx.databinding.DataBindingComponent bindingComponent, @NonNull View root) {
-        this(bindingComponent, root, mapBindings(bindingComponent, root, 3, sIncludes, sViewsWithIds));
+        this(bindingComponent, root, mapBindings(bindingComponent, root, 5, sIncludes, sViewsWithIds));
     }
     private ActivityClientPanelBindingImpl(androidx.databinding.DataBindingComponent bindingComponent, View root, Object[] bindings) {
         super(bindingComponent, root, 0
-            , (androidx.recyclerview.widget.RecyclerView) bindings[2]
-            , (android.widget.TextView) bindings[1]
+            , (android.widget.TextView) bindings[2]
+            , (android.widget.TextView) bindings[4]
+            , (androidx.recyclerview.widget.RecyclerView) bindings[3]
+            , (android.widget.LinearLayout) bindings[1]
             );
         this.mboundView0 = (androidx.constraintlayout.widget.ConstraintLayout) bindings[0];
         this.mboundView0.setTag(null);

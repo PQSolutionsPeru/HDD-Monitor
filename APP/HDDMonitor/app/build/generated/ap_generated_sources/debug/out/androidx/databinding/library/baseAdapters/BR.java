@@ -7,7 +7,9 @@ public class BR {
 
   public static final int event = 2;
 
-  public static final int relay = 3;
+  public static final int panel = 3;
 
-  public static final int user = 4;
+  public static final int relay = 4;
+
+  public static final int user = 5;
 }

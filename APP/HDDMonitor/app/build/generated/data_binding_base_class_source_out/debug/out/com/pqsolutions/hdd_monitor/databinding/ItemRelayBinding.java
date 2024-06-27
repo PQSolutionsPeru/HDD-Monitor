@@ -18,19 +18,19 @@ import java.lang.Object;
 
 public abstract class ItemRelayBinding extends ViewDataBinding {
   @NonNull
-  public final TextView relayNameTextView;
+  public final ImageView relayStatusIcon;
 
   @NonNull
-  public final ImageView relayStatusImageView;
+  public final TextView relayStatusText;
 
   @Bindable
   protected Relay mRelay;
 
   protected ItemRelayBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      TextView relayNameTextView, ImageView relayStatusImageView) {
+      ImageView relayStatusIcon, TextView relayStatusText) {
     super(_bindingComponent, _root, _localFieldCount);
-    this.relayNameTextView = relayNameTextView;
-    this.relayStatusImageView = relayStatusImageView;
+    this.relayStatusIcon = relayStatusIcon;
+    this.relayStatusText = relayStatusText;
   }
 
   public abstract void setRelay(@Nullable Relay relay);
