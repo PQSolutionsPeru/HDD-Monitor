@@ -42,7 +42,7 @@ id button_generate_report
 id button_schedule_event
 id clientName
 id clientRecyclerView
-id clientStatusIcon
+id clientsLabel
 id createAlertButton
 id dateTimeTextView
 id descriptionTextView
@@ -90,6 +90,7 @@ id schedulerTitle
 id spinner_report_type
 id statusTextView
 id title
+id titleTextView
 id topBar
 id userRecyclerView
 id usernameEditText

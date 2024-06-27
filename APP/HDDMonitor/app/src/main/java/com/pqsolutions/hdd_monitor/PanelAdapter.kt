@@ -5,7 +5,9 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.pqsolutions.hdd_monitor.databinding.ItemPanelBinding
 
-class PanelAdapter(private var panels: List<Panel>) : RecyclerView.Adapter<PanelAdapter.PanelViewHolder>() {
+class PanelAdapter(
+    private var panels: List<Panel>
+) : RecyclerView.Adapter<PanelAdapter.PanelViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PanelViewHolder {
         val binding = ItemPanelBinding.inflate(LayoutInflater.from(parent.context), parent, false)
@@ -26,9 +28,10 @@ class PanelAdapter(private var panels: List<Panel>) : RecyclerView.Adapter<Panel
     inner class PanelViewHolder(private val binding: ItemPanelBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(panel: Panel) {
             binding.panelName.text = panel.name
-            binding.relayStatusIcon.setImageResource(if (panel.status == "OK") R.drawable.ic_check_green else R.drawable.ic_close_red)
-            // Update relay icons and statuses here
-            binding.executePendingBindings()
+            binding.panelLocation.text = panel.location
+            binding.relayStatusIcon.setImageResource(
+                if (panel.relays.all { it.status == "OK" }) R.drawable.ic_check_green else R.drawable.ic_close_red
+            )
         }
     }
 }

@@ -14,7 +14,8 @@ public class ActivityClientPanelBindingImpl extends ActivityClientPanelBinding  
     static {
         sIncludes = null;
         sViewsWithIds = new android.util.SparseIntArray();
-        sViewsWithIds.put(R.id.panelRecyclerView, 1);
+        sViewsWithIds.put(R.id.titleTextView, 1);
+        sViewsWithIds.put(R.id.panelRecyclerView, 2);
     }
     // views
     @NonNull
@@ -25,11 +26,12 @@ public class ActivityClientPanelBindingImpl extends ActivityClientPanelBinding  
     // Inverse Binding Event Handlers
 
     public ActivityClientPanelBindingImpl(@Nullable androidx.databinding.DataBindingComponent bindingComponent, @NonNull View root) {
-        this(bindingComponent, root, mapBindings(bindingComponent, root, 2, sIncludes, sViewsWithIds));
+        this(bindingComponent, root, mapBindings(bindingComponent, root, 3, sIncludes, sViewsWithIds));
     }
     private ActivityClientPanelBindingImpl(androidx.databinding.DataBindingComponent bindingComponent, View root, Object[] bindings) {
         super(bindingComponent, root, 0
-            , (androidx.recyclerview.widget.RecyclerView) bindings[1]
+            , (androidx.recyclerview.widget.RecyclerView) bindings[2]
+            , (android.widget.TextView) bindings[1]
             );
         this.mboundView0 = (androidx.constraintlayout.widget.ConstraintLayout) bindings[0];
         this.mboundView0.setTag(null);

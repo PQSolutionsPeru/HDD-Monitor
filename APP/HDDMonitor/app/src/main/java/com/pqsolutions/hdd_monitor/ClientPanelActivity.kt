@@ -1,6 +1,7 @@
 package com.pqsolutions.hdd_monitor
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.firebase.firestore.FirebaseFirestore
@@ -18,11 +19,16 @@ class ClientPanelActivity : AppCompatActivity() {
         binding = ActivityClientPanelBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        val clientId = intent.getStringExtra("CLIENT_ID") ?: return
+        val clientId = intent.getStringExtra("CLIENT_ID")
+        if (clientId == null) {
+            Toast.makeText(this, "Client ID is missing", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
 
         firestore = FirebaseFirestore.getInstance()
         panelAdapter = PanelAdapter(emptyList())
-        binding.panelRecyclerView.apply {
+        binding.panelsRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@ClientPanelActivity)
             adapter = panelAdapter
         }
@@ -39,7 +45,7 @@ class ClientPanelActivity : AppCompatActivity() {
 
         panelListener = panelsCollectionRef.addSnapshotListener { snapshots, e ->
             if (e != null) {
-                // Handle error
+                Toast.makeText(this, "Error loading panels: ${e.message}", Toast.LENGTH_SHORT).show()
                 return@addSnapshotListener
             }
 

@@ -30,6 +30,8 @@ class AdminMainActivity : AppCompatActivity() {
             adapter = clientAdapter
         }
 
+        loadClients()
+
         binding.bottomNavigation.setOnNavigationItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_create_alert -> {
@@ -47,8 +49,6 @@ class AdminMainActivity : AppCompatActivity() {
                 else -> false
             }
         }
-
-        loadClients()
     }
 
     private fun loadClients() {

@@ -4,6 +4,8 @@ package com.pqsolutions.hdd_monitor.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.databinding.DataBindingUtil;
@@ -16,16 +18,33 @@ import java.lang.Object;
 
 public abstract class ActivityAdminMainBinding extends ViewDataBinding {
   @NonNull
+  public final TextView appName;
+
+  @NonNull
   public final BottomNavigationView bottomNavigation;
 
   @NonNull
   public final RecyclerView clientRecyclerView;
 
+  @NonNull
+  public final TextView clientsLabel;
+
+  @NonNull
+  public final TextView titleTextView;
+
+  @NonNull
+  public final LinearLayout topBar;
+
   protected ActivityAdminMainBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      BottomNavigationView bottomNavigation, RecyclerView clientRecyclerView) {
+      TextView appName, BottomNavigationView bottomNavigation, RecyclerView clientRecyclerView,
+      TextView clientsLabel, TextView titleTextView, LinearLayout topBar) {
     super(_bindingComponent, _root, _localFieldCount);
+    this.appName = appName;
     this.bottomNavigation = bottomNavigation;
     this.clientRecyclerView = clientRecyclerView;
+    this.clientsLabel = clientsLabel;
+    this.titleTextView = titleTextView;
+    this.topBar = topBar;
   }
 
   @NonNull

@@ -4,7 +4,6 @@ package com.pqsolutions.hdd_monitor.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -18,14 +17,10 @@ public abstract class ItemClientBinding extends ViewDataBinding {
   @NonNull
   public final TextView clientName;
 
-  @NonNull
-  public final ImageView clientStatusIcon;
-
   protected ItemClientBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      TextView clientName, ImageView clientStatusIcon) {
+      TextView clientName) {
     super(_bindingComponent, _root, _localFieldCount);
     this.clientName = clientName;
-    this.clientStatusIcon = clientStatusIcon;
   }
 
   @NonNull
