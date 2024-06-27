@@ -4,32 +4,28 @@ package com.pqsolutions.hdd_monitor.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.databinding.DataBindingUtil;
 import androidx.databinding.ViewDataBinding;
-import androidx.recyclerview.widget.RecyclerView;
 import com.pqsolutions.hdd_monitor.R;
 import java.lang.Deprecated;
 import java.lang.Object;
 
 public abstract class ItemPanelBinding extends ViewDataBinding {
   @NonNull
-  public final TextView panelLocationTextView;
+  public final TextView panelName;
 
   @NonNull
-  public final TextView panelNameTextView;
-
-  @NonNull
-  public final RecyclerView relayRecyclerView;
+  public final ImageView relayStatusIcon;
 
   protected ItemPanelBinding(Object _bindingComponent, View _root, int _localFieldCount,
-      TextView panelLocationTextView, TextView panelNameTextView, RecyclerView relayRecyclerView) {
+      TextView panelName, ImageView relayStatusIcon) {
     super(_bindingComponent, _root, _localFieldCount);
-    this.panelLocationTextView = panelLocationTextView;
-    this.panelNameTextView = panelNameTextView;
-    this.relayRecyclerView = relayRecyclerView;
+    this.panelName = panelName;
+    this.relayStatusIcon = relayStatusIcon;
   }
 
   @NonNull

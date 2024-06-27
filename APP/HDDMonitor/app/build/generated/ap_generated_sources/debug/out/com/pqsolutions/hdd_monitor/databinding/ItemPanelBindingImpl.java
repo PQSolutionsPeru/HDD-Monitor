@@ -14,9 +14,8 @@ public class ItemPanelBindingImpl extends ItemPanelBinding  {
     static {
         sIncludes = null;
         sViewsWithIds = new android.util.SparseIntArray();
-        sViewsWithIds.put(R.id.panelNameTextView, 1);
-        sViewsWithIds.put(R.id.panelLocationTextView, 2);
-        sViewsWithIds.put(R.id.relayRecyclerView, 3);
+        sViewsWithIds.put(R.id.panelName, 1);
+        sViewsWithIds.put(R.id.relayStatusIcon, 2);
     }
     // views
     @NonNull
@@ -27,13 +26,12 @@ public class ItemPanelBindingImpl extends ItemPanelBinding  {
     // Inverse Binding Event Handlers
 
     public ItemPanelBindingImpl(@Nullable androidx.databinding.DataBindingComponent bindingComponent, @NonNull View root) {
-        this(bindingComponent, root, mapBindings(bindingComponent, root, 4, sIncludes, sViewsWithIds));
+        this(bindingComponent, root, mapBindings(bindingComponent, root, 3, sIncludes, sViewsWithIds));
     }
     private ItemPanelBindingImpl(androidx.databinding.DataBindingComponent bindingComponent, View root, Object[] bindings) {
         super(bindingComponent, root, 0
-            , (android.widget.TextView) bindings[2]
             , (android.widget.TextView) bindings[1]
-            , (androidx.recyclerview.widget.RecyclerView) bindings[3]
+            , (android.widget.ImageView) bindings[2]
             );
         this.mboundView0 = (androidx.constraintlayout.widget.ConstraintLayout) bindings[0];
         this.mboundView0.setTag(null);

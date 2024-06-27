@@ -78,6 +78,10 @@
             android:name="com.pqsolutions.hdd_monitor.UserManagementActivity"
             android:exported="true"
             android:theme="@style/AppTheme.NoActionBar" />
+        <activity
+            android:name="com.pqsolutions.hdd_monitor.ClientPanelActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
 
         <service
             android:name="com.pqsolutions.hdd_monitor.MyFirebaseMessagingService"

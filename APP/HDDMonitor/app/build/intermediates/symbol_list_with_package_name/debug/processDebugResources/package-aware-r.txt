@@ -3326,6 +3326,9 @@ id checked
 id chronometer
 id circle_center
 id clear_text
+id clientName
+id clientRecyclerView
+id clientStatusIcon
 id clip_horizontal
 id clip_vertical
 id clockwise
@@ -3587,9 +3590,8 @@ id overshoot
 id packed
 id panelIcon
 id panelLocation
-id panelLocationTextView
 id panelName
-id panelNameTextView
+id panelRecyclerView
 id parallax
 id parent
 id parentPanel
@@ -3617,7 +3619,7 @@ id relayAlarmaText
 id relayNameTextView
 id relayProblemaIcon
 id relayProblemaText
-id relayRecyclerView
+id relayStatusIcon
 id relayStatusImageView
 id relaySupervisionIcon
 id relaySupervisionText
@@ -3897,6 +3899,7 @@ layout activity_add_edit_alert
 layout activity_add_edit_user
 layout activity_admin_main
 layout activity_alert_management
+layout activity_client_panel
 layout activity_event_history
 layout activity_event_scheduler
 layout activity_login
@@ -3924,6 +3927,7 @@ layout design_text_input_start_icon
 layout ime_base_split_test_activity
 layout ime_secondary_split_test_activity
 layout item_alert
+layout item_client
 layout item_event
 layout item_panel
 layout item_relay

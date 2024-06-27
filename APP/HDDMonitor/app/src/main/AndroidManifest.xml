@@ -56,6 +56,10 @@
             android:exported="true"
             android:theme="@style/AppTheme.NoActionBar" />
 
+        <activity android:name=".ClientPanelActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
         <service
             android:name=".MyFirebaseMessagingService"
             android:exported="true">

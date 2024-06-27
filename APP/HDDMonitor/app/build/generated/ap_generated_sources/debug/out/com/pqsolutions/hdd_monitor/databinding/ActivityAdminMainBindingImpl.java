@@ -14,19 +14,8 @@ public class ActivityAdminMainBindingImpl extends ActivityAdminMainBinding  {
     static {
         sIncludes = null;
         sViewsWithIds = new android.util.SparseIntArray();
-        sViewsWithIds.put(R.id.topBar, 1);
-        sViewsWithIds.put(R.id.appName, 2);
-        sViewsWithIds.put(R.id.panelIcon, 3);
-        sViewsWithIds.put(R.id.panelName, 4);
-        sViewsWithIds.put(R.id.panelLocation, 5);
-        sViewsWithIds.put(R.id.relaysLayout, 6);
-        sViewsWithIds.put(R.id.relayAlarmaIcon, 7);
-        sViewsWithIds.put(R.id.relayAlarmaText, 8);
-        sViewsWithIds.put(R.id.relayProblemaIcon, 9);
-        sViewsWithIds.put(R.id.relayProblemaText, 10);
-        sViewsWithIds.put(R.id.relaySupervisionIcon, 11);
-        sViewsWithIds.put(R.id.relaySupervisionText, 12);
-        sViewsWithIds.put(R.id.bottomNavigation, 13);
+        sViewsWithIds.put(R.id.clientRecyclerView, 1);
+        sViewsWithIds.put(R.id.bottomNavigation, 2);
     }
     // views
     @NonNull
@@ -37,23 +26,12 @@ public class ActivityAdminMainBindingImpl extends ActivityAdminMainBinding  {
     // Inverse Binding Event Handlers
 
     public ActivityAdminMainBindingImpl(@Nullable androidx.databinding.DataBindingComponent bindingComponent, @NonNull View root) {
-        this(bindingComponent, root, mapBindings(bindingComponent, root, 14, sIncludes, sViewsWithIds));
+        this(bindingComponent, root, mapBindings(bindingComponent, root, 3, sIncludes, sViewsWithIds));
     }
     private ActivityAdminMainBindingImpl(androidx.databinding.DataBindingComponent bindingComponent, View root, Object[] bindings) {
         super(bindingComponent, root, 0
-            , (android.widget.TextView) bindings[2]
-            , (com.google.android.material.bottomnavigation.BottomNavigationView) bindings[13]
-            , (android.widget.ImageView) bindings[3]
-            , (android.widget.TextView) bindings[5]
-            , (android.widget.TextView) bindings[4]
-            , (android.widget.ImageView) bindings[7]
-            , (android.widget.TextView) bindings[8]
-            , (android.widget.ImageView) bindings[9]
-            , (android.widget.TextView) bindings[10]
-            , (android.widget.ImageView) bindings[11]
-            , (android.widget.TextView) bindings[12]
-            , (android.widget.LinearLayout) bindings[6]
-            , (android.widget.LinearLayout) bindings[1]
+            , (com.google.android.material.bottomnavigation.BottomNavigationView) bindings[2]
+            , (androidx.recyclerview.widget.RecyclerView) bindings[1]
             );
         this.mboundView0 = (androidx.constraintlayout.widget.ConstraintLayout) bindings[0];
         this.mboundView0.setTag(null);

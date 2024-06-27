@@ -4,20 +4,20 @@
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-hdpi/ic_launcher_foreground.webp"
     },
     {
-        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-mdpi_ic_launcher_foreground.webp.flat",
-        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-mdpi/ic_launcher_foreground.webp"
-    },
-    {
         "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_event_history.xml.flat",
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_event_history.xml"
     },
     {
-        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_event_scheduler.xml.flat",
-        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_event_scheduler.xml"
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-mdpi_ic_launcher_foreground.webp.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-mdpi/ic_launcher_foreground.webp"
     },
     {
         "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-anydpi-v26_ic_launcher.xml.flat",
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_event_scheduler.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_event_scheduler.xml"
     },
     {
         "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_check_green.xml.flat",
@@ -58,6 +58,10 @@
     {
         "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_create_alert.xml.flat",
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_create_alert.xml"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_item_client.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/item_client.xml"
     },
     {
         "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-xhdpi_ic_launcher_foreground.webp.flat",
@@ -142,6 +146,10 @@
     {
         "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/drawable_ic_close_red_bk.png.flat",
         "source": "com.pqsolutions.hdd_monitor.app-main-80:/drawable/ic_close_red_bk.png"
+    },
+    {
+        "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/layout_activity_client_panel.xml.flat",
+        "source": "com.pqsolutions.hdd_monitor.app-main-80:/layout/activity_client_panel.xml"
     },
     {
         "merged": "com.pqsolutions.hdd_monitor.app-debug-78:/mipmap-mdpi_ic_launcher.webp.flat",

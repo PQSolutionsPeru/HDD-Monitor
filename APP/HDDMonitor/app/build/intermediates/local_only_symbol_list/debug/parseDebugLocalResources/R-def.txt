@@ -40,6 +40,9 @@ id bottomNavigation
 id bottom_navigation
 id button_generate_report
 id button_schedule_event
+id clientName
+id clientRecyclerView
+id clientStatusIcon
 id createAlertButton
 id dateTimeTextView
 id descriptionTextView
@@ -65,9 +68,8 @@ id nav_manage_users
 id nav_schedule_event
 id panelIcon
 id panelLocation
-id panelLocationTextView
 id panelName
-id panelNameTextView
+id panelRecyclerView
 id passwordEditText
 id recyclerView
 id relayAlarmaIcon
@@ -75,7 +77,7 @@ id relayAlarmaText
 id relayNameTextView
 id relayProblemaIcon
 id relayProblemaText
-id relayRecyclerView
+id relayStatusIcon
 id relayStatusImageView
 id relaySupervisionIcon
 id relaySupervisionText
@@ -97,6 +99,7 @@ layout activity_add_edit_alert
 layout activity_add_edit_user
 layout activity_admin_main
 layout activity_alert_management
+layout activity_client_panel
 layout activity_event_history
 layout activity_event_scheduler
 layout activity_login
@@ -104,6 +107,7 @@ layout activity_main
 layout activity_report
 layout activity_user_management
 layout item_alert
+layout item_client
 layout item_event
 layout item_panel
 layout item_relay
