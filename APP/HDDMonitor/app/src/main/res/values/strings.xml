@@ -5,5 +5,7 @@
     <string name="problem_icon">Problema</string>
     <string name="supervision_icon">Supervision</string>
     <string name="panel_icon">Panel Icon</string>
+    <string name="no_panels_found">Cliente no tiene paneles</string>
+    <string name="no_client_id">No se ha proporcionado un ID de cliente</string>
 </resources>
 

@@ -2259,6 +2259,8 @@
     <string description="Button text to indicate that the widget will ignore the user&apos;s selection [CHAR_LIMIT=16]" name="mtrl_timepicker_cancel">Cancel</string>
     <string description="Button text to indicate that the widget will save the user&apos;s selection [CHAR_LIMIT=16]" name="mtrl_timepicker_confirm">OK</string>
     <string name="navigation_menu">"Navigation menu"</string>
+    <string name="no_client_id">No se ha proporcionado un ID de cliente</string>
+    <string name="no_panels_found">Cliente no tiene paneles</string>
     <string name="not_selected">Not selected</string>
     <string name="off">Off</string>
     <string name="on">On</string>

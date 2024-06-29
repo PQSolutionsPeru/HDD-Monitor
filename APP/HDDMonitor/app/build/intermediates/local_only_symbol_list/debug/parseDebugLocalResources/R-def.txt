@@ -36,13 +36,12 @@ id alertText
 id alertTitle
 id alertsRecyclerView
 id appName
-id bottomNavigation
 id bottom_navigation
 id button_generate_report
 id button_schedule_event
 id clientName
 id clientRecyclerView
-id clientsLabel
+id clientsTitleTextView
 id createAlertButton
 id dateTimeTextView
 id descriptionTextView
@@ -70,7 +69,6 @@ id noPanelsTextView
 id panelIcon
 id panelLocation
 id panelName
-id panelRecyclerView
 id passwordEditText
 id recyclerView
 id relayAlarmaIcon
@@ -90,12 +88,12 @@ id schedulerTitle
 id spinner_report_type
 id statusTextView
 id title
-id titleTextView
 id topBar
 id userRecyclerView
 id usernameEditText
 id usernameTextView
 id viewEventHistoryButton
+id welcomeTextView
 layout activity_add_edit_alert
 layout activity_add_edit_user
 layout activity_admin_main
@@ -126,6 +124,8 @@ string google_api_key
 string google_app_id
 string google_crash_reporting_api_key
 string google_storage_bucket
+string no_client_id
+string no_panels_found
 string panel_icon
 string problem_icon
 string project_id

@@ -13,12 +13,11 @@ public class ItemClientBindingImpl extends ItemClientBinding  {
     private static final android.util.SparseIntArray sViewsWithIds;
     static {
         sIncludes = null;
-        sViewsWithIds = new android.util.SparseIntArray();
-        sViewsWithIds.put(R.id.clientName, 1);
+        sViewsWithIds = null;
     }
     // views
     @NonNull
-    private final androidx.constraintlayout.widget.ConstraintLayout mboundView0;
+    private final android.widget.LinearLayout mboundView0;
     // variables
     // values
     // listeners
@@ -31,7 +30,8 @@ public class ItemClientBindingImpl extends ItemClientBinding  {
         super(bindingComponent, root, 0
             , (android.widget.TextView) bindings[1]
             );
-        this.mboundView0 = (androidx.constraintlayout.widget.ConstraintLayout) bindings[0];
+        this.clientName.setTag(null);
+        this.mboundView0 = (android.widget.LinearLayout) bindings[0];
         this.mboundView0.setTag(null);
         setRootTag(root);
         // listeners
@@ -41,7 +41,7 @@ public class ItemClientBindingImpl extends ItemClientBinding  {
     @Override
     public void invalidateAll() {
         synchronized(this) {
-                mDirtyFlags = 0x1L;
+                mDirtyFlags = 0x2L;
         }
         requestRebind();
     }
@@ -59,7 +59,22 @@ public class ItemClientBindingImpl extends ItemClientBinding  {
     @Override
     public boolean setVariable(int variableId, @Nullable Object variable)  {
         boolean variableSet = true;
+        if (BR.client == variableId) {
+            setClient((com.pqsolutions.hdd_monitor.Client) variable);
+        }
+        else {
+            variableSet = false;
+        }
             return variableSet;
+    }
+
+    public void setClient(@Nullable com.pqsolutions.hdd_monitor.Client Client) {
+        this.mClient = Client;
+        synchronized(this) {
+            mDirtyFlags |= 0x1L;
+        }
+        notifyPropertyChanged(BR.client);
+        super.requestRebind();
     }
 
     @Override
@@ -76,14 +91,32 @@ public class ItemClientBindingImpl extends ItemClientBinding  {
             dirtyFlags = mDirtyFlags;
             mDirtyFlags = 0;
         }
+        java.lang.String ClientName1 = null;
+        com.pqsolutions.hdd_monitor.Client client = mClient;
+
+        if ((dirtyFlags & 0x3L) != 0) {
+
+
+
+                if (client != null) {
+                    // read client.name
+                    ClientName1 = client.getName();
+                }
+        }
         // batch finished
+        if ((dirtyFlags & 0x3L) != 0) {
+            // api target 1
+
+            androidx.databinding.adapters.TextViewBindingAdapter.setText(this.clientName, ClientName1);
+        }
     }
     // Listener Stub Implementations
     // callback impls
     // dirty flag
     private  long mDirtyFlags = 0xffffffffffffffffL;
     /* flag mapping
-        flag 0 (0x1L): null
+        flag 0 (0x1L): client
+        flag 1 (0x2L): null
     flag mapping end*/
     //end
 }

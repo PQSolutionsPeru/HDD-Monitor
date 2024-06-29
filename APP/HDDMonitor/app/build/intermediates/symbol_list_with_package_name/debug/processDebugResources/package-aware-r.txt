@@ -3295,7 +3295,6 @@ id beginning
 id bestChoice
 id blocking
 id bottom
-id bottomNavigation
 id bottom_navigation
 id bounce
 id bounceBoth
@@ -3328,7 +3327,7 @@ id circle_center
 id clear_text
 id clientName
 id clientRecyclerView
-id clientsLabel
+id clientsTitleTextView
 id clip_horizontal
 id clip_vertical
 id clockwise
@@ -3592,7 +3591,6 @@ id packed
 id panelIcon
 id panelLocation
 id panelName
-id panelRecyclerView
 id parallax
 id parent
 id parentPanel
@@ -3734,7 +3732,6 @@ id textinput_suffix_text
 id time
 id title
 id titleDividerNoCustom
-id titleTextView
 id title_template
 id toggle
 id top
@@ -3770,6 +3767,7 @@ id view_tree_saved_state_registry_owner
 id view_tree_view_model_store_owner
 id visible
 id visible_removing_fragment_view_tag
+id welcomeTextView
 id west
 id wide
 id withText
@@ -4252,6 +4250,8 @@ string mtrl_switch_track_path
 string mtrl_timepicker_cancel
 string mtrl_timepicker_confirm
 string navigation_menu
+string no_client_id
+string no_panels_found
 string not_selected
 string off
 string on

@@ -5,9 +5,9 @@ public class BR {
 
   public static final int alert = 1;
 
-  public static final int event = 2;
+  public static final int client = 2;
 
-  public static final int panel = 3;
+  public static final int event = 3;
 
   public static final int relay = 4;
 
