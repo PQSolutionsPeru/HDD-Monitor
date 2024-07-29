@@ -35,9 +35,9 @@ class ClientPanelActivity : AppCompatActivity() {
         relayProblemaIcon = findViewById(R.id.relayProblemaIcon)
         relaySupervisionIcon = findViewById(R.id.relaySupervisionIcon)
 
-        val clientId = intent.getStringExtra("CLIENT_ID")
-        Log.d("ClientPanelActivity", "Received client ID: $clientId")
-        if (clientId != null) {
+        val clientId = intent.getStringExtra("CLIENT_ID") ?: ""
+        Log.d("ClientPanelActivity", "Received client ID: '$clientId'")
+        if (clientId.isNotEmpty()) {
             loadPanels(clientId)
         } else {
             Log.e("ClientPanelActivity", "No client ID provided")
@@ -47,28 +47,44 @@ class ClientPanelActivity : AppCompatActivity() {
 
     private fun loadPanels(clientId: String) {
         val db = FirebaseFirestore.getInstance()
-        val panelsRef = db.collection("hdd-monitor")
+        val clientsRef = db.collection("hdd-monitor")
             .document("accounts")
             .collection("clients")
-            .document(clientId)
-            .collection("panels")
 
-        panelsRef.get().addOnSuccessListener { result ->
-            val panels = result.documents.mapNotNull {
-                Log.d("ClientPanelActivity", "Document ID: ${it.id}, Data: ${it.data}")
-                it.toObject(Panel::class.java)?.apply { id = it.id }
+        clientsRef.whereEqualTo("ID", clientId).get()
+            .addOnSuccessListener { querySnapshot ->
+                if (querySnapshot.documents.isNotEmpty()) {
+                    val clientDoc = querySnapshot.documents.first()
+                    val panelsRef = clientDoc.reference.collection("panels")
+
+                    panelsRef.get().addOnSuccessListener { result ->
+                        Log.d("ClientPanelActivity", "Query successful, documents: ${result.documents.size}")
+                        val panels = result.documents.mapNotNull { document ->
+                            Log.d("ClientPanelActivity", "Panel document: ${document.id}, data: ${document.data}")
+                            document.toObject(Panel::class.java)?.apply {
+                                id = document.id
+                            }
+                        }
+                        if (panels.isEmpty()) {
+                            Log.d("ClientPanelActivity", "No panels found for client ID: $clientId")
+                            showNoPanelsFound()
+                        } else {
+                            Log.d("ClientPanelActivity", "Panels found: ${panels.size}")
+                            showPanels(panels)
+                        }
+                    }.addOnFailureListener { exception ->
+                        Log.e("ClientPanelActivity", "Error getting panels: ", exception)
+                        showNoPanelsFound()
+                    }
+                } else {
+                    Log.d("ClientPanelActivity", "No client found with ID: $clientId")
+                    showNoPanelsFound()
+                }
             }
-            if (panels.isEmpty()) {
-                Log.d("ClientPanelActivity", "No panels found for client ID: $clientId")
+            .addOnFailureListener { exception ->
+                Log.e("ClientPanelActivity", "Error finding client: ", exception)
                 showNoPanelsFound()
-            } else {
-                Log.d("ClientPanelActivity", "Panels found: ${panels.size}")
-                showPanels(panels)
             }
-        }.addOnFailureListener { exception ->
-            Log.e("ClientPanelActivity", "Error getting panels: ", exception)
-            showNoPanelsFound()
-        }
     }
 
     private fun showNoPanelsFound() {
@@ -79,6 +95,7 @@ class ClientPanelActivity : AppCompatActivity() {
     private fun showPanels(panels: List<Panel>) {
         recyclerView.visibility = View.VISIBLE
         noPanelsTextView.visibility = View.GONE
+        panelDetailsLayout.visibility = View.GONE
 
         recyclerView.layoutManager = LinearLayoutManager(this)
         val adapter = PanelAdapter(panels) { panel -> showPanelDetails(panel) }

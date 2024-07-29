@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor
 
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -18,6 +19,7 @@ class PanelAdapter(
 
     override fun onBindViewHolder(holder: PanelViewHolder, position: Int) {
         val panel = panels[position]
+        Log.d("PanelAdapter", "Binding panel: ${panel.name} at position $position")
         holder.bind(panel, onItemClick)
     }
 

@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -30,6 +31,7 @@ class AdminMainActivity : AppCompatActivity() {
 
     private fun setupRecyclerView() {
         clientAdapter = ClientAdapter { client ->
+            Log.d("AdminMainActivity", "Sending client ID: ${client.ID}")
             val intent = Intent(this, ClientPanelActivity::class.java).apply {
                 putExtra("CLIENT_ID", client.ID)
             }
