@@ -30,6 +30,9 @@ public final class ActivityClientPanelBinding implements ViewBinding {
   public final TextView noPanelsTextView;
 
   @NonNull
+  public final LinearLayout panelDetailsLayout;
+
+  @NonNull
   public final ImageView panelIcon;
 
   @NonNull
@@ -69,8 +72,8 @@ public final class ActivityClientPanelBinding implements ViewBinding {
   public final Button viewEventHistoryButton;
 
   private ActivityClientPanelBinding(@NonNull ConstraintLayout rootView, @NonNull TextView appName,
-      @NonNull TextView noPanelsTextView, @NonNull ImageView panelIcon,
-      @NonNull TextView panelLocation, @NonNull TextView panelName,
+      @NonNull TextView noPanelsTextView, @NonNull LinearLayout panelDetailsLayout,
+      @NonNull ImageView panelIcon, @NonNull TextView panelLocation, @NonNull TextView panelName,
       @NonNull RecyclerView recyclerView, @NonNull ImageView relayAlarmaIcon,
       @NonNull TextView relayAlarmaText, @NonNull ImageView relayProblemaIcon,
       @NonNull TextView relayProblemaText, @NonNull ImageView relaySupervisionIcon,
@@ -79,6 +82,7 @@ public final class ActivityClientPanelBinding implements ViewBinding {
     this.rootView = rootView;
     this.appName = appName;
     this.noPanelsTextView = noPanelsTextView;
+    this.panelDetailsLayout = panelDetailsLayout;
     this.panelIcon = panelIcon;
     this.panelLocation = panelLocation;
     this.panelName = panelName;
@@ -130,6 +134,12 @@ public final class ActivityClientPanelBinding implements ViewBinding {
       id = R.id.noPanelsTextView;
       TextView noPanelsTextView = ViewBindings.findChildViewById(rootView, id);
       if (noPanelsTextView == null) {
+        break missingId;
+      }
+
+      id = R.id.panelDetailsLayout;
+      LinearLayout panelDetailsLayout = ViewBindings.findChildViewById(rootView, id);
+      if (panelDetailsLayout == null) {
         break missingId;
       }
 
@@ -212,9 +222,9 @@ public final class ActivityClientPanelBinding implements ViewBinding {
       }
 
       return new ActivityClientPanelBinding((ConstraintLayout) rootView, appName, noPanelsTextView,
-          panelIcon, panelLocation, panelName, recyclerView, relayAlarmaIcon, relayAlarmaText,
-          relayProblemaIcon, relayProblemaText, relaySupervisionIcon, relaySupervisionText,
-          relaysLayout, topBar, viewEventHistoryButton);
+          panelDetailsLayout, panelIcon, panelLocation, panelName, recyclerView, relayAlarmaIcon,
+          relayAlarmaText, relayProblemaIcon, relayProblemaText, relaySupervisionIcon,
+          relaySupervisionText, relaysLayout, topBar, viewEventHistoryButton);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

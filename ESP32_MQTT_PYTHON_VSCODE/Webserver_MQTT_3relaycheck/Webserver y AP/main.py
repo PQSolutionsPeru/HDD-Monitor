@@ -1,12 +1,11 @@
 import urequests
 import utime
 import json
-import gc
-import _thread  # Asegurarse de importar _thread
 from wifi_manager import WiFiManager
 from mqtt_manager import MQTTManager
 from relay_manager import RelayManager
 from watchdog_manager import WatchdogManager
+import gc
 
 # Configuración
 RELAY_PINS = [32, 33, 25]
@@ -39,6 +38,7 @@ def update_datetime():
         cached_datetime = cached_datetime if cached_datetime else "unknown"
     last_datetime_update = utime.ticks_ms()
 
+
 def relay_callback(pin, pin_num):
     gc.collect()  # Recolectar basura antes de procesar
     print(f"Callback de relay activado para el pin {pin_num}.")
@@ -52,6 +52,8 @@ def relay_callback(pin, pin_num):
     }
     print(f"Enviando mensaje MQTT: {message}")
     mqtt_manager.publish_event(f"EMPRESA_TEST/{mqtt_manager.MQTT_CLIENT_ID}/eventos", json.dumps(message))
+
+
 
 def main():
     last_memory_report_time = utime.ticks_ms()
@@ -69,13 +71,6 @@ def main():
             print(f"Reporte de memoria libre: {free_memory} bytes")
             last_memory_report_time = current_time
             gc.collect()  # Recolección de basura para mantener la memoria limpia
-
-def configurar_wifi(ssid, password):
-    wifi_manager.configure_wifi(ssid, password)
-    wifi_manager.connect_wifi()
-
-def iniciar_main():
-    _thread.start_new_thread(main, ())
 
 if __name__ == "__main__":
     main()

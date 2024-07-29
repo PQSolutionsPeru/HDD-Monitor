@@ -1,5 +1,7 @@
 Tengo un ESP32 que estará corriendo un main.py (que ya tengo) que usará otros archivos .py para monitorear los estados de 3 relevadores de un panel contra incendios las 24 Horas. 
-Lo que necesito es que crees un servidor web ligero con asyncio, para micropython (tengo el último v1.23.0 (2024-06-02) .bin desde https://micropython.org/download/ESP32_GENERIC/); guíate de https://docs.micropython.org/en/latest/library/asyncio.html#module-asyncio. Un webserver en donde se pueda:
+Lo que necesito es que crees un servidor web ligero y optimizado para consumir lo menos memoria posible; para micropython (tengo el último v1.23.0 (2024-06-02) .bin desde https://micropython.org/download/ESP32_GENERIC/).
+
+Un webserver en donde se pueda:
 - Inicializar NVS al inicio.
 - Guardar y leer credenciales solo durante el inicio.
 - Inicialización: El ESP32 intenta conectarse a la red Wi-Fi utilizando la configuración almacenada en NVS.
@@ -11,12 +13,12 @@ Lo que necesito es que crees un servidor web ligero con asyncio, para micropytho
     En el reinicio, el ESP32 lee las credenciales de NVS y se conecta a la red especificada.
 - Reiniciar el ESP32: Proporcionar una ruta para reiniciar el dispositivo.
 - Gestionar Archivos: Subir, descargar y eliminar archivos del ESP32.
-- Controlar el Programa Principal: Iniciar y detener archivos .py
+- Controlar el Programa Principal: Iniciar y detener archivos, principalmente .py
 - Monitorear Estado: Ver el estado actual de la memoria y el espacio del ESP32.
 
-Ojo no me des ejemplos de cómo se vería un código similar; dame el código que necesito, ya todo corregido y optimizado para usar los menos recursos posibles. Dame un código sólo para copiar y pegar y la interfaz del webserver en español. Tampoco me des el main, no deberías crear un main cuando yo ya tengo uno en mi otro programa que más adelante correré a través del webserver
+Ojo no me des ejemplos de cómo se vería un código similar; dame el código que necesito, ya todo corregido y optimizado para usar los menos recursos posibles. Dame un código sólo para copiar y pegar y la interfaz del webserver en español. Tampoco me des el main, no deberías crear un main cuando yo ya tengo uno en mi otro programa que más adelante correré a través del webserver.
 
-
+Dame una interfaz profesional, basados en colores rojos oscuros, negro y blanco.
 
 basate en una interfaz así:
 
@@ -91,66 +93,92 @@ basate en una interfaz así:
 
 
 
-Resumen de Enfoques Intentados:
-Redirigir stdout a un objeto StringIO:
+resumen de lo que hemos intentado hasta ahora y los resultados obtenidos:
 
-Redirigimos sys.stdout a un objeto StringIO para capturar la salida.
-Problema: AttributeError: 'module' object has no attribute 'stdout'.
-Usar exec para ejecutar el contenido del archivo:
+Lectura inicial del archivo completo en memoria:
 
-Leímos el archivo counter.py y ejecutamos su contenido con exec.
-Problema: AttributeError: 'module' object has no attribute 'stdout'.
-Usar eval para evaluar el contenido del archivo:
-
-Evaluamos el contenido del archivo usando eval.
-Problema: Similar a exec, no capturaba la salida y generaba errores.
-Ejecución línea por línea:
-
-Leímos el archivo counter.py línea por línea y ejecutamos cada línea usando exec.
-Problema: No capturaba la salida adecuadamente y presentaba errores similares.
-Uso de subprocess:
-
-Intentamos usar subprocess para ejecutar el script como un proceso separado.
-Problema: ImportError: no module named 'subprocess' ya que subprocess no está disponible en MicroPython.
-Captura de salida con una clase personalizada OutputCapturer:
-
-Creamos una clase OutputCapturer para capturar la salida redirigiendo sys.stdout.
-Problema: AttributeError: 'module' object has no attribute 'stdout'.
-Hilos (_thread) para ejecutar el script:
-
-Intentamos ejecutar el contenido del script en un hilo separado y capturar la salida.
-Problema: AttributeError: 'module' object has no attribute 'stdout' y otros errores similares.
-Leer el archivo y ejecutar en un hilo separado sin redirigir stdout:
-
-Leímos el archivo counter.py y ejecutamos su contenido en un hilo separado sin redirigir stdout.
-Problema: El script se inicia, pero no se muestra la salida esperada en la consola.
+Resultado: Timeout y fallo en la carga para archivos grandes.
 
 
+Lectura del archivo en chunks más pequeños:
+
+Resultado: Mejoró la lectura, pero aún se producían timeouts.
 
 
+Aumento del timeout para la lectura de datos:
+
+Resultado: Permitió leer más datos, pero no resolvió completamente el problema.
+
+
+Implementación de un sistema de reintento para manejar timeouts:
+
+Resultado: Mejoró la robustez, pero no solucionó el problema de carga completa.
+
+
+Procesamiento del archivo a medida que se recibe:
+
+Resultado: Redujo el uso de memoria, pero aún se producían fallos en la carga.
+
+
+Almacenamiento temporal del archivo en la memoria flash:
+
+Resultado: Permitió manejar archivos más grandes, pero aún no se completaba la carga.
+
+
+Mejora del manejo de errores y logging:
+
+Resultado: Proporcionó más información sobre los fallos, pero no resolvió el problema.
 
 
 
+En todos los casos, el servidor web podía recibir parte del archivo, pero nunca lograba completar la carga. El proceso generalmente se detenía después de leer una porción del archivo, variando entre 271 bytes y 1767 bytes, dependiendo de la implementación.
+Los principales problemas observados fueron:
+
+Timeouts durante la lectura del archivo.
+Posible falta de memoria para manejar archivos grandes.
 
 
 
 
 
-ya funciona, se reinicia y muestra por consola la nueva IP que tomó.
-
-ahora. Mis archivos adjuntos representan mi programa original de monitoreo de panel de incendios, quiero que en vez de la configuración actual que tiene, que inicie cuando se decida iniciarlo desde el webserver
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Para ayudarte a diagnosticar mejor el problema, he añadido más impresiones de depuración para que puedas ver mejor dónde ocurre el error y qué está pasando. El error de "invalid syntax" sugiere que puede haber un problema de sintaxis en el archivo `main.py`. Vamos a añadir algunas impresiones adicionales para ver el contenido del archivo y el punto en que ocurre el error.
+
+### Código actualizado para `webserver.py`:
+
+```python
 import asyncio
 import uos
 import network
 from machine import reset
 import esp
 import json
-
+import gc
+import _thread
 from esp32 import NVS
+import sys
+import time
+import io
 
 nvs = NVS('config')
+output_queue = []
+output_lock = _thread.allocate_lock()
 
 def guardar_credenciales(ssid, password):
     print(f"Guardando credenciales: SSID={ssid}, Password={password}")
@@ -163,8 +191,8 @@ def guardar_credenciales(ssid, password):
 
 def leer_credenciales():
     try:
-        ssid_blob = bytearray(32)  # suponer un tamaño máximo de 32 bytes
-        password_blob = bytearray(64)  # suponer un tamaño máximo de 64 bytes
+        ssid_blob = bytearray(32)
+        password_blob = bytearray(64)
         nvs.get_blob('wifi_ssid', ssid_blob)
         nvs.get_blob('wifi_password', password_blob)
         ssid = ssid_blob.decode('utf-8').rstrip('\x00')
@@ -178,7 +206,7 @@ def leer_credenciales():
 
 async def conectar_wifi():
     ssid, password = leer_credenciales()
-    if ssid and password:
+    if (ssid and password) and (ssid.strip() and password.strip()):
         station = network.WLAN(network.STA_IF)
         station.active(True)
         station.connect(ssid, password)
@@ -197,6 +225,57 @@ async def modo_ap():
     ap.config(essid='ESP32_Config')
     print('Modo AP activado, ESSID=ESP32_Config')
     return ap
+
+threads = {}
+
+def ejecutar_script(nombre_archivo):
+    try:
+        global threads
+        if nombre_archivo in threads:
+            print(f"{nombre_archivo} ya está en ejecución")
+            return
+
+        def run_script():
+            try:
+                print(f"Ejecutando {nombre_archivo}")
+                temp_output_file = 'temp_output.txt'
+                with open(temp_output_file, 'w') as temp_output:
+                    try:
+                        with open(nombre_archivo) as f:
+                            script_content = f.read()
+                            temp_output.write(f"Contenido de {nombre_archivo}:\n{script_content}\n")
+                            exec(script_content, globals(), {'print': lambda *args: temp_output.write(' '.join(map(str, args)) + '\n')})
+                    except Exception as e:
+                        temp_output.write(f"Error ejecutando {nombre_archivo}: {e}\n")
+                with open(temp_output_file, 'r') as temp_output:
+                    output = temp_output.read()
+                with output_lock:
+                    output_queue.append(output)
+                uos.remove(temp_output_file)
+                print(f"Finalizó {nombre_archivo}")
+            except Exception as e:
+                print(f"Error en run_script: {e}")
+
+        thread = _thread.start_new_thread(run_script, ())
+        threads[nombre_archivo] = thread
+        print(f"{nombre_archivo} iniciado en un nuevo hilo")
+    except Exception as e:
+        print(f"Error al iniciar {nombre_archivo}: {e}")
+
+def detener_script(nombre_archivo):
+    global threads
+    if nombre_archivo in threads:
+        del threads[nombre_archivo]
+        print(f"{nombre_archivo} detenido")
+    else:
+        print(f"{nombre_archivo} no está en ejecución")
+
+async def mostrar_salida():
+    while True:
+        with output_lock:
+            while output_queue:
+                print(output_queue.pop(0), end='')
+        await asyncio.sleep(1)
 
 async def iniciar_servidor():
     async def manejar_solicitudes(reader, writer):
@@ -226,15 +305,26 @@ async def iniciar_servidor():
             response = json.dumps({'archivos': archivos})
             response = f'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{response}'
         elif 'POST /subir' in request:
-            boundary = request.split('\r\n')[0]
-            parts = request.split(boundary)
-            for part in parts:
-                if 'Content-Disposition: form-data; name="file"; filename=' in part:
-                    filename = part.split('filename=')[1].split('\r\n')[0].strip('"')
-                    content = part.split('\r\n\r\n')[1].split('\r\n')[0]
-                    with open(filename, 'wb') as f:
-                        f.write(content.encode('latin1'))
-                    response = 'HTTP/1.1 303 See Other\r\nLocation: /\r\n\r\n'
+            try:
+                content_length = int([line for line in request.split('\r\n') if 'Content-Length:' in line][0].split(':')[1])
+                boundary = request.split('boundary=')[1].split('\r\n')[0]
+                body = request.split(f'--{boundary}\r\n')[1:]
+                for part in body:
+                    if 'Content-Disposition: form-data; name="file"; filename=' in part:
+                        filename = part.split('filename=')[1].split('\r\n')[0].strip('"')
+                        file_content = part.split('\r\n\r\n')[1].rsplit(f'\r\n--{boundary}', 1)[0]
+                        with open(filename, 'wb') as f:
+                            f.write(file_content.encode('latin1'))
+                        response = 'HTTP/1.1 303 See Other\r\nLocation: /\r\n\r\n'
+                        print(f"Archivo {filename} subido exitosamente")
+                        break
+            except Exception as e:
+                response = f'HTTP/1.1 500 Internal Server Error\r\n\r\nError subiendo archivo: {e}'
+                print(f"Error subiendo archivo: {e}")
+            writer.write(response.encode())
+            await writer.drain()
+            await writer.wait_closed()
+            return
         elif 'GET /descargar/' in request:
             filename = request.split('GET /descargar/')[1].split(' ')[0]
             with open(filename, 'rb') as f:
@@ -250,15 +340,20 @@ async def iniciar_servidor():
         elif 'POST /control' in request:
             content_length = int([line for line in request.split('\r\n') if 'Content-Length:' in line][0].split(':')[1])
             body = request.split('\r\n\r\n')[1][:content_length]
-            accion = body.split('=')[1]
+            params = {k: v for k, v in (x.split('=') for x in body.split('&'))}
+            accion = params['accion']
+            archivo = params['archivo']
             if accion == 'iniciar':
-                uos.system('python3 main.py &')
-                response = 'HTTP/1.1 200 OK\r\n\r\nPrograma Principal Iniciado'
+                print(f"Iniciando {archivo}")
+                ejecutar_script(archivo)
+                response = f'HTTP/1.1 200 OK\r\n\r\n{archivo} Iniciado'
             elif accion == 'detener':
-                # Aquí se debería agregar el código para detener el programa principal
-                response = 'HTTP/1.1 200 OK\r\n\r\nPrograma Principal Detenido'
+                print(f"Deteniendo {archivo}")
+                detener_script(archivo)
+                response = f'HTTP/1.1 200 OK\r\n\r\n{archivo} Detenido'
         elif 'GET /estado' in request:
-            memoria_libre = esp.get_free_heap_size()
+            gc.collect()
+            memoria_libre = gc.mem_free()
             espacio_libre = uos.statvfs('/')[3] * uos.statvfs('/')[0]
             response = json.dumps({'memoria': memoria_libre, 'espacio_libre': espacio_libre})
             response = f'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{response}'
@@ -266,10 +361,13 @@ async def iniciar_servidor():
             response = 'HTTP/1.1 404 Not Found\r\n\r\n'
         writer.write(response.encode())
         await writer.drain()
-        await writer.wait_closed()
+        await
+
+ writer.wait_closed()
 
     server = await asyncio.start_server(manejar_solicitudes, '0.0.0.0', 80)
     print('Servidor web iniciado en el puerto 80')
+    asyncio.create_task(mostrar_salida())
     while True:
         await asyncio.sleep(3600)
 
@@ -301,8 +399,26 @@ HTML_PAGE = """\
     <ul id="file-list"></ul>
     <h2>Controlar Programa Principal</h2>
     <form action="/control" method="post">
-        <button type="submit" name="accion" value="iniciar">Iniciar Programa Principal</button>
-        <button type="submit" name="accion" value="detener">Detener Programa Principal</button>
+        <label for="archivo">Archivo:</label>
+        <select id="archivo" name="archivo">
+            <script>
+                async function listarArchivos() {
+                    const response = await fetch('/listar');
+                    const archivos = await response.json();
+                    const archivoSelect = document.getElementById('archivo');
+                    archivoSelect.innerHTML = '';
+                    archivos.archivos.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        option.textContent = file;
+                        archivoSelect.appendChild(option);
+                    });
+                }
+                listarArchivos();
+            </script>
+        </select>
+        <button type="submit" name="accion" value="iniciar">Iniciar Archivo</button>
+        <button type="submit" name="accion" value="detener">Detener Archivo</button>
     </form>
     <h2>Estado del ESP32</h2>
     <button onclick="getEstado()">Ver Estado</button>
@@ -325,7 +441,7 @@ HTML_PAGE = """\
                 const downloadLink = document.createElement('a');
                 downloadLink.href = `/descargar/${file}`;
                 downloadLink.textContent = ' Descargar';
-                li.appendChild(downloadLink);
+                li.appendChild(downloadLink)
                 const deleteLink = document.createElement('a');
                 deleteLink.href = `/eliminar/${file}`;
                 deleteLink.textContent = ' Eliminar';
@@ -347,6 +463,21 @@ async def main():
     await iniciar_servidor()
 
 asyncio.run(main())
+```
+
+### Cambios y explicaciones:
+
+1. **Captura del contenido del archivo de script**:
+   - He añadido una línea para escribir el contenido del script `main.py` en el archivo temporal antes de ejecutarlo. Esto nos ayudará a verificar si el contenido se está leyendo correctamente.
+
+2. **Redefinición de `print`**:
+   - La función `print` se ha redefinido en el contexto de `exec` para escribir la salida directamente en el archivo temporal.
+
+3. **Manejo de excepciones**:
+   - Se captura cualquier excepción que ocurra durante la lectura y ejecución del archivo, escribiendo un mensaje de error detallado en el archivo temporal para que pueda ser diagnosticado.
+
+4. **Más impresiones de depuración**:
+   - Se añaden más impresiones de depuración antes y después de la ejecución del script para proporcionar información adicional sobre el flujo de ejecución y posibles puntos de fallo.
 
 
 
@@ -361,13 +492,18 @@ asyncio.run(main())
 
 
 
-# boot.py
-import machine
-import esp
-esp.osdebug(None)
-import uos
 
-import network
 
-# Importamos y ejecutamos el servidor web
-import webserver
+
+
+
+
+
+
+ampy --port COM3 reset
+
+
+
+ # Leer credenciales del archivo
+    ssid = "PABLO-2.4G"
+    password = "47009410"

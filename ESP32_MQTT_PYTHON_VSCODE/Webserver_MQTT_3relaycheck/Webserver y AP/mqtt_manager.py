@@ -1,5 +1,6 @@
 from umqtt.robust import MQTTClient
 import time
+import gc
 
 class MQTTManager:
     def __init__(self, wifi_manager):
@@ -13,13 +14,15 @@ class MQTTManager:
         self.MQTT_PASSWORD = "esp32"
 
     def ensure_client(self):
-        self.wifi_manager.ensure_wifi_connected()  # Asegurar conexión WiFi
         try:
+            self.wifi_manager.ensure_wifi_connected()  # Asegurar conexión WiFi
             if self.client is None or not self.client.isconnected():
                 print("Reinicializando cliente MQTT...")
                 self.reinitialize_client()
         except AttributeError:  # Por si 'isconnected' no está disponible
             self.reinitialize_client()
+        except Exception as e:
+            print(f"Error al asegurar cliente MQTT: {e}")
 
     def reinitialize_client(self):
         try:
@@ -32,8 +35,8 @@ class MQTTManager:
             self.client = None
 
     def publish_event(self, topic, message):
-        self.ensure_client()  # Asegurarse de que el cliente MQTT está conectado
         try:
+            self.ensure_client()  # Asegurarse de que el cliente MQTT está conectado
             if self.client:
                 print("Enviando mensaje...")
                 self.client.publish(topic, message, qos=1)
@@ -42,3 +45,5 @@ class MQTTManager:
             print(f"Fallo al publicar debido a: {e}")
             self.message_queue.append({'topic': topic, 'message': message})  # Encolar mensaje si la publicación falla
             self.client = None
+        finally:
+            gc.collect()  # Recolectar basura después de procesar

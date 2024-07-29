@@ -3588,6 +3588,7 @@ id outline
 id outward
 id overshoot
 id packed
+id panelDetailsLayout
 id panelIcon
 id panelLocation
 id panelName

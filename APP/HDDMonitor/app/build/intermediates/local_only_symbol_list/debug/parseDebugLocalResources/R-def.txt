@@ -66,6 +66,7 @@ id nav_home
 id nav_manage_users
 id nav_schedule_event
 id noPanelsTextView
+id panelDetailsLayout
 id panelIcon
 id panelLocation
 id panelName

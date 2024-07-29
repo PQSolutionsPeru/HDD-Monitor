@@ -1,38 +1,36 @@
 package com.pqsolutions.hdd_monitor
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import com.pqsolutions.hdd_monitor.databinding.ItemPanelBinding
 
-class PanelAdapter : RecyclerView.Adapter<PanelAdapter.PanelViewHolder>() {
-
-    private var panels: List<Panel> = emptyList()
+class PanelAdapter(
+    private val panels: List<Panel>,
+    private val onItemClick: (Panel) -> Unit
+) : RecyclerView.Adapter<PanelAdapter.PanelViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PanelViewHolder {
-        val binding = ItemPanelBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return PanelViewHolder(binding)
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_panel, parent, false)
+        return PanelViewHolder(view)
     }
 
     override fun onBindViewHolder(holder: PanelViewHolder, position: Int) {
-        holder.bind(panels[position])
+        val panel = panels[position]
+        holder.bind(panel, onItemClick)
     }
 
-    override fun getItemCount(): Int {
-        return panels.size
-    }
+    override fun getItemCount(): Int = panels.size
 
-    fun updatePanels(newPanels: List<Panel>) {
-        panels = newPanels
-        notifyDataSetChanged()
-    }
+    class PanelViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val panelNameTextView: TextView = itemView.findViewById(R.id.panelName)
+        private val panelLocationTextView: TextView = itemView.findViewById(R.id.panelLocation)
 
-    inner class PanelViewHolder(private val binding: ItemPanelBinding) : RecyclerView.ViewHolder(binding.root) {
-
-        fun bind(panel: Panel) {
-            binding.panelName.text = panel.name
-            binding.panelLocation.text = panel.location
-            // Bind other data if needed
+        fun bind(panel: Panel, onItemClick: (Panel) -> Unit) {
+            panelNameTextView.text = panel.name
+            panelLocationTextView.text = panel.location
+            itemView.setOnClickListener { onItemClick(panel) }
         }
     }
 }
