@@ -15,6 +15,7 @@ class AdminMainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityAdminMainBinding
     private lateinit var firestore: FirebaseFirestore
     private lateinit var clientAdapter: ClientAdapter
+    private lateinit var notificationManager: AdminNotificationManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -22,11 +23,14 @@ class AdminMainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         firestore = FirebaseFirestore.getInstance()
+        notificationManager = AdminNotificationManager(this)
 
         setupRecyclerView()
         setupBottomNavigationView()
         loadAdminData()
         loadClientData()
+
+        notificationManager.startListeningForChanges()
     }
 
     private fun setupRecyclerView() {
@@ -101,5 +105,10 @@ class AdminMainActivity : AppCompatActivity() {
             .addOnFailureListener { e ->
                 Toast.makeText(this, "Error al cargar la lista de clientes: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        notificationManager.stopListening()
     }
 }

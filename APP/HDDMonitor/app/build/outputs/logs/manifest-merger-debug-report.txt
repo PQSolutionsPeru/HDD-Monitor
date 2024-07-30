@@ -1,9 +1,9 @@
 -- Merging decision tree log ---
 manifest
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:1:1-73:12
-INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:1:1-73:12
-INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:1:1-73:12
-INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:1:1-73:12
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:1:1-74:12
+INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:1:1-74:12
+INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:1:1-74:12
+INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:1:1-74:12
 MERGED from [androidx.databinding:databinding-adapters:8.4.0] C:\Users\Pablo\.gradle\caches\transforms-4\832383f3463f16f6b8a668c5d48dd592\transformed\databinding-adapters-8.4.0\AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.databinding:databinding-ktx:8.4.0] C:\Users\Pablo\.gradle\caches\transforms-4\a85391ab4edcdd4ac0f218926ca12dd1\transformed\databinding-ktx-8.4.0\AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.databinding:databinding-runtime:8.4.0] C:\Users\Pablo\.gradle\caches\transforms-4\d32d76655bce82c4790d4191419e7a57\transformed\databinding-runtime-8.4.0\AndroidManifest.xml:2:1-7:12
@@ -154,9 +154,13 @@ uses-permission#android.permission.RECEIVE_BOOT_COMPLETED
 ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:5:5-80
 	android:name
 		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:5:22-78
+uses-permission#android.permission.VIBRATE
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:6:5-65
+	android:name
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:6:22-63
 application
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:7:5-71:19
-INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:7:5-71:19
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:8:5-72:19
+INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:8:5-72:19
 MERGED from [com.google.firebase:firebase-firestore-ktx:25.0.0] C:\Users\Pablo\.gradle\caches\transforms-4\444b72b07b17e1c21f147cc692ed3183\transformed\firebase-firestore-ktx-25.0.0\AndroidManifest.xml:8:5-16:19
 MERGED from [com.google.firebase:firebase-firestore-ktx:25.0.0] C:\Users\Pablo\.gradle\caches\transforms-4\444b72b07b17e1c21f147cc692ed3183\transformed\firebase-firestore-ktx-25.0.0\AndroidManifest.xml:8:5-16:19
 MERGED from [com.google.firebase:firebase-auth:23.0.0] C:\Users\Pablo\.gradle\caches\transforms-4\4059848cccf290a2d3f393d49d86686f\transformed\firebase-auth-23.0.0\AndroidManifest.xml:28:5-73:19
@@ -222,125 +226,125 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] C:\Users\Pablo\.gradle\cach
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.13.1] C:\Users\Pablo\.gradle\caches\transforms-4\27bfb6a3de9d6a077296be9a1ba23734\transformed\core-1.13.1\AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:12:9-35
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:13:9-35
 	android:label
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:10:9-41
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:11:9-41
 	android:roundIcon
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:11:9-54
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:12:9-54
 	android:icon
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:9:9-43
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:10:9-43
 	android:allowBackup
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:8:9-35
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:9:9-35
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:13:9-40
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:14:9-40
 activity#com.pqsolutions.hdd_monitor.LoginActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:15:9-21:20
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:16:9-22:20
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:16:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:17:13-36
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:15:19-48
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:16:19-48
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:17:13-20:29
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:18:13-21:29
 action#android.intent.action.MAIN
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:18:17-69
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:19:17-69
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:18:25-66
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:19:25-66
 category#android.intent.category.LAUNCHER
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:19:17-77
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:20:17-77
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:19:27-74
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:20:27-74
 activity#com.pqsolutions.hdd_monitor.MainActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:23:9-25:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:24:9-26:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:24:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:25:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:25:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:26:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:23:19-47
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:24:19-47
 activity#com.pqsolutions.hdd_monitor.EventHistoryActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:27:9-29:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:28:9-30:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:28:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:29:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:29:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:30:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:27:19-55
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:28:19-55
 activity#com.pqsolutions.hdd_monitor.AdminMainActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:31:9-33:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:32:9-34:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:32:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:33:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:33:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:34:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:31:19-52
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:32:19-52
 activity#com.pqsolutions.hdd_monitor.AddEditUserActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:35:9-37:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:36:9-38:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:36:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:37:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:37:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:38:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:35:19-54
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:36:19-54
 activity#com.pqsolutions.hdd_monitor.AlertManagementActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:39:9-41:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:40:9-42:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:40:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:41:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:41:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:42:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:39:19-58
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:40:19-58
 activity#com.pqsolutions.hdd_monitor.AddEditAlertActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:43:9-45:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:44:9-46:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:44:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:45:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:45:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:46:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:43:19-55
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:44:19-55
 activity#com.pqsolutions.hdd_monitor.ReportActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:47:9-49:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:48:9-50:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:48:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:49:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:49:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:50:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:47:19-49
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:48:19-49
 activity#com.pqsolutions.hdd_monitor.EventSchedulerActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:51:9-53:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:52:9-54:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:52:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:53:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:53:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:54:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:51:19-57
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:52:19-57
 activity#com.pqsolutions.hdd_monitor.UserManagementActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:55:9-57:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:56:9-58:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:56:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:57:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:57:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:58:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:55:19-57
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:56:19-57
 activity#com.pqsolutions.hdd_monitor.ClientPanelActivity
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:59:9-61:59
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:60:9-62:59
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:60:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:61:13-36
 	android:theme
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:61:13-56
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:62:13-56
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:59:19-54
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:60:19-54
 service#com.pqsolutions.hdd_monitor.MyFirebaseMessagingService
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:63:9-69:19
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:64:9-70:19
 	android:exported
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:65:13-36
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:66:13-36
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:64:13-55
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:65:13-55
 intent-filter#action:name:com.google.firebase.MESSAGING_EVENT
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:66:13-68:29
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:67:13-69:29
 action#com.google.firebase.MESSAGING_EVENT
-ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:67:17-78
+ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:68:17-78
 	android:name
-		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:67:25-75
+		ADDED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml:68:25-75
 uses-sdk
 INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\APP\HDDMonitor\app\src\main\AndroidManifest.xml
