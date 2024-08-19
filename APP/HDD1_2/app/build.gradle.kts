@@ -2,8 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.hilt.android)
+    alias(libs.plugins.google.services)
     kotlin("kapt")
-    id("com.google.gms.google-services")
 }
 
 android {
@@ -79,6 +79,9 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
+    implementation(libs.firebase.messaging.ktx)
+    implementation(platform("com.google.firebase:firebase-bom:${version}"))
+    implementation(libs.google.firebase.messaging.ktx)
 
     // Testing
     testImplementation(libs.junit)
