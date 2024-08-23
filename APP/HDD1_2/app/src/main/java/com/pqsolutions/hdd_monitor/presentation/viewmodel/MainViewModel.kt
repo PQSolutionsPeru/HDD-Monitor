@@ -31,15 +31,23 @@ class MainViewModel @Inject constructor(
 
     private fun checkLoginStatus() {
         viewModelScope.launch {
-            val currentUser = authRepository.getCurrentUserData()
-            _uiState.value = _uiState.value.copy(
-                isLoggedIn = currentUser != null,
-                userData = currentUser,
-                currentRoute = if (currentUser != null) "dashboard" else "login"
+            authRepository.getCurrentUserData().fold(
+                onSuccess = { currentUser ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoggedIn = true,
+                        userData = currentUser,
+                        currentRoute = "dashboard"
+                    )
+                    observeNotifications(currentUser.clientId)
+                },
+                onFailure = {
+                    _uiState.value = _uiState.value.copy(
+                        isLoggedIn = false,
+                        userData = null,
+                        currentRoute = "login"
+                    )
+                }
             )
-            currentUser?.let { user ->
-                observeNotifications(user.clientId)
-            }
         }
     }
 

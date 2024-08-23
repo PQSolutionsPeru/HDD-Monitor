@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:name=".HddApplication"
         android:allowBackup="true"
@@ -28,7 +30,7 @@
         </activity>
 
         <service
-            android:name=".data.HddFirebaseMessagingService"
+            android:name=".service.HddFirebaseMessagingService"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />

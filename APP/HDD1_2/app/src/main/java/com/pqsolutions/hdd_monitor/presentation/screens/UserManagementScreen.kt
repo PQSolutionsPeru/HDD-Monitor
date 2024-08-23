@@ -31,7 +31,7 @@ fun UserManagementScreen(
             .padding(16.dp)
     ) {
         Text(
-            text = "User Management",
+            text = "Gestión de Usuarios",
             style = MaterialTheme.typography.headlineMedium
         )
         Spacer(modifier = Modifier.height(16.dp))
@@ -54,7 +54,7 @@ fun UserManagementScreen(
                                 editingUser = user
                                 showDialog = true
                             },
-                            onDeleteClick = { viewModel.deleteUser(user.id) }
+                            onDeleteClick = { viewModel.deleteUser(user) }
                         )
                     }
                 }
@@ -68,14 +68,14 @@ fun UserManagementScreen(
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Create New User")
+            Text("Crear Nuevo Usuario")
         }
         Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = onBackClick,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Back")
+            Text("Volver")
         }
     }
 
@@ -116,14 +116,14 @@ fun UserItem(
             Column {
                 Text(text = user.name, style = MaterialTheme.typography.bodyLarge)
                 Text(text = user.email, style = MaterialTheme.typography.bodyMedium)
-                Text(text = "Role: ${user.role}", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Rol: ${user.role}", style = MaterialTheme.typography.bodySmall)
             }
             Row {
                 IconButton(onClick = onEditClick) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit User")
+                    Icon(Icons.Default.Edit, contentDescription = "Editar Usuario")
                 }
                 IconButton(onClick = onDeleteClick) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete User")
+                    Icon(Icons.Default.Delete, contentDescription = "Eliminar Usuario")
                 }
             }
         }
@@ -143,13 +143,13 @@ fun UserDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (user == null) "Add User" else "Edit User") },
+        title = { Text(if (user == null) "Agregar Usuario" else "Editar Usuario") },
         text = {
             Column {
                 TextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") }
+                    label = { Text("Nombre") }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 TextField(
@@ -161,21 +161,21 @@ fun UserDialog(
                 TextField(
                     value = clientId,
                     onValueChange = { clientId = it },
-                    label = { Text("Client ID") }
+                    label = { Text("ID de Cliente") }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Role:")
+                    Text("Rol:")
                     RadioButton(
                         selected = role == UserRole.USER,
                         onClick = { role = UserRole.USER }
                     )
-                    Text("User")
+                    Text("Usuario")
                     RadioButton(
                         selected = role == UserRole.ADMIN,
                         onClick = { role = UserRole.ADMIN }
                     )
-                    Text("Admin")
+                    Text("Administrador")
                 }
             }
         },
@@ -189,12 +189,12 @@ fun UserDialog(
                     clientId = clientId
                 ))
             }) {
-                Text("Confirm")
+                Text("Confirmar")
             }
         },
         dismissButton = {
             Button(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Cancelar")
             }
         }
     )

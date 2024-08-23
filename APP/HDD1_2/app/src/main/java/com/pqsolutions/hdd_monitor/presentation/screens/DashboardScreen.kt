@@ -26,44 +26,46 @@ fun AdminDashboardScreen(
     onViewAlertsClick: () -> Unit,
     onViewEventHistoryClick: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    HDD1_2Theme {
+        val uiState by viewModel.uiState.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Panel de Control Admin",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        DashboardButton(
-            onClick = onManageUsersClick,
-            text = "Gestionar Usuarios"
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        DashboardButton(
-            onClick = onViewAlertsClick,
-            text = "Ver Alertas"
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        DashboardButton(
-            onClick = onViewEventHistoryClick,
-            text = "Historial de Eventos"
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        PanelsList(uiState)
-        Spacer(modifier = Modifier.height(24.dp))
-        DashboardButton(
-            onClick = onLogoutClick,
-            text = "Cerrar Sesión",
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(24.dp)
+        ) {
+            Text(
+                text = "Panel de Control Admin",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.primary
             )
-        )
+            Spacer(modifier = Modifier.height(32.dp))
+            DashboardButton(
+                onClick = onManageUsersClick,
+                text = "Gestionar Usuarios"
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            DashboardButton(
+                onClick = onViewAlertsClick,
+                text = "Ver Alertas"
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            DashboardButton(
+                onClick = onViewEventHistoryClick,
+                text = "Historial de Eventos"
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            PanelsList(uiState)
+            Spacer(modifier = Modifier.height(32.dp))
+            DashboardButton(
+                onClick = onLogoutClick,
+                text = "Cerrar Sesión",
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary
+                )
+            )
+        }
     }
 }
 
@@ -74,39 +76,41 @@ fun UserDashboardScreen(
     onViewEventHistoryClick: () -> Unit,
     onViewAlertsClick: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    HDD1_2Theme {
+        val uiState by viewModel.uiState.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Panel de Control Usuario",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        DashboardButton(
-            onClick = onViewEventHistoryClick,
-            text = "Historial de Eventos"
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        DashboardButton(
-            onClick = onViewAlertsClick,
-            text = "Ver Alertas"
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        PanelsList(uiState)
-        Spacer(modifier = Modifier.height(24.dp))
-        DashboardButton(
-            onClick = onLogoutClick,
-            text = "Cerrar Sesión",
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(24.dp)
+        ) {
+            Text(
+                text = "Panel de Control Usuario",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.primary
             )
-        )
+            Spacer(modifier = Modifier.height(32.dp))
+            DashboardButton(
+                onClick = onViewEventHistoryClick,
+                text = "Historial de Eventos"
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            DashboardButton(
+                onClick = onViewAlertsClick,
+                text = "Ver Alertas"
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            PanelsList(uiState)
+            Spacer(modifier = Modifier.height(32.dp))
+            DashboardButton(
+                onClick = onLogoutClick,
+                text = "Cerrar Sesión",
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary
+                )
+            )
+        }
     }
 }
 
@@ -118,13 +122,13 @@ fun DashboardButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().height(64.dp),
         colors = colors,
         shape = RoundedCornerShape(8.dp)
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onPrimary
         )
     }
@@ -139,7 +143,8 @@ fun PanelsList(uiState: DashboardUiState) {
                 modifier = Modifier.fillMaxSize()
             ) {
                 CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(64.dp)
                 )
             }
         }
@@ -154,18 +159,19 @@ fun PanelsList(uiState: DashboardUiState) {
             Column {
                 Text(
                     text = "Paneles de Incendio",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
                 if (uiState.alerts.isNotEmpty()) {
                     AlertsList(uiState.alerts)
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
-                LazyColumn {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     items(uiState.panels) { panel ->
                         PanelItem(panel)
-                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
             }
@@ -178,17 +184,17 @@ fun AlertsList(alerts: List<String>) {
     Column {
         Text(
             text = "Alertas Activas",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.error
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         alerts.forEach { alert ->
             Text(
                 text = alert,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.error
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -203,23 +209,23 @@ fun PanelItem(panel: Panel) {
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(24.dp)
         ) {
             Text(
                 text = panel.name,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "Ubicación: ${panel.location}",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
             panel.relays.forEach { relay ->
                 RelayStatusItem(relay)
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
             }
         }
     }
@@ -230,7 +236,7 @@ fun RelayStatusItem(relay: Relay) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -257,8 +263,8 @@ fun StatusChip(status: String) {
     ) {
         Text(
             text = status,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
             color = textColor
         )
     }

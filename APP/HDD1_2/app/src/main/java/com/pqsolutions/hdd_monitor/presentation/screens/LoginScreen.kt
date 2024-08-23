@@ -5,42 +5,59 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.pqsolutions.hdd_monitor.presentation.components.HddButton
+import com.pqsolutions.hdd_monitor.presentation.components.HddOutlinedTextField
+import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(onLoginClick: (String, String) -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    val hapticFeedback = LocalHapticFeedback.current
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(Dimensions.paddingLarge),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        TextField(
+        Text(
+            text = "HDD Monitor",
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { contentDescription = "App title" }
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        HddOutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth()
+            label = "Email",
+            modifier = Modifier.semantics { contentDescription = "Email input field" }
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        TextField(
+        Spacer(modifier = Modifier.height(Dimensions.spacingMedium))
+        HddOutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("Password") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
+            label = "Password",
+            isPassword = true,
+            modifier = Modifier.semantics { contentDescription = "Password input field" }
         )
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = { onLoginClick(email, password) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Login")
-        }
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        HddButton(
+            onClick = {
+                performHapticFeedback(hapticFeedback)
+                onLoginClick(email, password)
+            },
+            text = "Login",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(Dimensions.buttonHeight)
+                .semantics { contentDescription = "Login button" }
+        )
     }
 }

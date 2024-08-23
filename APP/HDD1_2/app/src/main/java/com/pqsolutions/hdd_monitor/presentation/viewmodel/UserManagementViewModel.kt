@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.data.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,10 +66,10 @@ class UserManagementViewModel @Inject constructor(
         }
     }
 
-    fun deleteUser(userId: String) {
+    fun deleteUser(userData: UserData) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = userRepository.deleteUser(userId)
+            val result = userRepository.deleteUser(userData.id, userData.role, userData.clientId)
             if (result.isSuccess) {
                 loadUsers()
             } else {

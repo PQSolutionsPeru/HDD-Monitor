@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor.presentation.navigation
 
+import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -13,21 +14,48 @@ import com.pqsolutions.hdd_monitor.presentation.screens.*
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
 import com.pqsolutions.hdd_monitor.presentation.components.NotificationList
+import com.pqsolutions.hdd_monitor.presentation.util.enterTransition
+import com.pqsolutions.hdd_monitor.presentation.util.exitTransition
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = "login") {
-        composable("login") {
+    NavHost(
+        navController = navController,
+        startDestination = "onboarding"
+    ) {
+        composable(
+            "onboarding",
+            enterTransition = { enterTransition() },
+            exitTransition = { exitTransition() }
+        ) {
+            OnboardingScreen(
+                onFinish = {
+                    navController.navigate("login") {
+                        popUpTo("onboarding") { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable(
+            "login",
+            enterTransition = { enterTransition() },
+            exitTransition = { exitTransition() }
+        ) {
             LoginScreen(
                 onLoginClick = { email, password ->
                     viewModel.onEvent(MainUiEvent.Login(email, password))
                 }
             )
         }
-        composable("dashboard") {
+        composable(
+            "dashboard",
+            enterTransition = { enterTransition() },
+            exitTransition = { exitTransition() }
+        ) {
             when (uiState.userData?.role) {
                 UserRole.ADMIN -> AdminDashboardScreen(
                     onLogoutClick = {
@@ -61,33 +89,47 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
                 }
             }
         }
-        composable("user_management") {
+        composable(
+            "user_management",
+            enterTransition = { enterTransition() },
+            exitTransition = { exitTransition() }
+        ) {
             UserManagementScreen(
                 onBackClick = {
                     navController.popBackStack()
                 }
             )
         }
-        composable("event_history") {
+        composable(
+            "event_history",
+            enterTransition = { enterTransition() },
+            exitTransition = { exitTransition() }
+        ) {
             EventHistoryScreen(
                 onBackClick = {
                     navController.popBackStack()
                 }
             )
         }
-        composable("alerts") {
+        composable(
+            "alerts",
+            enterTransition = { enterTransition() },
+            exitTransition = { exitTransition() }
+        ) {
             AlertScreen(
                 onBackClick = {
                     navController.popBackStack()
                 },
                 isAdmin = uiState.userData?.role == UserRole.ADMIN,
-                viewModel = hiltViewModel() // Asegúrate de tener un AlertViewModel
+                viewModel = hiltViewModel()
             )
         }
     }
 
     LaunchedEffect(uiState.currentRoute) {
-        navController.navigate(uiState.currentRoute)
+        navController.navigate(uiState.currentRoute) {
+            popUpTo(navController.graph.startDestinationId) { inclusive = true }
+        }
     }
 
     // Observar notificaciones cuando el usuario está logueado

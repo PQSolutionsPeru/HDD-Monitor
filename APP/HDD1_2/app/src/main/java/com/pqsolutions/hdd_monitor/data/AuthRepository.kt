@@ -20,7 +20,7 @@ class AuthRepository @Inject constructor(
         val adminDoc = firestore.collection("hdd-monitor/accounts/admins").document(userId).get().await()
         if (adminDoc.exists()) {
             return UserData(
-                id = userId,
+                id = adminDoc.getString("ID") ?: userId,
                 email = adminDoc.getString("email") ?: "",
                 name = adminDoc.getString("name") ?: "",
                 role = UserRole.ADMIN,
@@ -30,12 +30,13 @@ class AuthRepository @Inject constructor(
 
         // Si no es admin, buscar en la colección de clientes
         val clientsRef = firestore.collection("hdd-monitor/accounts/clients")
-        val query = clientsRef.get().await()
-        for (clientDoc in query.documents) {
+        val clientsQuery = clientsRef.get().await()
+
+        for (clientDoc in clientsQuery.documents) {
             val userDoc = clientDoc.reference.collection("users").document(userId).get().await()
             if (userDoc.exists()) {
                 return UserData(
-                    id = userId,
+                    id = userDoc.getString("ID") ?: userId,
                     email = userDoc.getString("email") ?: "",
                     name = userDoc.getString("name") ?: "",
                     role = UserRole.USER,
@@ -53,20 +54,8 @@ class AuthRepository @Inject constructor(
         auth.signOut()
     }
 
-    suspend fun getCurrentUserData(): UserData? {
-        val currentUser = auth.currentUser ?: return null
-        return getUserData(currentUser.uid)
+    suspend fun getCurrentUserData(): Result<UserData> = runCatching {
+        val currentUser = auth.currentUser ?: throw Exception("No user logged in")
+        getUserData(currentUser.uid)
     }
-}
-
-data class UserData(
-    val id: String,
-    val email: String,
-    val name: String,
-    val role: UserRole,
-    val clientId: String
-)
-
-enum class UserRole {
-    USER, ADMIN
 }
