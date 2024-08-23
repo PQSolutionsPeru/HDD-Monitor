@@ -75,6 +75,9 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
 
+    implementation("androidx.navigation:navigation-compose:2.7.6")
+    implementation("androidx.paging:paging-compose:3.2.1")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)

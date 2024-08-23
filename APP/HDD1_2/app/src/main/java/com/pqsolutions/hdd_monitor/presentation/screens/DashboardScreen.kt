@@ -1,5 +1,7 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,14 +12,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.data.Panel
 import com.pqsolutions.hdd_monitor.data.Relay
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardUiState
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.*
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun AdminDashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
@@ -28,6 +38,7 @@ fun AdminDashboardScreen(
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
+        val context = LocalContext.current
 
         Column(
             modifier = Modifier
@@ -36,31 +47,55 @@ fun AdminDashboardScreen(
                 .padding(24.dp)
         ) {
             Text(
-                text = "Panel de Control Admin",
+                text = stringResource(R.string.admin_dashboard_title),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(32.dp))
-            DashboardButton(
-                onClick = onManageUsersClick,
-                text = "Gestionar Usuarios"
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            DashboardButton(
-                onClick = onViewAlertsClick,
-                text = "Ver Alertas"
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            DashboardButton(
-                onClick = onViewEventHistoryClick,
-                text = "Historial de Eventos"
-            )
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onManageUsersClick()
+                        },
+                        text = stringResource(R.string.manage_users)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewAlertsClick()
+                        },
+                        text = stringResource(R.string.view_alerts)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewEventHistoryClick()
+                        },
+                        text = stringResource(R.string.view_event_history)
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(32.dp))
             PanelsList(uiState)
             Spacer(modifier = Modifier.height(32.dp))
             DashboardButton(
-                onClick = onLogoutClick,
-                text = "Cerrar Sesión",
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onLogoutClick()
+                },
+                text = stringResource(R.string.logout),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.secondary
                 )
@@ -78,6 +113,7 @@ fun UserDashboardScreen(
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
+        val context = LocalContext.current
 
         Column(
             modifier = Modifier
@@ -86,26 +122,46 @@ fun UserDashboardScreen(
                 .padding(24.dp)
         ) {
             Text(
-                text = "Panel de Control Usuario",
+                text = stringResource(R.string.user_dashboard_title),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(32.dp))
-            DashboardButton(
-                onClick = onViewEventHistoryClick,
-                text = "Historial de Eventos"
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            DashboardButton(
-                onClick = onViewAlertsClick,
-                text = "Ver Alertas"
-            )
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewEventHistoryClick()
+                        },
+                        text = stringResource(R.string.view_event_history)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewAlertsClick()
+                        },
+                        text = stringResource(R.string.view_alerts)
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(32.dp))
             PanelsList(uiState)
             Spacer(modifier = Modifier.height(32.dp))
             DashboardButton(
-                onClick = onLogoutClick,
-                text = "Cerrar Sesión",
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onLogoutClick()
+                },
+                text = stringResource(R.string.logout),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.secondary
                 )
@@ -120,9 +176,18 @@ fun DashboardButton(
     text: String,
     colors: ButtonColors = ButtonDefaults.buttonColors()
 ) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (isPressed) 0.95f else 1f)
+
     Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(64.dp),
+        onClick = {
+            isPressed = true
+            onClick()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .scale(scale),
         colors = colors,
         shape = RoundedCornerShape(8.dp)
     ) {
@@ -131,6 +196,12 @@ fun DashboardButton(
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onPrimary
         )
+    }
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            delay(100)
+            isPressed = false
+        }
     }
 }
 
@@ -150,7 +221,7 @@ fun PanelsList(uiState: DashboardUiState) {
         }
         uiState.error != null -> {
             Text(
-                text = "Error: ${uiState.error}",
+                text = stringResource(R.string.error_message, uiState.error),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyLarge
             )
@@ -158,7 +229,7 @@ fun PanelsList(uiState: DashboardUiState) {
         else -> {
             Column {
                 Text(
-                    text = "Paneles de Incendio",
+                    text = stringResource(R.string.fire_panels),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -183,28 +254,39 @@ fun PanelsList(uiState: DashboardUiState) {
 fun AlertsList(alerts: List<String>) {
     Column {
         Text(
-            text = "Alertas Activas",
+            text = stringResource(R.string.active_alerts),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.error
         )
         Spacer(modifier = Modifier.height(16.dp))
         alerts.forEach { alert ->
-            Text(
-                text = alert,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.error
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Text(
+                    text = alert,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }
 
 @Composable
 fun PanelItem(panel: Panel) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { /* Implementar acción al hacer clic en el panel */ },
+            .clickable {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                // Implementar acción al hacer clic en el panel
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
@@ -218,7 +300,7 @@ fun PanelItem(panel: Panel) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Ubicación: ${panel.location}",
+                text = stringResource(R.string.location, panel.location),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )

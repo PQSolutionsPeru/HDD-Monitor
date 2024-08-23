@@ -11,7 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.google.firebase.FirebaseApp
 import com.pqsolutions.hdd_monitor.presentation.navigation.AppNavigation
-import com.pqsolutions.hdd_monitor.presentation.theme.HddMonitorTheme
+import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         FirebaseApp.initializeApp(this)
 
         setContent {
-            HddMonitorTheme {
+            HDD1_2Theme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    AppNavigation()
+                    AppNavigation(viewModel)
                 }
             }
         }

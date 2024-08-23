@@ -1,21 +1,5 @@
 ### build.gradle.kts ###
 
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
-plugins {
-    alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.kotlin.android) apply false
-    alias(libs.plugins.hilt.android) apply false
-    alias(libs.plugins.google.services) apply false
-}
-
-tasks.register<Delete>("clean") {
-    delete(layout.buildDirectory)
-}
-
-==================================================
-
-### app\build.gradle.kts ###
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -107,370 +91,17 @@ kapt {
 
 ==================================================
 
-### app\src\main\AndroidManifest.xml ###
-
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-    <uses-permission android:name="android.permission.VIBRATE" />
-
-    <application
-        android:name=".HddApplication"
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.HDD1_2"
-        tools:targetApi="31">
-
-        <activity
-            android:name=".presentation.MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.HDD1_2">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
-        <service
-            android:name=".service.HddFirebaseMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
-
-    </application>
-
-</manifest>
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\data\EventRepository.kt ###
-
-package com.pqsolutions.hdd_monitor.data
-
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.tasks.await
-import javax.inject.Inject
-
-class EventRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
-) {
-    suspend fun getEvents(clientId: String): Result<List<Event>> = runCatching {
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/panel_events_log")
-            .get()
-            .await()
-            .toObjects(Event::class.java)
-    }
-}
-
-data class Event(
-    val id: String = "",
-    val dateTime: String = "",
-    val description: String = "",
-    val type: String = "",
-    val solvedStatus: String = ""
-)
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\data\PanelRepository.kt ###
-
-package com.pqsolutions.hdd_monitor.data
-
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.tasks.await
-import javax.inject.Inject
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-
-class PanelRepository @Inject constructor(
-    private val firestore: FirebaseFirestore,
-    private val alertRepository: AlertRepository
-) {
-    suspend fun getPanels(clientId: String): Result<List<Panel>> = runCatching {
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/panels")
-            .get()
-            .await()
-            .toObjects(Panel::class.java)
-    }
-
-    fun getPanelsFlow(clientId: String): Flow<List<Panel>> = callbackFlow {
-        val listener = firestore.collection("hdd-monitor/accounts/clients/$clientId/panels")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-                snapshot?.let {
-                    val panels = it.toObjects(Panel::class.java)
-                    trySend(panels)
-                    checkForRelayStateChanges(clientId, panels)
-                }
-            }
-        awaitClose { listener.remove() }
-    }
-
-    private fun checkForRelayStateChanges(clientId: String, panels: List<Panel>) {
-        panels.forEach { panel ->
-            panel.relays.forEach { relay ->
-                if (relay.status != "OK") {
-                    val priority = when (relay.status) {
-                        "CRITICAL" -> "HIGH"
-                        "WARNING" -> "MEDIUM"
-                        else -> "LOW"
-                    }
-                    val alert = Alert(
-                        clientId = clientId,
-                        title = "Cambio de Estado de Relé",
-                        description = "El relé ${relay.name} en el panel ${panel.name} cambió a estado ${relay.status}",
-                        dateTime = System.currentTimeMillis().toString(),
-                        status = "NEW",
-                        priority = priority
-                    )
-                    CoroutineScope(Dispatchers.IO).launch {
-                        alertRepository.createAlert(clientId, alert)
-                    }
-                }
-            }
-        }
-    }
-}
-
-data class Panel(
-    val id: String = "",
-    val name: String = "",
-    val location: String = "",
-    val relays: List<Relay> = emptyList()
-)
-
-data class Relay(
-    val name: String = "",
-    val status: String = ""
-)
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\data\UserRepository.kt ###
-
-package com.pqsolutions.hdd_monitor.data
-
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.tasks.await
-import javax.inject.Inject
-
-class UserRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
-) {
-    suspend fun getUsers(): Result<List<UserData>> = runCatching {
-        val users = mutableListOf<UserData>()
-
-        // Obtener administradores
-        val adminsQuery = firestore.collection("hdd-monitor/accounts/admins").get().await()
-        for (adminDoc in adminsQuery.documents) {
-            users.add(UserData(
-                id = adminDoc.id,
-                email = adminDoc.getString("email") ?: "",
-                name = adminDoc.getString("name") ?: "",
-                role = UserRole.ADMIN,
-                clientId = ""
-            ))
-        }
-
-        // Obtener usuarios normales
-        val clientsQuery = firestore.collection("hdd-monitor/accounts/clients").get().await()
-        for (clientDoc in clientsQuery.documents) {
-            val usersQuery = clientDoc.reference.collection("users").get().await()
-            for (userDoc in usersQuery.documents) {
-                users.add(UserData(
-                    id = userDoc.id,
-                    email = userDoc.getString("email") ?: "",
-                    name = userDoc.getString("name") ?: "",
-                    role = UserRole.USER,
-                    clientId = clientDoc.id
-                ))
-            }
-        }
-
-        users
-    }
-
-    suspend fun createUser(userData: UserData): Result<Unit> = runCatching {
-        if (userData.role == UserRole.ADMIN) {
-            firestore.collection("hdd-monitor/accounts/admins").document(userData.id).set(userData).await()
-        } else {
-            firestore.collection("hdd-monitor/accounts/clients/${userData.clientId}/users").document(userData.id).set(userData).await()
-        }
-    }
-
-    suspend fun updateUser(userData: UserData): Result<Unit> = runCatching {
-        if (userData.role == UserRole.ADMIN) {
-            firestore.collection("hdd-monitor/accounts/admins").document(userData.id).set(userData).await()
-        } else {
-            firestore.collection("hdd-monitor/accounts/clients/${userData.clientId}/users").document(userData.id).set(userData).await()
-        }
-    }
-
-    suspend fun deleteUser(userId: String, role: UserRole, clientId: String? = null): Result<Unit> = runCatching {
-        if (role == UserRole.ADMIN) {
-            firestore.collection("hdd-monitor/accounts/admins").document(userId).delete().await()
-        } else {
-            clientId?.let {
-                firestore.collection("hdd-monitor/accounts/clients/$it/users").document(userId).delete().await()
-            } ?: throw IllegalArgumentException("ClientId is required for deleting a user")
-        }
-    }
-}
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\domain\GetPanelsUseCase.kt ###
-
-package com.pqsolutions.hdd_monitor.domain
-
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.PanelRepository
-import kotlinx.coroutines.flow.Flow
-import javax.inject.Inject
-
-class GetPanelsUseCase @Inject constructor(
-    private val panelRepository: PanelRepository
-) {
-    operator fun invoke(params: Params): Flow<List<Panel>> {
-        return panelRepository.getPanelsFlow(params.clientId)
-    }
-
-    data class Params(val clientId: String)
-}
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\domain\LoginUseCase.kt ###
-
-package com.pqsolutions.hdd_monitor.domain
-
-import com.pqsolutions.hdd_monitor.data.AuthRepository
-import com.pqsolutions.hdd_monitor.data.UserData
-import javax.inject.Inject
-
-class LoginUseCase @Inject constructor(
-    private val authRepository: AuthRepository
-) : UseCase<LoginUseCase.Params, Result<UserData>> {
-
-    override suspend fun invoke(params: Params): Result<UserData> {
-        return authRepository.login(params.email, params.password)
-    }
-
-    data class Params(val email: String, val password: String)
-}
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\domain\NotificationUseCase.kt ###
-
-package com.pqsolutions.hdd_monitor.domain
-
-import com.pqsolutions.hdd_monitor.data.Alert
-import com.pqsolutions.hdd_monitor.data.AlertRepository
-import kotlinx.coroutines.flow.Flow
-import javax.inject.Inject
-
-class NotificationUseCase @Inject constructor(
-    private val alertRepository: AlertRepository
-) {
-    fun getNotifications(clientId: String): Flow<List<Alert>> {
-        return alertRepository.getAlertsFlow(clientId)
-    }
-
-    suspend fun handleNewNotification(alert: Alert) {
-        // Aquí puedes agregar lógica adicional si es necesario
-        alertRepository.createAlert(alert.clientId, alert)
-    }
-}
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\MainActivity.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation
-
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.viewModels
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.*
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import com.google.firebase.FirebaseApp
-import com.pqsolutions.hdd_monitor.presentation.navigation.AppNavigation
-import com.pqsolutions.hdd_monitor.presentation.theme.HddMonitorTheme
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
-import dagger.hilt.android.AndroidEntryPoint
-
-@AndroidEntryPoint
-class MainActivity : ComponentActivity() {
-    private val viewModel: MainViewModel by viewModels()
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        FirebaseApp.initializeApp(this)
-
-        setContent {
-            HddMonitorTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    val uiState by viewModel.uiState.collectAsState()
-
-                    if (uiState.error != null) {
-                        AlertDialog(
-                            onDismissRequest = { /* Dismiss logic */ },
-                            title = { Text("Error") },
-                            text = { Text(uiState.error!!) },
-                            confirmButton = {
-                                TextButton(onClick = { /* Dismiss logic */ }) {
-                                    Text("OK")
-                                }
-                            }
-                        )
-                    }
-
-                    AppNavigation()
-                }
-            }
-        }
-    }
-}
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\navigation\AppNavigation.kt ###
+### src\main\java\com\pqsolutions\hdd_monitor\presentation\navigation\AppNavigation.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.navigation
 
 import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.runtime.*
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -479,12 +110,10 @@ import com.pqsolutions.hdd_monitor.presentation.screens.*
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
 import com.pqsolutions.hdd_monitor.presentation.components.NotificationList
-import com.pqsolutions.hdd_monitor.presentation.util.enterTransition
-import com.pqsolutions.hdd_monitor.presentation.util.exitTransition
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
+fun AppNavigation(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val navController = rememberNavController()
 
@@ -494,8 +123,8 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
     ) {
         composable(
             "onboarding",
-            enterTransition = { enterTransition() },
-            exitTransition = { exitTransition() }
+            enterTransition = { fadeIn() },
+            exitTransition = { fadeOut() }
         ) {
             OnboardingScreen(
                 onFinish = {
@@ -507,8 +136,8 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
         }
         composable(
             "login",
-            enterTransition = { enterTransition() },
-            exitTransition = { exitTransition() }
+            enterTransition = { slideInHorizontally(initialOffsetX = { 1000 }) },
+            exitTransition = { slideOutHorizontally(targetOffsetX = { -1000 }) }
         ) {
             LoginScreen(
                 onLoginClick = { email, password ->
@@ -518,8 +147,8 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
         }
         composable(
             "dashboard",
-            enterTransition = { enterTransition() },
-            exitTransition = { exitTransition() }
+            enterTransition = { fadeIn() },
+            exitTransition = { fadeOut() }
         ) {
             when (uiState.userData?.role) {
                 UserRole.ADMIN -> AdminDashboardScreen(
@@ -556,8 +185,8 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
         }
         composable(
             "user_management",
-            enterTransition = { enterTransition() },
-            exitTransition = { exitTransition() }
+            enterTransition = { fadeIn() },
+            exitTransition = { fadeOut() }
         ) {
             UserManagementScreen(
                 onBackClick = {
@@ -567,8 +196,8 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
         }
         composable(
             "event_history",
-            enterTransition = { enterTransition() },
-            exitTransition = { exitTransition() }
+            enterTransition = { fadeIn() },
+            exitTransition = { fadeOut() }
         ) {
             EventHistoryScreen(
                 onBackClick = {
@@ -578,15 +207,14 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
         }
         composable(
             "alerts",
-            enterTransition = { enterTransition() },
-            exitTransition = { exitTransition() }
+            enterTransition = { fadeIn() },
+            exitTransition = { fadeOut() }
         ) {
             AlertScreen(
                 onBackClick = {
                     navController.popBackStack()
                 },
-                isAdmin = uiState.userData?.role == UserRole.ADMIN,
-                viewModel = hiltViewModel()
+                isAdmin = uiState.userData?.role == UserRole.ADMIN
             )
         }
     }
@@ -615,10 +243,13 @@ fun AppNavigation(viewModel: MainViewModel = hiltViewModel()) {
 
 ==================================================
 
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\AlertScreen.kt ###
+### src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\AlertScreen.kt ###
+
+// app/src/main/java/com/pqsolutions/hdd_monitor/presentation/screens/AlertScreen.kt
 
 package com.pqsolutions.hdd_monitor.presentation.screens
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -629,11 +260,20 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.data.Alert
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.AlertViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import androidx.compose.animation.ExperimentalAnimationApi
+
+@OptIn(ExperimentalAnimationApi::class)
+
 
 @Composable
 fun AlertScreen(
@@ -645,6 +285,7 @@ fun AlertScreen(
         val uiState by viewModel.uiState.collectAsState()
         var showDialog by remember { mutableStateOf(false) }
         var editingAlert by remember { mutableStateOf<Alert?>(null) }
+        val context = LocalContext.current
 
         LaunchedEffect(Unit) {
             viewModel.loadAlerts("client_id") // Replace with actual client ID
@@ -656,39 +297,60 @@ fun AlertScreen(
                 .padding(16.dp)
         ) {
             Text(
-                text = "Alerts",
+                text = stringResource(R.string.alerts),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(24.dp))
             when {
                 uiState.isLoading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
                 uiState.error != null -> {
+                    ErrorMessage(
+                        message = uiState.error,
+                        onRetry = { viewModel.loadAlerts("client_id") }
+                    )
+                }
+                uiState.alerts.isEmpty() -> {
                     Text(
-                        text = "Error: ${uiState.error}",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyLarge
+                        text = stringResource(R.string.no_alerts),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                 }
                 else -> {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        items(uiState.alerts) { alert ->
-                            AlertItem(
-                                alert = alert,
-                                isAdmin = isAdmin,
-                                onEditClick = {
-                                    editingAlert = alert
-                                    showDialog = true
-                                },
-                                onDeleteClick = { viewModel.deleteAlert("client_id", alert.id) }
-                            )
+                    AnimatedContent(
+                        targetState = uiState.alerts,
+                        transitionSpec = {
+                            fadeIn(initialAlpha = 0.3f) with fadeOut(targetAlpha = 0f)
+                        }
+                    ) { alerts ->
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            items(alerts, key = { it.id }) { alert ->
+                                AlertItem(
+                                    alert = alert,
+                                    isAdmin = isAdmin,
+                                    onEditClick = {
+                                        editingAlert = alert
+                                        showDialog = true
+                                    },
+                                    onDeleteClick = {
+                                        performHapticFeedback(context)
+                                        playSoundEffect(context, R.raw.button_click)
+                                        viewModel.deleteAlert("client_id", alert.id)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -697,21 +359,27 @@ fun AlertScreen(
             if (isAdmin) {
                 Button(
                     onClick = {
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
                         editingAlert = null
                         showDialog = true
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp)
                 ) {
-                    Text("Create New Alert", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.create_new_alert), style = MaterialTheme.typography.labelLarge)
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
             Button(
-                onClick = onBackClick,
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onBackClick()
+                },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
             ) {
-                Text("Back", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.back), style = MaterialTheme.typography.labelLarge)
             }
         }
 
@@ -720,6 +388,8 @@ fun AlertScreen(
                 alert = editingAlert,
                 onDismiss = { showDialog = false },
                 onConfirm = { alert ->
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
                     if (editingAlert == null) {
                         viewModel.createAlert("client_id", alert)
                     } else {
@@ -739,6 +409,7 @@ fun AlertItem(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -755,15 +426,15 @@ fun AlertItem(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Date: ${alert.dateTime}",
+                text = stringResource(R.string.date_time, alert.dateTime),
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
-                text = "Status: ${alert.status}",
+                text = stringResource(R.string.status, alert.status),
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
-                text = "Priority: ${alert.priority}",
+                text = stringResource(R.string.priority, alert.priority),
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -776,11 +447,19 @@ fun AlertItem(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    IconButton(onClick = onEditClick) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Alert")
+                    IconButton(onClick = {
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
+                        onEditClick()
+                    }) {
+                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit_alert))
                     }
-                    IconButton(onClick = onDeleteClick) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete Alert")
+                    IconButton(onClick = {
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
+                        onDeleteClick()
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_alert))
                     }
                 }
             }
@@ -797,50 +476,53 @@ fun AlertDialog(
     var title by remember { mutableStateOf(alert?.title ?: "") }
     var description by remember { mutableStateOf(alert?.description ?: "") }
     var priority by remember { mutableStateOf(alert?.priority ?: "Low") }
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (alert == null) "Add Alert" else "Edit Alert") },
+        title = { Text(if (alert == null) stringResource(R.string.add_alert) else stringResource(R.string.edit_alert)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Title") },
+                    label = { Text(stringResource(R.string.title)) },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description") },
+                    label = { Text(stringResource(R.string.description)) },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Priority:", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.priority), style = MaterialTheme.typography.bodyLarge)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(
                         selected = priority == "Low",
                         onClick = { priority = "Low" }
                     )
-                    Text("Low", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.low), style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.width(16.dp))
                     RadioButton(
                         selected = priority == "Medium",
                         onClick = { priority = "Medium" }
                     )
-                    Text("Medium", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.medium), style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.width(16.dp))
                     RadioButton(
                         selected = priority == "High",
                         onClick = { priority = "High" }
                     )
-                    Text("High", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.high), style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
         confirmButton = {
             Button(onClick = {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
                 onConfirm(Alert(
                     id = alert?.id ?: "",
                     title = title,
@@ -850,23 +532,57 @@ fun AlertDialog(
                     status = alert?.status ?: "Active"
                 ))
             }) {
-                Text("Confirm", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.confirm), style = MaterialTheme.typography.labelLarge)
             }
         },
         dismissButton = {
-            Button(onClick = onDismiss) {
-                Text("Cancel", style = MaterialTheme.typography.labelLarge)
+            Button(onClick = {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onDismiss()
+            }) {
+                Text(stringResource(R.string.cancel), style = MaterialTheme.typography.labelLarge)
             }
         }
     )
 }
 
+@Composable
+fun ErrorMessage(message: String?, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = message ?: stringResource(R.string.unknown_error),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.error
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+            onClick = {
+                val context = LocalContext.current
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onRetry()
+            }
+        ) {
+            Text(stringResource(R.string.retry))
+        }
+    }
+}
+
 ==================================================
 
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\DashboardScreen.kt ###
+### src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\DashboardScreen.kt ###
+
+// app/src/main/java/com/pqsolutions/hdd_monitor/presentation/screens/DashboardScreen.kt
 
 package com.pqsolutions.hdd_monitor.presentation.screens
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -877,13 +593,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.data.Panel
 import com.pqsolutions.hdd_monitor.data.Relay
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardUiState
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.*
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import androidx.compose.animation.ExperimentalAnimationApi
+
+@OptIn(ExperimentalAnimationApi::class)
 
 @Composable
 fun AdminDashboardScreen(
@@ -895,6 +620,7 @@ fun AdminDashboardScreen(
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
+        val context = LocalContext.current
 
         Column(
             modifier = Modifier
@@ -903,31 +629,55 @@ fun AdminDashboardScreen(
                 .padding(24.dp)
         ) {
             Text(
-                text = "Panel de Control Admin",
+                text = stringResource(R.string.admin_dashboard_title),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(32.dp))
-            DashboardButton(
-                onClick = onManageUsersClick,
-                text = "Gestionar Usuarios"
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            DashboardButton(
-                onClick = onViewAlertsClick,
-                text = "Ver Alertas"
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            DashboardButton(
-                onClick = onViewEventHistoryClick,
-                text = "Historial de Eventos"
-            )
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onManageUsersClick()
+                        },
+                        text = stringResource(R.string.manage_users)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewAlertsClick()
+                        },
+                        text = stringResource(R.string.view_alerts)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewEventHistoryClick()
+                        },
+                        text = stringResource(R.string.view_event_history)
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(32.dp))
             PanelsList(uiState)
             Spacer(modifier = Modifier.height(32.dp))
             DashboardButton(
-                onClick = onLogoutClick,
-                text = "Cerrar Sesión",
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onLogoutClick()
+                },
+                text = stringResource(R.string.logout),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.secondary
                 )
@@ -945,6 +695,7 @@ fun UserDashboardScreen(
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
+        val context = LocalContext.current
 
         Column(
             modifier = Modifier
@@ -953,26 +704,46 @@ fun UserDashboardScreen(
                 .padding(24.dp)
         ) {
             Text(
-                text = "Panel de Control Usuario",
+                text = stringResource(R.string.user_dashboard_title),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(32.dp))
-            DashboardButton(
-                onClick = onViewEventHistoryClick,
-                text = "Historial de Eventos"
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            DashboardButton(
-                onClick = onViewAlertsClick,
-                text = "Ver Alertas"
-            )
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewEventHistoryClick()
+                        },
+                        text = stringResource(R.string.view_event_history)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewAlertsClick()
+                        },
+                        text = stringResource(R.string.view_alerts)
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(32.dp))
             PanelsList(uiState)
             Spacer(modifier = Modifier.height(32.dp))
             DashboardButton(
-                onClick = onLogoutClick,
-                text = "Cerrar Sesión",
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onLogoutClick()
+                },
+                text = stringResource(R.string.logout),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.secondary
                 )
@@ -987,9 +758,18 @@ fun DashboardButton(
     text: String,
     colors: ButtonColors = ButtonDefaults.buttonColors()
 ) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (isPressed) 0.95f else 1f)
+
     Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(64.dp),
+        onClick = {
+            isPressed = true
+            onClick()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .scale(scale),
         colors = colors,
         shape = RoundedCornerShape(8.dp)
     ) {
@@ -998,6 +778,12 @@ fun DashboardButton(
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onPrimary
         )
+    }
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            delay(100)
+            isPressed = false
+        }
     }
 }
 
@@ -1017,7 +803,7 @@ fun PanelsList(uiState: DashboardUiState) {
         }
         uiState.error != null -> {
             Text(
-                text = "Error: ${uiState.error}",
+                text = stringResource(R.string.error_message, uiState.error),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyLarge
             )
@@ -1025,7 +811,7 @@ fun PanelsList(uiState: DashboardUiState) {
         else -> {
             Column {
                 Text(
-                    text = "Paneles de Incendio",
+                    text = stringResource(R.string.fire_panels),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -1034,11 +820,19 @@ fun PanelsList(uiState: DashboardUiState) {
                     AlertsList(uiState.alerts)
                     Spacer(modifier = Modifier.height(24.dp))
                 }
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(uiState.panels) { panel ->
-                        PanelItem(panel)
+                AnimatedContent(
+                    targetState = uiState.panels,
+                    transitionSpec = {
+                        fadeIn(animationSpec = tween(durationMillis = 300)) with
+                                fadeOut(animationSpec = tween(durationMillis = 300))
+                    }
+                ) { panels ->
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(panels) { panel ->
+                            PanelItem(panel)
+                        }
                     }
                 }
             }
@@ -1050,28 +844,39 @@ fun PanelsList(uiState: DashboardUiState) {
 fun AlertsList(alerts: List<String>) {
     Column {
         Text(
-            text = "Alertas Activas",
+            text = stringResource(R.string.active_alerts),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.error
         )
         Spacer(modifier = Modifier.height(16.dp))
         alerts.forEach { alert ->
-            Text(
-                text = alert,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.error
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Text(
+                    text = alert,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }
 
 @Composable
 fun PanelItem(panel: Panel) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { /* Implementar acción al hacer clic en el panel */ },
+            .clickable {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                // Implementar acción al hacer clic en el panel
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
@@ -1085,7 +890,7 @@ fun PanelItem(panel: Panel) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Ubicación: ${panel.location}",
+                text = stringResource(R.string.location, panel.location),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -1139,683 +944,128 @@ fun StatusChip(status: String) {
 
 ==================================================
 
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\EventHistoryScreen.kt ###
+### src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\OnboardingScreen.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.presentation.components.HddButton
+import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
+import androidx.compose.animation.ExperimentalAnimationApi
 
+@OptIn(ExperimentalAnimationApi::class)
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun EventHistoryScreen(onBackClick: () -> Unit) {
-    HDD1_2Theme {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+fun OnboardingScreen(onFinish: () -> Unit) {
+    val pages = listOf(
+        OnboardingPage(
+            title = "Bienvenido a HDD Monitor",
+            description = "Monitorea y gestiona tus paneles de incendio de manera fácil y eficiente.",
+            imageRes = R.drawable.onboarding_image
+        ),
+        OnboardingPage(
+            title = "Alertas en tiempo real",
+            description = "Recibe notificaciones instantáneas sobre el estado de tus paneles.",
+            imageRes = R.drawable.onboarding_image
+        ),
+        OnboardingPage(
+            title = "Gestión simplificada",
+            description = "Administra usuarios, paneles y eventos desde una sola aplicación.",
+            imageRes = R.drawable.onboarding_image
+        )
+    )
+
+    val pagerState = rememberPagerState(initialPage = 0)
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f),
+            pageCount = pages.size
+        ) { page ->
+            OnboardingPageContent(pages[page])
+        }
+
+        Row(
+            Modifier.padding(Dimensions.paddingMedium),
+            horizontalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = "Historial de Eventos",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            // Aquí puedes agregar una lista de eventos cuando esté implementada
-            Text(
-                text = "Lista de eventos próximamente",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(
-                onClick = onBackClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
-            ) {
-                Text(
-                    "Volver",
-                    style = MaterialTheme.typography.titleMedium
+            repeat(pagerState.pageCount) { iteration ->
+                val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                Box(
+                    modifier = Modifier
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .size(8.dp)
                 )
             }
         }
+
+        HddButton(
+            onClick = onFinish,
+            text = if (pagerState.currentPage == pages.lastIndex) "Empezar" else "Siguiente",
+            modifier = Modifier
+                .padding(Dimensions.paddingMedium)
+                .fillMaxWidth()
+        )
     }
 }
 
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\LoginScreen.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.screens
-
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import com.pqsolutions.hdd_monitor.presentation.components.HddButton
-import com.pqsolutions.hdd_monitor.presentation.components.HddOutlinedTextField
-import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-
 @Composable
-fun LoginScreen(onLoginClick: (String, String) -> Unit) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    val hapticFeedback = LocalHapticFeedback.current
-
+fun OnboardingPageContent(page: OnboardingPage) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(Dimensions.paddingLarge),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "HDD Monitor",
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.semantics { contentDescription = "App title" }
+        Image(
+            painter = painterResource(id = page.imageRes),
+            contentDescription = null,
+            modifier = Modifier.size(200.dp)
         )
         Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
-        HddOutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = "Email",
-            modifier = Modifier.semantics { contentDescription = "Email input field" }
+        Text(
+            text = page.title,
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(Dimensions.spacingMedium))
-        HddOutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = "Password",
-            isPassword = true,
-            modifier = Modifier.semantics { contentDescription = "Password input field" }
-        )
-        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
-        HddButton(
-            onClick = {
-                performHapticFeedback(hapticFeedback)
-                onLoginClick(email, password)
-            },
-            text = "Login",
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(Dimensions.buttonHeight)
-                .semantics { contentDescription = "Login button" }
+        Text(
+            text = page.description,
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
         )
     }
 }
 
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\theme\Color.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.theme
-
-import androidx.compose.ui.graphics.Color
-
-// Colores principales
-val HddRed = Color(0xFFF43131)
-val HddDarkRed = Color(0xFFB50000)
-val HddGrey = Color(0xFF58595B)
-val HddLightGrey = Color(0xFFF1F1F1)
-
-// Colores secundarios
-val HddWhite = Color(0xFFFFFFFF)
-val HddBlack = Color(0xFF000000)
-val HddGreen = Color(0xFF4CAF50)
-val HddYellow = Color(0xFFFFC107)
-
-// Colores adicionales para mayor variedad
-val HddOrange = Color(0xFFFFA500)
-val HddBlue = Color(0xFF2196F3)
-val HddLightBlue = Color(0xFF03A9F4)
-val HddDarkGrey = Color(0xFF333333)
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\theme\Theme.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.theme
-
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
-
-private val LightColorScheme = lightColorScheme(
-    primary = HddRed,
-    onPrimary = HddWhite,
-    primaryContainer = HddDarkRed,
-    onPrimaryContainer = HddWhite,
-    secondary = HddGrey,
-    onSecondary = HddWhite,
-    secondaryContainer = HddLightGrey,
-    onSecondaryContainer = HddBlack,
-    tertiary = HddBlue,
-    onTertiary = HddWhite,
-    tertiaryContainer = HddLightBlue,
-    onTertiaryContainer = HddWhite,
-    error = HddRed,
-    onError = HddWhite,
-    errorContainer = HddDarkRed,
-    onErrorContainer = HddWhite,
-    background = HddWhite,
-    onBackground = HddBlack,
-    surface = HddWhite,
-    onSurface = HddBlack
+data class OnboardingPage(
+    val title: String,
+    val description: String,
+    val imageRes: Int
 )
-
-private val DarkColorScheme = darkColorScheme(
-    primary = HddRed,
-    onPrimary = HddWhite,
-    primaryContainer = HddDarkRed,
-    onPrimaryContainer = HddWhite,
-    secondary = HddLightGrey,
-    onSecondary = HddBlack,
-    secondaryContainer = HddGrey,
-    onSecondaryContainer = HddWhite,
-    tertiary = HddLightBlue,
-    onTertiary = HddWhite,
-    tertiaryContainer = HddBlue,
-    onTertiaryContainer = HddWhite,
-    error = HddRed,
-    onError = HddWhite,
-    errorContainer = HddDarkRed,
-    onErrorContainer = HddWhite,
-    background = HddDarkGrey,
-    onBackground = HddWhite,
-    surface = HddDarkGrey,
-    onSurface = HddWhite
-)
-
-@Composable
-fun HDD1_2Theme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
-    content: @Composable () -> Unit
-) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
-        }
-    }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
-}
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\theme\Type.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.theme
-
-import androidx.compose.material3.Typography
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
-
-val Typography = Typography(
-    headlineLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 36.sp,
-        lineHeight = 44.sp,
-    ),
-    headlineMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 32.sp,
-        lineHeight = 40.sp,
-    ),
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
-    ),
-    titleMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
-    ),
-    bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 20.sp,
-        lineHeight = 28.sp,
-    ),
-    bodyMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 18.sp,
-        lineHeight = 26.sp,
-    ),
-    labelLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 18.sp,
-        lineHeight = 26.sp,
-    ),
-    labelMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-    )
-)
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\util\Animations.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.util
-
-import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
-
-@ExperimentalAnimationApi
-fun enterTransition(): EnterTransition {
-    return fadeIn(animationSpec = tween(300)) + slideInHorizontally(
-        initialOffsetX = { 300 },
-        animationSpec = tween(300)
-    )
-}
-
-@ExperimentalAnimationApi
-fun exitTransition(): ExitTransition {
-    return fadeOut(animationSpec = tween(300)) + slideOutHorizontally(
-        targetOffsetX = { -300 },
-        animationSpec = tween(300)
-    )
-}
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\util\Dimentions.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.util
-
-import androidx.compose.ui.unit.dp
-
-object Dimensions {
-    val paddingSmall = 8.dp
-    val paddingMedium = 16.dp
-    val paddingLarge = 24.dp
-
-    val spacingSmall = 4.dp
-    val spacingMedium = 8.dp
-    val spacingLarge = 16.dp
-
-    val buttonHeight = 48.dp
-    val buttonCornerRadius = 8.dp
-
-    val cardElevation = 4.dp
-    val cardCornerRadius = 12.dp
-}
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\AlertViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.Alert
-import com.pqsolutions.hdd_monitor.data.AlertRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-@HiltViewModel
-class AlertViewModel @Inject constructor(
-    private val alertRepository: AlertRepository
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(AlertUiState())
-    val uiState: StateFlow<AlertUiState> = _uiState.asStateFlow()
-
-    fun loadAlerts(clientId: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.getAlerts(clientId)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                alerts = result.getOrNull() ?: emptyList(),
-                error = result.exceptionOrNull()?.message
-            )
-        }
-    }
-
-    fun createAlert(clientId: String, alert: Alert) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.createAlert(clientId, alert)
-            if (result.isSuccess) {
-                loadAlerts(clientId)
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = result.exceptionOrNull()?.message
-                )
-            }
-        }
-    }
-
-    fun updateAlert(clientId: String, alert: Alert) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.updateAlert(clientId, alert)
-            if (result.isSuccess) {
-                loadAlerts(clientId)
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = result.exceptionOrNull()?.message
-                )
-            }
-        }
-    }
-
-    fun deleteAlert(clientId: String, alertId: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.deleteAlert(clientId, alertId)
-            if (result.isSuccess) {
-                loadAlerts(clientId)
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = result.exceptionOrNull()?.message
-                )
-            }
-        }
-    }
-}
-
-data class AlertUiState(
-    val isLoading: Boolean = false,
-    val alerts: List<Alert> = emptyList(),
-    val error: String? = null
-)
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\DashboardViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.domain.GetPanelsUseCase
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-@HiltViewModel
-class DashboardViewModel @Inject constructor(
-    private val getPanelsUseCase: GetPanelsUseCase
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(DashboardUiState())
-    val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
-
-    init {
-        loadPanels()
-    }
-
-    private fun loadPanels() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            getPanelsUseCase(GetPanelsUseCase.Params("client_id")) // Replace with actual client ID
-                .catch { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = error.message
-                    )
-                }
-                .collect { panels ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        panels = panels
-                    )
-                    checkForAlerts(panels)
-                }
-        }
-    }
-
-    private fun checkForAlerts(panels: List<Panel>) {
-        val newAlerts = mutableListOf<String>()
-        panels.forEach { panel ->
-            panel.relays.forEach { relay ->
-                if (relay.status != "OK") {
-                    newAlerts.add("Alerta: ${relay.name} en ${panel.name} está en estado ${relay.status}")
-                }
-            }
-        }
-        _uiState.value = _uiState.value.copy(alerts = newAlerts)
-    }
-}
-
-data class DashboardUiState(
-    val isLoading: Boolean = false,
-    val panels: List<Panel> = emptyList(),
-    val error: String? = null,
-    val alerts: List<String> = emptyList()
-)
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\EventViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.Event
-import com.pqsolutions.hdd_monitor.data.EventRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-@HiltViewModel
-class EventViewModel @Inject constructor(
-    private val eventRepository: EventRepository
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(EventUiState())
-    val uiState: StateFlow<EventUiState> = _uiState.asStateFlow()
-
-    fun loadEvents(clientId: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = eventRepository.getEvents(clientId)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                events = result.getOrNull() ?: emptyList(),
-                error = result.exceptionOrNull()?.message
-            )
-        }
-    }
-}
-
-data class EventUiState(
-    val isLoading: Boolean = false,
-    val events: List<Event> = emptyList(),
-    val error: String? = null
-)
-
-==================================================
-
-### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\MainViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.AuthRepository
-import com.pqsolutions.hdd_monitor.data.UserData
-import com.pqsolutions.hdd_monitor.domain.NotificationUseCase
-import com.pqsolutions.hdd_monitor.data.Alert
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-@HiltViewModel
-class MainViewModel @Inject constructor(
-    private val authRepository: AuthRepository,
-    private val notificationUseCase: NotificationUseCase
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(MainUiState())
-    val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
-
-    private val _notifications = MutableStateFlow<List<Alert>>(emptyList())
-    val notifications: StateFlow<List<Alert>> = _notifications.asStateFlow()
-
-    init {
-        checkLoginStatus()
-    }
-
-    private fun checkLoginStatus() {
-        viewModelScope.launch {
-            authRepository.getCurrentUserData().fold(
-                onSuccess = { currentUser ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoggedIn = true,
-                        userData = currentUser,
-                        currentRoute = "dashboard"
-                    )
-                    observeNotifications(currentUser.clientId)
-                },
-                onFailure = {
-                    _uiState.value = _uiState.value.copy(
-                        isLoggedIn = false,
-                        userData = null,
-                        currentRoute = "login"
-                    )
-                }
-            )
-        }
-    }
-
-    fun onEvent(event: MainUiEvent) {
-        when (event) {
-            is MainUiEvent.Login -> login(event.email, event.password)
-            is MainUiEvent.Logout -> logout()
-            is MainUiEvent.Navigate -> navigate(event.route)
-        }
-    }
-
-    private fun login(email: String, password: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = authRepository.login(email, password)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                isLoggedIn = result.isSuccess,
-                userData = result.getOrNull(),
-                error = result.exceptionOrNull()?.message,
-                currentRoute = if (result.isSuccess) "dashboard" else "login"
-            )
-            result.getOrNull()?.let { user ->
-                observeNotifications(user.clientId)
-            }
-        }
-    }
-
-    private fun logout() {
-        authRepository.logout()
-        _uiState.value = _uiState.value.copy(
-            isLoggedIn = false,
-            userData = null,
-            currentRoute = "login"
-        )
-        _notifications.value = emptyList()
-    }
-
-    private fun navigate(route: String) {
-        _uiState.value = _uiState.value.copy(currentRoute = route)
-    }
-
-    fun observeNotifications(clientId: String) {
-        viewModelScope.launch {
-            notificationUseCase.getNotifications(clientId).collect { alerts ->
-                _notifications.value = alerts
-            }
-        }
-    }
-
-    fun onNotificationReceived(alert: Alert) {
-        viewModelScope.launch {
-            notificationUseCase.handleNewNotification(alert)
-        }
-    }
-}
-
-data class MainUiState(
-    val isLoading: Boolean = false,
-    val isLoggedIn: Boolean = false,
-    val userData: UserData? = null,
-    val error: String? = null,
-    val currentRoute: String = "login"
-)
-
-sealed class MainUiEvent {
-    data class Login(val email: String, val password: String) : MainUiEvent()
-    object Logout : MainUiEvent()
-    data class Navigate(val route: String) : MainUiEvent()
-}
 
 ==================================================
 

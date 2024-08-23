@@ -7,6 +7,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import androidx.compose.animation.ExperimentalAnimationApi
+
+@OptIn(ExperimentalAnimationApi::class)
 
 @Composable
 fun EventHistoryScreen(onBackClick: () -> Unit) {

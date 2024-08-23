@@ -1,3 +1,35 @@
 <resources>
     <string name="app_name">HDD1_2</string>
+    <string name="alerts">Alertas</string>
+    <string name="no_alerts">No hay alertas</string>
+    <string name="create_new_alert">Crear nueva alerta</string>
+    <string name="back">Volver</string>
+    <string name="date_time">Fecha y hora: %1$s</string>
+    <string name="status">Estado: %1$s</string>
+    <string name="priority">Prioridad: %1$s</string>
+    <string name="edit_alert">Editar alerta</string>
+    <string name="delete_alert">Eliminar alerta</string>
+    <string name="add_alert">Añadir alerta</string>
+    <string name="title">Título</string>
+    <string name="description">Descripción</string>
+    <string name="low">Baja</string>
+    <string name="medium">Media</string>
+    <string name="high">Alta</string>
+    <string name="confirm">Confirmar</string>
+    <string name="cancel">Cancelar</string>
+    <string name="unknown_error">Error desconocido</string>
+    <string name="retry">Reintentar</string>
+    <string name="admin_dashboard_title">Panel de Control Admin</string>
+    <string name="manage_users">Gestionar Usuarios</string>
+    <string name="view_alerts">Ver Alertas</string>
+    <string name="view_event_history">Historial de Eventos</string>
+    <string name="logout">Cerrar Sesión</string>
+    <string name="user_dashboard_title">Panel de Control Usuario</string>
+    <string name="error_message">Error: %1$s</string>
+    <string name="fire_panels">Paneles de Incendio</string>
+    <string name="active_alerts">Alertas Activas</string>
+    <string name="location">Ubicación: %1$s</string>
+    <string name="email">Email</string>
+    <string name="password">Contraseña</string>
+    <string name="login">Iniciar sesión</string>
 </resources>

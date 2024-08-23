@@ -40,7 +40,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         )
     )
 
-    val pagerState = rememberPagerState(pageCount = { pages.size })
+    val pagerState = rememberPagerState { pages.size }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -58,7 +58,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
             Modifier.padding(Dimensions.paddingMedium),
             horizontalArrangement = Arrangement.Center
         ) {
-            repeat(pagerState.pageCount) { iteration ->
+            repeat(pages.size) { iteration ->
                 val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 Box(
                     modifier = Modifier

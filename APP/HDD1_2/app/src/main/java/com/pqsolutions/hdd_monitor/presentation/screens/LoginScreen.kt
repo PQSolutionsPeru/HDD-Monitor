@@ -5,19 +5,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.presentation.components.HddButton
 import com.pqsolutions.hdd_monitor.presentation.components.HddOutlinedTextField
 import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import androidx.compose.animation.ExperimentalAnimationApi
+
+@OptIn(ExperimentalAnimationApi::class)
 
 @Composable
 fun LoginScreen(onLoginClick: (String, String) -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    val hapticFeedback = LocalHapticFeedback.current
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -27,7 +33,7 @@ fun LoginScreen(onLoginClick: (String, String) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "HDD Monitor",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.semantics { contentDescription = "App title" }
@@ -36,24 +42,25 @@ fun LoginScreen(onLoginClick: (String, String) -> Unit) {
         HddOutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            label = "Email",
+            label = stringResource(R.string.email),
             modifier = Modifier.semantics { contentDescription = "Email input field" }
         )
         Spacer(modifier = Modifier.height(Dimensions.spacingMedium))
         HddOutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = "Password",
+            label = stringResource(R.string.password),
             isPassword = true,
             modifier = Modifier.semantics { contentDescription = "Password input field" }
         )
         Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
         HddButton(
             onClick = {
-                performHapticFeedback(hapticFeedback)
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
                 onLoginClick(email, password)
             },
-            text = "Login",
+            text = stringResource(R.string.login),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(Dimensions.buttonHeight)
