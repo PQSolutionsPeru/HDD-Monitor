@@ -13,22 +13,41 @@ class AlertRepository @Inject constructor(
     private val messaging: FirebaseMessaging
 ) {
     fun getAlertsFlow(clientId: String): Flow<List<Alert>> = callbackFlow {
-        val listenerRegistration = firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
+        val listenerRegistration = if (clientId.isNotEmpty()) {
+            firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        close(error)
+                        return@addSnapshotListener
+                    }
+                    snapshot?.let { trySend(it.toObjects(Alert::class.java)) }
                 }
-                snapshot?.let { trySend(it.toObjects(Alert::class.java)) }
-            }
+        } else {
+            // Para administradores, obtener todas las alertas de todos los clientes
+            firestore.collectionGroup("alerts")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        close(error)
+                        return@addSnapshotListener
+                    }
+                    snapshot?.let { trySend(it.toObjects(Alert::class.java)) }
+                }
+        }
         awaitClose { listenerRegistration.remove() }
     }
 
     suspend fun getAlerts(clientId: String): Result<List<Alert>> = runCatching {
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .get()
-            .await()
-            .toObjects(Alert::class.java)
+        if (clientId.isNotEmpty()) {
+            firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
+                .get()
+                .await()
+                .toObjects(Alert::class.java)
+        } else {
+            firestore.collectionGroup("alerts")
+                .get()
+                .await()
+                .toObjects(Alert::class.java)
+        }
     }
 
     suspend fun createAlert(clientId: String, alert: Alert): Result<Unit> = runCatching {

@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor.presentation.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.Panel
@@ -21,20 +22,23 @@ class DashboardViewModel @Inject constructor(
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     init {
-        loadPanels()
+        Log.d("DashboardViewModel", "ViewModel initialized")
     }
 
-    private fun loadPanels() {
+    fun loadPanels() {
+        Log.d("DashboardViewModel", "Loading panels")
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             getPanelsUseCase(GetPanelsUseCase.Params("client_id")) // Replace with actual client ID
                 .catch { error ->
+                    Log.e("DashboardViewModel", "Error loading panels: ${error.message}", error)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = error.message
                     )
                 }
                 .collect { panels ->
+                    Log.d("DashboardViewModel", "Panels loaded: ${panels.size}")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         panels = panels
@@ -45,15 +49,19 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun checkForAlerts(panels: List<Panel>) {
+        Log.d("DashboardViewModel", "Checking for alerts")
         val newAlerts = mutableListOf<String>()
         panels.forEach { panel ->
             panel.relays.forEach { relay ->
                 if (relay.status != "OK") {
-                    newAlerts.add("Alerta: ${relay.name} en ${panel.name} está en estado ${relay.status}")
+                    val alertMessage = "Alerta: ${relay.name} en ${panel.name} está en estado ${relay.status}"
+                    Log.d("DashboardViewModel", "New alert: $alertMessage")
+                    newAlerts.add(alertMessage)
                 }
             }
         }
         _uiState.value = _uiState.value.copy(alerts = newAlerts)
+        Log.d("DashboardViewModel", "Total alerts: ${newAlerts.size}")
     }
 }
 

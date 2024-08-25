@@ -1,106 +1,75 @@
 package com.pqsolutions.hdd_monitor.presentation.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.AuthRepository
 import com.pqsolutions.hdd_monitor.data.UserData
-import com.pqsolutions.hdd_monitor.domain.NotificationUseCase
-import com.pqsolutions.hdd_monitor.data.Alert
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val authRepository: AuthRepository,
-    private val notificationUseCase: NotificationUseCase
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
-    val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
-
-    private val _notifications = MutableStateFlow<List<Alert>>(emptyList())
-    val notifications: StateFlow<List<Alert>> = _notifications.asStateFlow()
-
-    init {
-        checkLoginStatus()
-    }
-
-    private fun checkLoginStatus() {
-        viewModelScope.launch {
-            authRepository.getCurrentUserData().fold(
-                onSuccess = { currentUser ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoggedIn = true,
-                        userData = currentUser,
-                        currentRoute = "dashboard"
-                    )
-                    observeNotifications(currentUser.clientId)
-                },
-                onFailure = {
-                    _uiState.value = _uiState.value.copy(
-                        isLoggedIn = false,
-                        userData = null,
-                        currentRoute = "login"
-                    )
-                }
-            )
-        }
-    }
+    val uiState: StateFlow<MainUiState> = _uiState
 
     fun onEvent(event: MainUiEvent) {
         when (event) {
             is MainUiEvent.Login -> login(event.email, event.password)
             is MainUiEvent.Logout -> logout()
-            is MainUiEvent.Navigate -> navigate(event.route)
         }
     }
 
     private fun login(email: String, password: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = authRepository.login(email, password)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                isLoggedIn = result.isSuccess,
-                userData = result.getOrNull(),
-                error = result.exceptionOrNull()?.message,
-                currentRoute = if (result.isSuccess) "dashboard" else "login"
-            )
-            result.getOrNull()?.let { user ->
-                observeNotifications(user.clientId)
+            try {
+                Log.d("MainViewModel", "Attempting login for email: $email")
+                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+                authRepository.login(email, password).fold(
+                    onSuccess = { user ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            isLoggedIn = true,
+                            userData = user,
+                            currentRoute = "dashboard"
+                        )
+                        Log.d("MainViewModel", "Login successful for user: ${user.name}")
+                    },
+                    onFailure = { e ->
+                        Log.e("MainViewModel", "Login failed: ${e.message}", e)
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = e.message ?: "Unknown error occurred"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Network error during login: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Network error: ${e.message}"
+                )
             }
         }
     }
 
     private fun logout() {
-        authRepository.logout()
-        _uiState.value = _uiState.value.copy(
-            isLoggedIn = false,
-            userData = null,
-            currentRoute = "login"
-        )
-        _notifications.value = emptyList()
-    }
-
-    private fun navigate(route: String) {
-        _uiState.value = _uiState.value.copy(currentRoute = route)
-    }
-
-    fun observeNotifications(clientId: String) {
         viewModelScope.launch {
-            notificationUseCase.getNotifications(clientId).collect { alerts ->
-                _notifications.value = alerts
+            Log.d("MainViewModel", "Attempting logout")
+            try {
+                authRepository.logout()
+                _uiState.value = MainUiState(currentRoute = "login")
+                Log.d("MainViewModel", "Logout successful")
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Logout failed: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
             }
-        }
-    }
-
-    fun onNotificationReceived(alert: Alert) {
-        viewModelScope.launch {
-            notificationUseCase.handleNewNotification(alert)
         }
     }
 }
@@ -116,5 +85,4 @@ data class MainUiState(
 sealed class MainUiEvent {
     data class Login(val email: String, val password: String) : MainUiEvent()
     object Logout : MainUiEvent()
-    data class Navigate(val route: String) : MainUiEvent()
 }

@@ -24,12 +24,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
@@ -79,6 +80,8 @@ dependencies {
     implementation("androidx.paging:paging-compose:3.2.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-core:3.12.4")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.4")
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
@@ -86,6 +89,11 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 kapt {
     correctErrorTypes = true
+    useBuildCache = true
 }

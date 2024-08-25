@@ -1,6 +1,7 @@
 package com.pqsolutions.hdd_monitor.presentation
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -21,33 +22,50 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("MainActivity", "onCreate called")
 
         FirebaseApp.initializeApp(this)
+        Log.d("MainActivity", "FirebaseApp initialized")
 
         setContent {
+            Log.d("MainActivity", "Setting content")
             HDD1_2Theme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val uiState by viewModel.uiState.collectAsState()
-
-                    if (uiState.error != null) {
-                        AlertDialog(
-                            onDismissRequest = { /* Dismiss logic */ },
-                            title = { Text("Error") },
-                            text = { Text(uiState.error!!) },
-                            confirmButton = {
-                                TextButton(onClick = { /* Dismiss logic */ }) {
-                                    Text("OK")
-                                }
-                            }
-                        )
-                    }
+                    Log.d("MainActivity", "Current UI State: $uiState")
 
                     AppNavigation(viewModel)
                 }
             }
         }
+        Log.d("MainActivity", "onCreate completed")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Log.d("MainActivity", "onStart called")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.d("MainActivity", "onResume called")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.d("MainActivity", "onPause called")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d("MainActivity", "onStop called")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("MainActivity", "onDestroy called")
     }
 }

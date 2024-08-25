@@ -19,3 +19,15 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep data and domain classes
+-keep class com.pqsolutions.hdd_monitor.data.** { *; }
+-keep class com.pqsolutions.hdd_monitor.domain.** { *; }
+
+# Keep Firebase classes
+-keep class com.google.firebase.** { *; }
+
+# Keep Hilt classes
+-keep class dagger.hilt.** { *; }
+-keep class javax.inject.** { *; }
+-keep class * extends dagger.hilt.android.lifecycle.HiltViewModel

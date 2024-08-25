@@ -17,9 +17,9 @@ dependencyResolutionManagement {
             version("compose-compiler", "1.5.8")
             version("compose-bom", "2023.06.01")
 
-            plugin("android-application", "com.android.application").version("8.2.0")
+            plugin("android-application", "com.android.application").version("8.2.2")
             plugin("kotlin-android", "org.jetbrains.kotlin.android").version("1.9.22")
-            plugin("hilt-android", "com.google.dagger.hilt.android").version("2.48")
+            plugin("hilt-android", "com.google.dagger.hilt.android").version("2.50")
             plugin("google-services", "com.google.gms.google-services").version("4.4.2")
 
             library("androidx-compose-bom", "androidx.compose", "compose-bom").versionRef("compose-bom")
