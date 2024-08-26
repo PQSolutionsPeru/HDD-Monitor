@@ -23,7 +23,6 @@ class AlertRepository @Inject constructor(
                     snapshot?.let { trySend(it.toObjects(Alert::class.java)) }
                 }
         } else {
-            // Para administradores, obtener todas las alertas de todos los clientes
             firestore.collectionGroup("alerts")
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
@@ -51,7 +50,11 @@ class AlertRepository @Inject constructor(
     }
 
     suspend fun createAlert(clientId: String, alert: Alert): Result<Unit> = runCatching {
-        val alertWithId = alert.copy(id = firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts").document().id)
+        val alertWithId = if (alert.id.isEmpty()) {
+            alert.copy(id = firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts").document().id)
+        } else {
+            alert
+        }
         firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
             .document(alertWithId.id)
             .set(alertWithId)

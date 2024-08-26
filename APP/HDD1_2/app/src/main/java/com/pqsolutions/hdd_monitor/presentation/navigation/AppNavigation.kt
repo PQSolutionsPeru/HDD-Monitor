@@ -10,7 +10,6 @@ import com.pqsolutions.hdd_monitor.data.UserRole
 import com.pqsolutions.hdd_monitor.presentation.screens.*
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
-// import com.pqsolutions.hdd_monitor.presentation.components.NotificationList // Comentado por ahora
 
 @Composable
 fun AppNavigation(viewModel: MainViewModel) {
@@ -20,8 +19,18 @@ fun AppNavigation(viewModel: MainViewModel) {
 
     NavHost(
         navController = navController,
-        startDestination = if (uiState.isLoggedIn) "dashboard" else "login"
+        startDestination = if (uiState.isFirstLaunch) "onboarding" else if (uiState.isLoggedIn) "dashboard" else "login"
     ) {
+        composable("onboarding") {
+            OnboardingScreen(
+                onFinish = {
+                    viewModel.onEvent(MainUiEvent.FinishOnboarding)
+                    navController.navigate("login") {
+                        popUpTo("onboarding") { inclusive = true }
+                    }
+                }
+            )
+        }
         composable("login") {
             Log.d("AppNavigation", "Navigating to Login Screen")
             LoginScreen(
@@ -115,10 +124,5 @@ fun AppNavigation(viewModel: MainViewModel) {
         }
     }
 
-    // Commented out for now as it's causing an error
-    // if (uiState.isLoggedIn) {
-    //     val notifications by viewModel.notifications.collectAsState()
-    //     NotificationList(notifications = notifications)
-    // }
     Log.d("AppNavigation", "AppNavigation composition completed")
 }

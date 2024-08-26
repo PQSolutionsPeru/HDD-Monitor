@@ -1,25 +1,30 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import androidx.compose.animation.ExperimentalAnimationApi
-
-@OptIn(ExperimentalAnimationApi::class)
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.EventViewModel
 
 @Composable
-fun EventHistoryScreen(onBackClick: () -> Unit) {
+fun EventHistoryScreen(
+    viewModel: EventViewModel = hiltViewModel(),
+    onBackClick: () -> Unit
+) {
     HDD1_2Theme {
+        val uiState by viewModel.uiState.collectAsState()
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(24.dp)
         ) {
             Text(
                 text = "Historial de Eventos",
@@ -27,12 +32,37 @@ fun EventHistoryScreen(onBackClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(32.dp))
-            // Aquí puedes agregar una lista de eventos cuando esté implementada
-            Text(
-                text = "Lista de eventos próximamente",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+
+            when {
+                uiState.isLoading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                }
+                uiState.error != null -> {
+                    Text(
+                        text = "Error: ${uiState.error}",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                }
+                uiState.events.isEmpty() -> {
+                    Text(
+                        text = "No hay eventos registrados",
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(uiState.events) { event ->
+                            EventItem(event)
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = onBackClick,
@@ -45,6 +75,45 @@ fun EventHistoryScreen(onBackClick: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun EventItem(event: Event) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = event.dateTime,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = event.type,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = event.description,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Estado: ${event.solvedStatus}",
+                style = MaterialTheme.typography.bodySmall,
+                color = when (event.solvedStatus) {
+                    "Resuelto" -> MaterialTheme.colorScheme.primary
+                    "Pendiente" -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+            )
         }
     }
 }

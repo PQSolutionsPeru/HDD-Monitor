@@ -9,6 +9,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.presentation.components.HddButton
 import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -41,6 +43,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
     )
 
     val pagerState = rememberPagerState { pages.size }
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -55,7 +58,9 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         }
 
         Row(
-            Modifier.padding(Dimensions.paddingMedium),
+            Modifier
+                .height(50.dp)
+                .fillMaxWidth(),
             horizontalArrangement = Arrangement.Center
         ) {
             repeat(pages.size) { iteration ->
@@ -71,7 +76,15 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         }
 
         HddButton(
-            onClick = onFinish,
+            onClick = {
+                if (pagerState.currentPage < pages.lastIndex) {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    }
+                } else {
+                    onFinish()
+                }
+            },
             text = if (pagerState.currentPage == pages.lastIndex) "Empezar" else "Siguiente",
             modifier = Modifier
                 .padding(Dimensions.paddingMedium)

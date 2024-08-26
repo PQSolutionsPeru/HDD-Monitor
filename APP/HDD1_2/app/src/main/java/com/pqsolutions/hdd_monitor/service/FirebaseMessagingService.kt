@@ -24,13 +24,15 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
-        remoteMessage.notification?.let { notification ->
+        remoteMessage.data.let { data ->
             val alert = Alert(
-                title = notification.title ?: "",
-                description = notification.body ?: "",
-                dateTime = System.currentTimeMillis().toString(),
-                status = "NEW",
-                priority = "HIGH"
+                id = data["id"] ?: "",
+                clientId = data["clientId"] ?: "",
+                title = data["title"] ?: "",
+                description = data["body"] ?: "",
+                dateTime = data["dateTime"] ?: System.currentTimeMillis().toString(),
+                status = data["status"] ?: "NEW",
+                priority = data["priority"] ?: "HIGH"
             )
             showNotification(alert)
             saveAlert(alert)
@@ -43,6 +45,7 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
             .setContentTitle(alert.title)
             .setContentText(alert.description)
             .setSmallIcon(R.drawable.ic_notification)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -51,22 +54,25 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
             val channel = NotificationChannel(
                 channelId,
                 "HDD Monitor Notifications",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             )
             notificationManager.createNotificationChannel(channel)
         }
 
-        notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+        notificationManager.notify(alert.id.hashCode(), notificationBuilder.build())
     }
 
     private fun saveAlert(alert: Alert) {
         CoroutineScope(Dispatchers.IO).launch {
-            alertRepository.createAlert("default_client_id", alert)
+            alertRepository.createAlert(alert.clientId, alert)
         }
     }
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         // Aquí puedes enviar el nuevo token a tu servidor si es necesario
+        CoroutineScope(Dispatchers.IO).launch {
+            // Implementa la lógica para enviar el token al servidor
+        }
     }
 }

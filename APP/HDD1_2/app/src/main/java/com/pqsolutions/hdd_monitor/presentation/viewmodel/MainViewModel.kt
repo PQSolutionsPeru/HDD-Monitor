@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.AuthRepository
 import com.pqsolutions.hdd_monitor.data.UserData
+import com.pqsolutions.hdd_monitor.data.UserPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,16 +14,30 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val userPreferences: UserPreferences
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState
 
+    init {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isFirstLaunch = userPreferences.isFirstLaunch(),
+                isLoggedIn = authRepository.isUserLoggedIn()
+            )
+            if (_uiState.value.isLoggedIn) {
+                loadUserData()
+            }
+        }
+    }
+
     fun onEvent(event: MainUiEvent) {
         when (event) {
             is MainUiEvent.Login -> login(event.email, event.password)
             is MainUiEvent.Logout -> logout()
+            is MainUiEvent.FinishOnboarding -> finishOnboarding()
         }
     }
 
@@ -72,11 +87,34 @@ class MainViewModel @Inject constructor(
             }
         }
     }
+
+    private fun finishOnboarding() {
+        viewModelScope.launch {
+            userPreferences.setFirstLaunch(false)
+            _uiState.value = _uiState.value.copy(
+                isFirstLaunch = false,
+                currentRoute = "login"
+            )
+        }
+    }
+
+    private suspend fun loadUserData() {
+        authRepository.getCurrentUserData().fold(
+            onSuccess = { userData ->
+                _uiState.value = _uiState.value.copy(userData = userData)
+            },
+            onFailure = { e ->
+                Log.e("MainViewModel", "Failed to load user data: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to load user data")
+            }
+        )
+    }
 }
 
 data class MainUiState(
     val isLoading: Boolean = false,
     val isLoggedIn: Boolean = false,
+    val isFirstLaunch: Boolean = true,
     val userData: UserData? = null,
     val error: String? = null,
     val currentRoute: String = "login"
@@ -85,4 +123,5 @@ data class MainUiState(
 sealed class MainUiEvent {
     data class Login(val email: String, val password: String) : MainUiEvent()
     object Logout : MainUiEvent()
+    object FinishOnboarding : MainUiEvent()
 }

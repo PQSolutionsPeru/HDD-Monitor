@@ -36,7 +36,7 @@ fun AlertScreen(
         val context = LocalContext.current
 
         LaunchedEffect(Unit) {
-            viewModel.loadAlerts("client_id") // Replace with actual client ID
+            viewModel.loadAlerts()
         }
 
         Column(
@@ -64,7 +64,7 @@ fun AlertScreen(
                 uiState.error != null -> {
                     ErrorMessage(
                         message = uiState.error,
-                        onRetry = { viewModel.loadAlerts("client_id") }
+                        onRetry = { viewModel.loadAlerts() }
                     )
                 }
                 uiState.alerts.isEmpty() -> {
@@ -95,7 +95,7 @@ fun AlertScreen(
                                     onDeleteClick = {
                                         performHapticFeedback(context)
                                         playSoundEffect(context, R.raw.button_click)
-                                        viewModel.deleteAlert("client_id", alert.id)
+                                        viewModel.deleteAlert(alert.id)
                                     }
                                 )
                             }
@@ -139,9 +139,9 @@ fun AlertScreen(
                     performHapticFeedback(context)
                     playSoundEffect(context, R.raw.button_click)
                     if (editingAlert == null) {
-                        viewModel.createAlert("client_id", alert)
+                        viewModel.createAlert(alert)
                     } else {
-                        viewModel.updateAlert("client_id", alert)
+                        viewModel.updateAlert(alert)
                     }
                     showDialog = false
                 }
