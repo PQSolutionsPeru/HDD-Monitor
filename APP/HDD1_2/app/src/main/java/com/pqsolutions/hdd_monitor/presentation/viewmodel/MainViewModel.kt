@@ -7,8 +7,7 @@ import com.pqsolutions.hdd_monitor.data.AuthRepository
 import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.data.UserPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -19,16 +18,28 @@ class MainViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
-    val uiState: StateFlow<MainUiState> = _uiState
+    val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isFirstLaunch = userPreferences.isFirstLaunch(),
-                isLoggedIn = authRepository.isUserLoggedIn()
-            )
-            if (_uiState.value.isLoggedIn) {
-                loadUserData()
+            combine(
+                userPreferences.isFirstLaunchFlow,
+                userPreferences.userDataFlow,
+                userPreferences.themeFlow,
+                userPreferences.languageFlow,
+                userPreferences.notificationsEnabledFlow
+            ) { isFirstLaunch, userData, theme, language, notificationsEnabled ->
+                MainUiState(
+                    isFirstLaunch = isFirstLaunch,
+                    isLoggedIn = userData != null,
+                    userData = userData,
+                    theme = theme,
+                    language = language,
+                    notificationsEnabled = notificationsEnabled,
+                    currentRoute = if (isFirstLaunch) "onboarding" else if (userData != null) "dashboard" else "login"
+                )
+            }.collect { state ->
+                _uiState.value = state
             }
         }
     }
@@ -38,6 +49,9 @@ class MainViewModel @Inject constructor(
             is MainUiEvent.Login -> login(event.email, event.password)
             is MainUiEvent.Logout -> logout()
             is MainUiEvent.FinishOnboarding -> finishOnboarding()
+            is MainUiEvent.SetTheme -> setTheme(event.theme)
+            is MainUiEvent.SetLanguage -> setLanguage(event.language)
+            is MainUiEvent.SetNotificationsEnabled -> setNotificationsEnabled(event.enabled)
         }
     }
 
@@ -48,12 +62,9 @@ class MainViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
                 authRepository.login(email, password).fold(
                     onSuccess = { user ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            isLoggedIn = true,
-                            userData = user,
-                            currentRoute = "dashboard"
-                        )
+                        userPreferences.setUserData(user)
+                        userPreferences.setAuthToken("dummy_token") // Replace with actual token
+                        userPreferences.setLastSyncDate(System.currentTimeMillis())
                         Log.d("MainViewModel", "Login successful for user: ${user.name}")
                     },
                     onFailure = { e ->
@@ -79,7 +90,7 @@ class MainViewModel @Inject constructor(
             Log.d("MainViewModel", "Attempting logout")
             try {
                 authRepository.logout()
-                _uiState.value = MainUiState(currentRoute = "login")
+                userPreferences.clearUserData()
                 Log.d("MainViewModel", "Logout successful")
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Logout failed: ${e.message}", e)
@@ -91,23 +102,25 @@ class MainViewModel @Inject constructor(
     private fun finishOnboarding() {
         viewModelScope.launch {
             userPreferences.setFirstLaunch(false)
-            _uiState.value = _uiState.value.copy(
-                isFirstLaunch = false,
-                currentRoute = "login"
-            )
         }
     }
 
-    private suspend fun loadUserData() {
-        authRepository.getCurrentUserData().fold(
-            onSuccess = { userData ->
-                _uiState.value = _uiState.value.copy(userData = userData)
-            },
-            onFailure = { e ->
-                Log.e("MainViewModel", "Failed to load user data: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to load user data")
-            }
-        )
+    private fun setTheme(theme: String) {
+        viewModelScope.launch {
+            userPreferences.setTheme(theme)
+        }
+    }
+
+    private fun setLanguage(language: String) {
+        viewModelScope.launch {
+            userPreferences.setLanguage(language)
+        }
+    }
+
+    private fun setNotificationsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferences.setNotificationsEnabled(enabled)
+        }
     }
 }
 
@@ -117,11 +130,17 @@ data class MainUiState(
     val isFirstLaunch: Boolean = true,
     val userData: UserData? = null,
     val error: String? = null,
-    val currentRoute: String = "login"
+    val currentRoute: String = "login",
+    val theme: String = "system",
+    val language: String = "es",
+    val notificationsEnabled: Boolean = true
 )
 
 sealed class MainUiEvent {
     data class Login(val email: String, val password: String) : MainUiEvent()
     object Logout : MainUiEvent()
     object FinishOnboarding : MainUiEvent()
+    data class SetTheme(val theme: String) : MainUiEvent()
+    data class SetLanguage(val language: String) : MainUiEvent()
+    data class SetNotificationsEnabled(val enabled: Boolean) : MainUiEvent()
 }

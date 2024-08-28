@@ -6,9 +6,7 @@ import com.pqsolutions.hdd_monitor.data.Alert
 import com.pqsolutions.hdd_monitor.data.AlertRepository
 import com.pqsolutions.hdd_monitor.data.UserPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -28,8 +26,14 @@ class AlertViewModel @Inject constructor(
     fun loadAlerts() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val clientId = userPreferences.getClientId() ?: ""
-            alertRepository.getAlertsFlow(clientId).collect { alerts ->
+            userPreferences.clientIdFlow.filterNotNull().flatMapLatest { clientId ->
+                alertRepository.getAlertsFlow(clientId)
+            }.catch { e ->
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error al cargar las alertas"
+                )
+            }.collect { alerts ->
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     alerts = alerts,
@@ -42,36 +46,39 @@ class AlertViewModel @Inject constructor(
     fun createAlert(alert: Alert) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val clientId = userPreferences.getClientId() ?: ""
-            val result = alertRepository.createAlert(clientId, alert)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.exceptionOrNull()?.message
-            )
+            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
+                val result = alertRepository.createAlert(clientId, alert)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = result.exceptionOrNull()?.message
+                )
+            }
         }
     }
 
     fun updateAlert(alert: Alert) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val clientId = userPreferences.getClientId() ?: ""
-            val result = alertRepository.updateAlert(clientId, alert)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.exceptionOrNull()?.message
-            )
+            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
+                val result = alertRepository.updateAlert(clientId, alert)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = result.exceptionOrNull()?.message
+                )
+            }
         }
     }
 
     fun deleteAlert(alertId: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val clientId = userPreferences.getClientId() ?: ""
-            val result = alertRepository.deleteAlert(clientId, alertId)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.exceptionOrNull()?.message
-            )
+            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
+                val result = alertRepository.deleteAlert(clientId, alertId)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = result.exceptionOrNull()?.message
+                )
+            }
         }
     }
 }

@@ -9,7 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.pqsolutions.hdd_monitor.data.Event
+import com.pqsolutions.hdd_monitor.data.EventWithMetadata
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.EventViewModel
 
@@ -20,6 +20,10 @@ fun EventHistoryScreen(
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
+
+        LaunchedEffect(key1 = true) {
+            viewModel.loadEvents()
+        }
 
         Column(
             modifier = Modifier
@@ -56,8 +60,8 @@ fun EventHistoryScreen(
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(uiState.events) { event ->
-                            EventItem(event)
+                        items(uiState.events) { eventWithMetadata ->
+                            EventItem(eventWithMetadata)
                         }
                     }
                 }
@@ -80,7 +84,7 @@ fun EventHistoryScreen(
 }
 
 @Composable
-fun EventItem(event: Event) {
+fun EventItem(eventWithMetadata: EventWithMetadata) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -89,30 +93,36 @@ fun EventItem(event: Event) {
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = event.dateTime,
+                text = eventWithMetadata.event.date_time,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = event.type,
+                text = eventWithMetadata.event.type,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = event.description,
+                text = eventWithMetadata.event.description,
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Estado: ${event.solvedStatus}",
+                text = "Estado: ${eventWithMetadata.event.solved_status}",
                 style = MaterialTheme.typography.bodySmall,
-                color = when (event.solvedStatus) {
+                color = when (eventWithMetadata.event.solved_status) {
                     "Resuelto" -> MaterialTheme.colorScheme.primary
                     "Pendiente" -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurface
                 }
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Panel: ${eventWithMetadata.panelName}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

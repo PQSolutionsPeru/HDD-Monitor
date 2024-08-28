@@ -10,65 +10,55 @@ import javax.inject.Inject
 class EventRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
-    fun getEventsFlow(clientId: String): Flow<List<Event>> = callbackFlow {
-        val listenerRegistration = if (clientId.isNotEmpty()) {
-            firestore.collection("hdd-monitor/accounts/clients/$clientId/panel_events_log")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        close(error)
-                        return@addSnapshotListener
+    fun getEventsFlow(clientId: String): Flow<List<EventWithMetadata>> = callbackFlow {
+        val eventsRef = firestore.collection("hdd-monitor/accounts/clients/$clientId/panels")
+        val listenerRegistration = eventsRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+
+            val allEvents = mutableListOf<EventWithMetadata>()
+            snapshot?.documents?.forEach { panelDoc ->
+                val panelEventsRef = panelDoc.reference.collection("panel_events_log")
+                panelEventsRef.get().addOnSuccessListener { panelEventsSnapshot ->
+                    panelEventsSnapshot.documents.forEach { eventDoc ->
+                        val event = eventDoc.toObject(Event::class.java)
+                        event?.let {
+                            val eventWithMetadata = EventWithMetadata(
+                                event = it,
+                                eventId = eventDoc.id,
+                                panelId = panelDoc.id,
+                                panelName = panelDoc.getString("name") ?: ""
+                            )
+                            allEvents.add(eventWithMetadata)
+                        }
                     }
-                    snapshot?.let { trySend(it.toObjects(Event::class.java)) }
+                    trySend(allEvents)
+                }.addOnFailureListener { e ->
+                    close(e)
                 }
-        } else {
-            // Si clientId está vacío, devolvemos una lista vacía
-            trySend(emptyList())
-            null
+            }
         }
-        awaitClose { listenerRegistration?.remove() }
+
+        awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun getEvents(clientId: String): Result<List<Event>> = runCatching {
-        if (clientId.isEmpty()) {
-            emptyList()
-        } else {
-            firestore.collection("hdd-monitor/accounts/clients/$clientId/panel_events_log")
-                .get()
-                .await()
-                .toObjects(Event::class.java)
-        }
-    }
-
-    suspend fun createEvent(clientId: String, event: Event): Result<Unit> = runCatching {
-        if (clientId.isEmpty()) {
-            throw IllegalArgumentException("Client ID cannot be empty")
-        }
-        val eventWithId = if (event.id.isEmpty()) {
-            event.copy(id = firestore.collection("hdd-monitor/accounts/clients/$clientId/panel_events_log").document().id)
-        } else {
-            event
-        }
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/panel_events_log")
-            .document(eventWithId.id)
-            .set(eventWithId)
+    suspend fun createEvent(clientId: String, panelId: String, event: Event): Result<Unit> = runCatching {
+        firestore.collection("hdd-monitor/accounts/clients/$clientId/panels/$panelId/panel_events_log")
+            .add(event)
             .await()
     }
 
-    suspend fun updateEvent(clientId: String, event: Event): Result<Unit> = runCatching {
-        if (clientId.isEmpty()) {
-            throw IllegalArgumentException("Client ID cannot be empty")
-        }
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/panel_events_log")
-            .document(event.id)
+    suspend fun updateEvent(clientId: String, panelId: String, eventId: String, event: Event): Result<Unit> = runCatching {
+        firestore.collection("hdd-monitor/accounts/clients/$clientId/panels/$panelId/panel_events_log")
+            .document(eventId)
             .set(event)
             .await()
     }
 
-    suspend fun deleteEvent(clientId: String, eventId: String): Result<Unit> = runCatching {
-        if (clientId.isEmpty()) {
-            throw IllegalArgumentException("Client ID cannot be empty")
-        }
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/panel_events_log")
+    suspend fun deleteEvent(clientId: String, panelId: String, eventId: String): Result<Unit> = runCatching {
+        firestore.collection("hdd-monitor/accounts/clients/$clientId/panels/$panelId/panel_events_log")
             .document(eventId)
             .delete()
             .await()
@@ -76,9 +66,15 @@ class EventRepository @Inject constructor(
 }
 
 data class Event(
-    val id: String = "",
-    val dateTime: String = "",
+    val date_time: String = "",
     val description: String = "",
-    val type: String = "",
-    val solvedStatus: String = ""
+    val solved_status: String = "",
+    val type: String = ""
+)
+
+data class EventWithMetadata(
+    val event: Event,
+    val eventId: String,
+    val panelId: String,
+    val panelName: String
 )

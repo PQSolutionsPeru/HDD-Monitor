@@ -1,586 +1,445 @@
-### data\AlertRepository.kt ###
+### data\AuthRepository.kt ###
 
 package com.pqsolutions.hdd_monitor.data
 
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.messaging.FirebaseMessaging
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.tasks.await
-import javax.inject.Inject
-
-class AlertRepository @Inject constructor(
-    private val firestore: FirebaseFirestore,
-    private val messaging: FirebaseMessaging
-) {
-    fun getAlertsFlow(clientId: String): Flow<List<Alert>> = callbackFlow {
-        val listenerRegistration = if (clientId.isNotEmpty()) {
-            firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        close(error)
-                        return@addSnapshotListener
-                    }
-                    snapshot?.let { trySend(it.toObjects(Alert::class.java)) }
-                }
-        } else {
-            firestore.collectionGroup("alerts")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        close(error)
-                        return@addSnapshotListener
-                    }
-                    snapshot?.let { trySend(it.toObjects(Alert::class.java)) }
-                }
-        }
-        awaitClose { listenerRegistration.remove() }
-    }
-
-    suspend fun getAlerts(clientId: String): Result<List<Alert>> = runCatching {
-        if (clientId.isNotEmpty()) {
-            firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-                .get()
-                .await()
-                .toObjects(Alert::class.java)
-        } else {
-            firestore.collectionGroup("alerts")
-                .get()
-                .await()
-                .toObjects(Alert::class.java)
-        }
-    }
-
-    suspend fun createAlert(clientId: String, alert: Alert): Result<Unit> = runCatching {
-        val alertWithId = if (alert.id.isEmpty()) {
-            alert.copy(id = firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts").document().id)
-        } else {
-            alert
-        }
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .document(alertWithId.id)
-            .set(alertWithId)
-            .await()
-    }
-
-    suspend fun updateAlert(clientId: String, alert: Alert): Result<Unit> = runCatching {
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .document(alert.id)
-            .set(alert)
-            .await()
-    }
-
-    suspend fun deleteAlert(clientId: String, alertId: String): Result<Unit> = runCatching {
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .document(alertId)
-            .delete()
-            .await()
-    }
-
-    suspend fun subscribeToAlertTopic(clientId: String) {
-        val topic = "client_${clientId}_alerts"
-        messaging.subscribeToTopic(topic).await()
-    }
-
-    suspend fun unsubscribeFromAlertTopic(clientId: String) {
-        val topic = "client_${clientId}_alerts"
-        messaging.unsubscribeFromTopic(topic).await()
-    }
-}
-
-data class Alert(
-    val id: String = "",
-    val clientId: String = "",
-    val title: String = "",
-    val description: String = "",
-    val dateTime: String = "",
-    val status: String = "",
-    val priority: String = ""
-)
-
-==================================================
-
-### data\EventRepository.kt ###
-
-package com.pqsolutions.hdd_monitor.data
-
+import android.util.Log
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
-class EventRepository @Inject constructor(
+class AuthRepository @Inject constructor(
+    private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) {
-    suspend fun getEvents(clientId: String): Result<List<Event>> = runCatching {
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/panel_events_log")
+    suspend fun login(email: String, password: String): Result<UserData> = runCatching {
+        Log.d("AuthRepository", "Attempting login for email: $email")
+        val authResult = auth.signInWithEmailAndPassword(email, password).await()
+        val userId = authResult.user?.uid ?: throw Exception("User ID not found")
+        Log.d("AuthRepository", "Firebase Auth successful, user ID: $userId")
+        getUserData(email)
+    }
+
+    private suspend fun getUserData(email: String): UserData {
+        Log.d("AuthRepository", "Fetching user data for email: $email")
+
+        // Buscar en la colección de administradores
+        val adminQuery = firestore.collection("hdd-monitor/accounts/admins")
+            .whereEqualTo("email", email)
             .get()
             .await()
-            .toObjects(Event::class.java)
+
+        if (!adminQuery.isEmpty) {
+            val adminDoc = adminQuery.documents.first()
+            Log.d("AuthRepository", "User found in admins collection")
+            return UserData(
+                id = adminDoc.getString("ID") ?: adminDoc.id,
+                email = adminDoc.getString("email") ?: "",
+                name = adminDoc.getString("name") ?: "",
+                role = UserRole.ADMIN,
+                clientId = "" // Los administradores no tienen clientId
+            )
+        }
+
+        // Si no es admin, buscar en la colección de clientes
+        val clientsRef = firestore.collection("hdd-monitor/accounts/clients")
+        val clientsQuery = clientsRef.get().await()
+
+        for (clientDoc in clientsQuery.documents) {
+            val usersQuery = clientDoc.reference.collection("users")
+                .whereEqualTo("email", email)
+                .get()
+                .await()
+
+            if (!usersQuery.isEmpty) {
+                val userDoc = usersQuery.documents.first()
+                Log.d("AuthRepository", "User found in clients collection, client ID: ${clientDoc.id}")
+                return UserData(
+                    id = userDoc.getString("ID") ?: userDoc.id,
+                    email = userDoc.getString("email") ?: "",
+                    name = userDoc.getString("name") ?: "",
+                    role = UserRole.USER,
+                    clientId = clientDoc.id
+                )
+            }
+        }
+
+        Log.e("AuthRepository", "User not found in Firestore")
+        throw Exception("User not found in Firestore")
+    }
+
+    fun isUserLoggedIn(): Boolean = auth.currentUser != null
+
+    fun logout() {
+        auth.signOut()
+    }
+
+    suspend fun getCurrentUserData(): Result<UserData> = runCatching {
+        val currentUser = auth.currentUser ?: throw Exception("No user logged in")
+        getUserData(currentUser.email ?: throw Exception("User email not found"))
     }
 }
 
-data class Event(
-    val id: String = "",
-    val dateTime: String = "",
-    val description: String = "",
-    val type: String = "",
-    val solvedStatus: String = ""
-)
+==================================================
+
+### data\UserPreferences.kt ###
+
+package com.pqsolutions.hdd_monitor.data
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_preferences")
+
+@Singleton
+class UserPreferences @Inject constructor(private val context: Context) {
+
+    private val isFirstLaunchKey = booleanPreferencesKey("is_first_launch")
+    private val clientIdKey = stringPreferencesKey("client_id")
+
+    suspend fun isFirstLaunch(): Boolean {
+        return context.dataStore.data.map { preferences ->
+            preferences[isFirstLaunchKey] ?: true
+        }.first()
+    }
+
+    suspend fun setFirstLaunch(isFirstLaunch: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[isFirstLaunchKey] = isFirstLaunch
+        }
+    }
+
+    suspend fun getClientId(): String? {
+        return context.dataStore.data.map { preferences ->
+            preferences[clientIdKey]
+        }.first()
+    }
+
+    suspend fun setClientId(clientId: String) {
+        context.dataStore.edit { preferences ->
+            preferences[clientIdKey] = clientId
+        }
+    }
+}
 
 ==================================================
 
-### presentation\screens\AlertScreen.kt ###
+### di\AppModule.kt ###
+
+package com.pqsolutions.hdd_monitor.di
+
+import android.content.Context
+import com.pqsolutions.hdd_monitor.data.UserPreferences
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideUserPreferences(@ApplicationContext context: Context): UserPreferences {
+        return UserPreferences(context)
+    }
+}
+
+==================================================
+
+### presentation\MainActivity.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation
+
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.*
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import com.google.firebase.FirebaseApp
+import com.pqsolutions.hdd_monitor.presentation.navigation.AppNavigation
+import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
+import dagger.hilt.android.AndroidEntryPoint
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+    private val viewModel: MainViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        Log.d("MainActivity", "onCreate called")
+
+        FirebaseApp.initializeApp(this)
+        Log.d("MainActivity", "FirebaseApp initialized")
+
+        setContent {
+            Log.d("MainActivity", "Setting content")
+            HDD1_2Theme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    val uiState by viewModel.uiState.collectAsState()
+                    Log.d("MainActivity", "Current UI State: $uiState")
+
+                    AppNavigation(viewModel)
+                }
+            }
+        }
+        Log.d("MainActivity", "onCreate completed")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Log.d("MainActivity", "onStart called")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.d("MainActivity", "onResume called")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.d("MainActivity", "onPause called")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d("MainActivity", "onStop called")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("MainActivity", "onDestroy called")
+    }
+}
+
+==================================================
+
+### presentation\navigation\AppNavigation.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.navigation
+
+import android.util.Log
+import androidx.compose.runtime.*
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.pqsolutions.hdd_monitor.data.UserRole
+import com.pqsolutions.hdd_monitor.presentation.screens.*
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
+
+@Composable
+fun AppNavigation(viewModel: MainViewModel) {
+    Log.d("AppNavigation", "Starting AppNavigation composition")
+    val uiState by viewModel.uiState.collectAsState()
+    val navController = rememberNavController()
+
+    NavHost(
+        navController = navController,
+        startDestination = if (uiState.isFirstLaunch) "onboarding" else if (uiState.isLoggedIn) "dashboard" else "login"
+    ) {
+        composable("onboarding") {
+            OnboardingScreen(
+                onFinish = {
+                    viewModel.onEvent(MainUiEvent.FinishOnboarding)
+                    navController.navigate("login") {
+                        popUpTo("onboarding") { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable("login") {
+            Log.d("AppNavigation", "Navigating to Login Screen")
+            LoginScreen(
+                onLoginClick = { email, password ->
+                    Log.d("AppNavigation", "Login attempt with email: $email")
+                    viewModel.onEvent(MainUiEvent.Login(email, password))
+                }
+            )
+        }
+        composable("dashboard") {
+            Log.d("AppNavigation", "Navigating to Dashboard. User role: ${uiState.userData?.role}")
+            when (uiState.userData?.role) {
+                UserRole.ADMIN -> AdminDashboardScreen(
+                    onLogoutClick = {
+                        Log.d("AppNavigation", "Admin logout clicked")
+                        viewModel.onEvent(MainUiEvent.Logout)
+                    },
+                    onManageUsersClick = {
+                        Log.d("AppNavigation", "Navigate to User Management")
+                        navController.navigate("user_management")
+                    },
+                    onViewAlertsClick = {
+                        Log.d("AppNavigation", "Navigate to Alerts")
+                        navController.navigate("alerts")
+                    },
+                    onViewEventHistoryClick = {
+                        Log.d("AppNavigation", "Navigate to Event History")
+                        navController.navigate("event_history")
+                    }
+                )
+                UserRole.USER -> UserDashboardScreen(
+                    onLogoutClick = {
+                        Log.d("AppNavigation", "User logout clicked")
+                        viewModel.onEvent(MainUiEvent.Logout)
+                    },
+                    onViewEventHistoryClick = {
+                        Log.d("AppNavigation", "Navigate to Event History")
+                        navController.navigate("event_history")
+                    },
+                    onViewAlertsClick = {
+                        Log.d("AppNavigation", "Navigate to Alerts")
+                        navController.navigate("alerts")
+                    }
+                )
+                else -> {
+                    Log.d("AppNavigation", "Invalid user role, navigating to Login")
+                    LaunchedEffect(Unit) {
+                        navController.navigate("login") {
+                            popUpTo("dashboard") { inclusive = true }
+                        }
+                    }
+                }
+            }
+        }
+        composable("user_management") {
+            Log.d("AppNavigation", "Navigating to User Management Screen")
+            UserManagementScreen(
+                onBackClick = {
+                    Log.d("AppNavigation", "Navigating back from User Management")
+                    navController.popBackStack()
+                }
+            )
+        }
+        composable("event_history") {
+            Log.d("AppNavigation", "Navigating to Event History Screen")
+            EventHistoryScreen(
+                onBackClick = {
+                    Log.d("AppNavigation", "Navigating back from Event History")
+                    navController.popBackStack()
+                }
+            )
+        }
+        composable("alerts") {
+            Log.d("AppNavigation", "Navigating to Alerts Screen")
+            AlertScreen(
+                onBackClick = {
+                    Log.d("AppNavigation", "Navigating back from Alerts")
+                    navController.popBackStack()
+                },
+                isAdmin = uiState.userData?.role == UserRole.ADMIN
+            )
+        }
+    }
+
+    LaunchedEffect(uiState.currentRoute) {
+        Log.d("AppNavigation", "LaunchedEffect: Current route changed to ${uiState.currentRoute}")
+        if (uiState.currentRoute != navController.currentDestination?.route) {
+            navController.navigate(uiState.currentRoute) {
+                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            }
+        }
+    }
+
+    Log.d("AppNavigation", "AppNavigation composition completed")
+}
+
+==================================================
+
+### presentation\screens\LoginScreen.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.screens
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Alert
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.AlertViewModel
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.presentation.components.HddButton
+import com.pqsolutions.hdd_monitor.presentation.components.HddOutlinedTextField
+import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-
-@OptIn(ExperimentalAnimationApi::class)
-@Composable
-fun AlertScreen(
-    viewModel: AlertViewModel = hiltViewModel(),
-    onBackClick: () -> Unit,
-    isAdmin: Boolean
-) {
-    HDD1_2Theme {
-        val uiState by viewModel.uiState.collectAsState()
-        var showDialog by remember { mutableStateOf(false) }
-        var editingAlert by remember { mutableStateOf<Alert?>(null) }
-        val context = LocalContext.current
-
-        LaunchedEffect(Unit) {
-            viewModel.loadAlerts()
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.alerts),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            when {
-                uiState.isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                uiState.error != null -> {
-                    ErrorMessage(
-                        message = uiState.error,
-                        onRetry = { viewModel.loadAlerts() }
-                    )
-                }
-                uiState.alerts.isEmpty() -> {
-                    Text(
-                        text = stringResource(R.string.no_alerts),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                else -> {
-                    AnimatedContent(
-                        targetState = uiState.alerts,
-                        transitionSpec = {
-                            fadeIn(initialAlpha = 0.3f) togetherWith fadeOut(targetAlpha = 0f)
-                        }
-                    ) { alerts ->
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            items(alerts, key = { it.id }) { alert ->
-                                AlertItem(
-                                    alert = alert,
-                                    isAdmin = isAdmin,
-                                    onEditClick = {
-                                        editingAlert = alert
-                                        showDialog = true
-                                    },
-                                    onDeleteClick = {
-                                        performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
-                                        viewModel.deleteAlert(alert.id)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(24.dp))
-            if (isAdmin) {
-                Button(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        editingAlert = null
-                        showDialog = true
-                    },
-                    modifier = Modifier.fillMaxWidth().height(56.dp)
-                ) {
-                    Text(stringResource(R.string.create_new_alert), style = MaterialTheme.typography.labelLarge)
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            Button(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onBackClick()
-                },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-            ) {
-                Text(stringResource(R.string.back), style = MaterialTheme.typography.labelLarge)
-            }
-        }
-
-        if (showDialog) {
-            AlertDialog(
-                alert = editingAlert,
-                onDismiss = { showDialog = false },
-                onConfirm = { alert ->
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    if (editingAlert == null) {
-                        viewModel.createAlert(alert)
-                    } else {
-                        viewModel.updateAlert(alert)
-                    }
-                    showDialog = false
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun AlertItem(
-    alert: Alert,
-    isAdmin: Boolean,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit
-) {
-    val context = LocalContext.current
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = alert.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.date_time, alert.dateTime),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                text = stringResource(R.string.status, alert.status),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                text = stringResource(R.string.priority, alert.priority),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = alert.description,
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (isAdmin) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    IconButton(onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onEditClick()
-                    }) {
-                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit_alert))
-                    }
-                    IconButton(onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onDeleteClick()
-                    }) {
-                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_alert))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AlertDialog(
-    alert: Alert? = null,
-    onDismiss: () -> Unit,
-    onConfirm: (Alert) -> Unit
-) {
-    var title by remember { mutableStateOf(alert?.title ?: "") }
-    var description by remember { mutableStateOf(alert?.description ?: "") }
-    var priority by remember { mutableStateOf(alert?.priority ?: "Low") }
-    val context = LocalContext.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (alert == null) stringResource(R.string.add_alert) else stringResource(R.string.edit_alert)) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text(stringResource(R.string.title)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text(stringResource(R.string.description)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(stringResource(R.string.priority), style = MaterialTheme.typography.bodyLarge)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = priority == "Low",
-                        onClick = { priority = "Low" }
-                    )
-                    Text(stringResource(R.string.low), style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    RadioButton(
-                        selected = priority == "Medium",
-                        onClick = { priority = "Medium" }
-                    )
-                    Text(stringResource(R.string.medium), style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    RadioButton(
-                        selected = priority == "High",
-                        onClick = { priority = "High" }
-                    )
-                    Text(stringResource(R.string.high), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onConfirm(Alert(
-                    id = alert?.id ?: "",
-                    title = title,
-                    description = description,
-                    priority = priority,
-                    dateTime = alert?.dateTime ?: System.currentTimeMillis().toString(),
-                    status = alert?.status ?: "Active"
-                ))
-            }) {
-                Text(stringResource(R.string.confirm), style = MaterialTheme.typography.labelLarge)
-            }
-        },
-        dismissButton = {
-            Button(onClick = {
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onDismiss()
-            }) {
-                Text(stringResource(R.string.cancel), style = MaterialTheme.typography.labelLarge)
-            }
-        }
-    )
-}
-
-@Composable
-fun ErrorMessage(message: String?, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = message ?: stringResource(R.string.unknown_error),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.error
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onRetry) {
-            Text(stringResource(R.string.retry))
-        }
-    }
-}
-
-==================================================
-
-### presentation\screens\EventHistoryScreen.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.screens
-
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import androidx.compose.animation.ExperimentalAnimationApi
 
 @OptIn(ExperimentalAnimationApi::class)
 
 @Composable
-fun EventHistoryScreen(onBackClick: () -> Unit) {
-    HDD1_2Theme {
-        Column(
+fun LoginScreen(onLoginClick: (String, String) -> Unit) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(Dimensions.paddingLarge),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = stringResource(R.string.app_name),
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { contentDescription = "App title" }
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        HddOutlinedTextField(
+            value = email,
+            onValueChange = { email = it },
+            label = stringResource(R.string.email),
+            modifier = Modifier.semantics { contentDescription = "Email input field" }
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingMedium))
+        HddOutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = stringResource(R.string.password),
+            isPassword = true,
+            modifier = Modifier.semantics { contentDescription = "Password input field" }
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        HddButton(
+            onClick = {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onLoginClick(email, password)
+            },
+            text = stringResource(R.string.login),
             modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "Historial de Eventos",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            // Aquí puedes agregar una lista de eventos cuando esté implementada
-            Text(
-                text = "Lista de eventos próximamente",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(
-                onClick = onBackClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
-            ) {
-                Text(
-                    "Volver",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-        }
+                .fillMaxWidth()
+                .height(Dimensions.buttonHeight)
+                .semantics { contentDescription = "Login button" }
+        )
     }
 }
-
-==================================================
-
-### presentation\viewmodel\AlertViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.Alert
-import com.pqsolutions.hdd_monitor.data.AlertRepository
-import com.pqsolutions.hdd_monitor.data.UserData
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-@HiltViewModel
-class AlertViewModel @Inject constructor(
-    private val alertRepository: AlertRepository,
-    private val userData: UserData // Inject UserData to get clientId
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(AlertUiState())
-    val uiState: StateFlow<AlertUiState> = _uiState.asStateFlow()
-
-    fun loadAlerts() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            alertRepository.getAlertsFlow(userData.clientId).collect { alerts ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    alerts = alerts,
-                    error = null
-                )
-            }
-        }
-    }
-
-    fun createAlert(alert: Alert) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.createAlert(userData.clientId, alert)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.exceptionOrNull()?.message
-            )
-        }
-    }
-
-    fun updateAlert(alert: Alert) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.updateAlert(userData.clientId, alert)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.exceptionOrNull()?.message
-            )
-        }
-    }
-
-    fun deleteAlert(alertId: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.deleteAlert(userData.clientId, alertId)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.exceptionOrNull()?.message
-            )
-        }
-    }
-}
-
-data class AlertUiState(
-    val isLoading: Boolean = false,
-    val alerts: List<Alert> = emptyList(),
-    val error: String? = null
-)
 
 ==================================================
 
@@ -592,6 +451,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.EventRepository
+import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.pqsolutions.hdd_monitor.data.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -601,21 +462,94 @@ import javax.inject.Inject
 
 @HiltViewModel
 class EventViewModel @Inject constructor(
-    private val eventRepository: EventRepository
+    private val eventRepository: EventRepository,
+    private val userPreferences: UserPreferences,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(EventUiState())
     val uiState: StateFlow<EventUiState> = _uiState.asStateFlow()
 
-    fun loadEvents(clientId: String) {
+    init {
+        loadEvents()
+    }
+
+    fun loadEvents() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = eventRepository.getEvents(clientId)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                events = result.getOrNull() ?: emptyList(),
-                error = result.exceptionOrNull()?.message
-            )
+            val clientId = authRepository.getCurrentUserData().getOrNull()?.clientId ?: ""
+            if (clientId.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    events = emptyList(),
+                    error = "No client ID found. Please log in again."
+                )
+            } else {
+                eventRepository.getEventsFlow(clientId).collect { events ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        events = events,
+                        error = null
+                    )
+                }
+            }
+        }
+    }
+
+    fun createEvent(event: Event) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            val clientId = authRepository.getCurrentUserData().getOrNull()?.clientId ?: ""
+            if (clientId.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "No client ID found. Please log in again."
+                )
+            } else {
+                val result = eventRepository.createEvent(clientId, event)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = result.exceptionOrNull()?.message
+                )
+            }
+        }
+    }
+
+    fun updateEvent(event: Event) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            val clientId = authRepository.getCurrentUserData().getOrNull()?.clientId ?: ""
+            if (clientId.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "No client ID found. Please log in again."
+                )
+            } else {
+                val result = eventRepository.updateEvent(clientId, event)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = result.exceptionOrNull()?.message
+                )
+            }
+        }
+    }
+
+    fun deleteEvent(eventId: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            val clientId = authRepository.getCurrentUserData().getOrNull()?.clientId ?: ""
+            if (clientId.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "No client ID found. Please log in again."
+                )
+            } else {
+                val result = eventRepository.deleteEvent(clientId, eventId)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = result.exceptionOrNull()?.message
+                )
+            }
         }
     }
 }
@@ -625,6 +559,138 @@ data class EventUiState(
     val events: List<Event> = emptyList(),
     val error: String? = null
 )
+
+==================================================
+
+### presentation\viewmodel\MainViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.pqsolutions.hdd_monitor.data.AuthRepository
+import com.pqsolutions.hdd_monitor.data.UserData
+import com.pqsolutions.hdd_monitor.data.UserPreferences
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class MainViewModel @Inject constructor(
+    private val authRepository: AuthRepository,
+    private val userPreferences: UserPreferences
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(MainUiState())
+    val uiState: StateFlow<MainUiState> = _uiState
+
+    init {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isFirstLaunch = userPreferences.isFirstLaunch(),
+                isLoggedIn = authRepository.isUserLoggedIn()
+            )
+            if (_uiState.value.isLoggedIn) {
+                loadUserData()
+            }
+        }
+    }
+
+    fun onEvent(event: MainUiEvent) {
+        when (event) {
+            is MainUiEvent.Login -> login(event.email, event.password)
+            is MainUiEvent.Logout -> logout()
+            is MainUiEvent.FinishOnboarding -> finishOnboarding()
+        }
+    }
+
+    private fun login(email: String, password: String) {
+        viewModelScope.launch {
+            try {
+                Log.d("MainViewModel", "Attempting login for email: $email")
+                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+                authRepository.login(email, password).fold(
+                    onSuccess = { user ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            isLoggedIn = true,
+                            userData = user,
+                            currentRoute = "dashboard"
+                        )
+                        Log.d("MainViewModel", "Login successful for user: ${user.name}")
+                    },
+                    onFailure = { e ->
+                        Log.e("MainViewModel", "Login failed: ${e.message}", e)
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = e.message ?: "Unknown error occurred"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Network error during login: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Network error: ${e.message}"
+                )
+            }
+        }
+    }
+
+    private fun logout() {
+        viewModelScope.launch {
+            Log.d("MainViewModel", "Attempting logout")
+            try {
+                authRepository.logout()
+                _uiState.value = MainUiState(currentRoute = "login")
+                Log.d("MainViewModel", "Logout successful")
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Logout failed: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
+            }
+        }
+    }
+
+    private fun finishOnboarding() {
+        viewModelScope.launch {
+            userPreferences.setFirstLaunch(false)
+            _uiState.value = _uiState.value.copy(
+                isFirstLaunch = false,
+                currentRoute = "login"
+            )
+        }
+    }
+
+    private suspend fun loadUserData() {
+        authRepository.getCurrentUserData().fold(
+            onSuccess = { userData ->
+                _uiState.value = _uiState.value.copy(userData = userData)
+            },
+            onFailure = { e ->
+                Log.e("MainViewModel", "Failed to load user data: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to load user data")
+            }
+        )
+    }
+}
+
+data class MainUiState(
+    val isLoading: Boolean = false,
+    val isLoggedIn: Boolean = false,
+    val isFirstLaunch: Boolean = true,
+    val userData: UserData? = null,
+    val error: String? = null,
+    val currentRoute: String = "login"
+)
+
+sealed class MainUiEvent {
+    data class Login(val email: String, val password: String) : MainUiEvent()
+    object Logout : MainUiEvent()
+    object FinishOnboarding : MainUiEvent()
+}
 
 ==================================================
 
