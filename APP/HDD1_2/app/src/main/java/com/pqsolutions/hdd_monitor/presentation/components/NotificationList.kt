@@ -129,13 +129,13 @@ fun HddAlertItem(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = alert.description,
+                    text = alert.text, // Cambiado de description a text
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = alert.dateTime,
+                    text = alert.status, // Cambiado de dateTime a status
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

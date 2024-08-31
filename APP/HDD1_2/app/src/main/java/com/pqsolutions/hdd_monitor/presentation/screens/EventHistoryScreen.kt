@@ -20,6 +20,7 @@ fun EventHistoryScreen(
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
+        val isAdmin by viewModel.isAdmin.collectAsState()
 
         LaunchedEffect(key1 = true) {
             viewModel.loadEvents()
@@ -61,7 +62,7 @@ fun EventHistoryScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         items(uiState.events) { eventWithMetadata ->
-                            EventItem(eventWithMetadata)
+                            EventItem(eventWithMetadata, isAdmin = isAdmin)
                         }
                     }
                 }
@@ -84,7 +85,7 @@ fun EventHistoryScreen(
 }
 
 @Composable
-fun EventItem(eventWithMetadata: EventWithMetadata) {
+fun EventItem(eventWithMetadata: EventWithMetadata, isAdmin: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -124,6 +125,14 @@ fun EventItem(eventWithMetadata: EventWithMetadata) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (isAdmin) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Cliente: ${eventWithMetadata.clientName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

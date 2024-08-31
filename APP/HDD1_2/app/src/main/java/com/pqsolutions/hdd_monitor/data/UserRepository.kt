@@ -40,29 +40,39 @@ class UserRepository @Inject constructor(
         users
     }
 
-    suspend fun createUser(userData: UserData): Result<Unit> = runCatching {
-        if (userData.role == UserRole.ADMIN) {
-            firestore.collection("hdd-monitor/accounts/admins").document(userData.id).set(userData).await()
+    suspend fun createUser(user: UserData): Result<Unit> = runCatching {
+        val collectionPath = if (user.role == UserRole.ADMIN) {
+            "hdd-monitor/accounts/admins"
         } else {
-            firestore.collection("hdd-monitor/accounts/clients/${userData.clientId}/users").document(userData.id).set(userData).await()
+            "hdd-monitor/accounts/clients/${user.clientId}/users"
         }
+        firestore.collection(collectionPath)
+            .document(user.id)
+            .set(user)
+            .await()
     }
 
-    suspend fun updateUser(userData: UserData): Result<Unit> = runCatching {
-        if (userData.role == UserRole.ADMIN) {
-            firestore.collection("hdd-monitor/accounts/admins").document(userData.id).set(userData).await()
+    suspend fun updateUser(user: UserData): Result<Unit> = runCatching {
+        val collectionPath = if (user.role == UserRole.ADMIN) {
+            "hdd-monitor/accounts/admins"
         } else {
-            firestore.collection("hdd-monitor/accounts/clients/${userData.clientId}/users").document(userData.id).set(userData).await()
+            "hdd-monitor/accounts/clients/${user.clientId}/users"
         }
+        firestore.collection(collectionPath)
+            .document(user.id)
+            .set(user)
+            .await()
     }
 
-    suspend fun deleteUser(userId: String, role: UserRole, clientId: String? = null): Result<Unit> = runCatching {
-        if (role == UserRole.ADMIN) {
-            firestore.collection("hdd-monitor/accounts/admins").document(userId).delete().await()
+    suspend fun deleteUser(userId: String, clientId: String? = null): Result<Unit> = runCatching {
+        val collectionPath = if (clientId != null) {
+            "hdd-monitor/accounts/clients/$clientId/users"
         } else {
-            clientId?.let {
-                firestore.collection("hdd-monitor/accounts/clients/$it/users").document(userId).delete().await()
-            } ?: throw IllegalArgumentException("ClientId is required for deleting a user")
+            "hdd-monitor/accounts/admins"
         }
+        firestore.collection(collectionPath)
+            .document(userId)
+            .delete()
+            .await()
     }
 }

@@ -26,13 +26,11 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(remoteMessage)
         remoteMessage.data.let { data ->
             val alert = Alert(
-                id = data["id"] ?: "",
-                clientId = data["clientId"] ?: "",
+                ID = data["ID"] ?: "",
+                ID_CLIENT = data["ID_CLIENT"] ?: "",
                 title = data["title"] ?: "",
-                description = data["body"] ?: "",
-                dateTime = data["dateTime"] ?: System.currentTimeMillis().toString(),
-                status = data["status"] ?: "NEW",
-                priority = data["priority"] ?: "HIGH"
+                text = data["text"] ?: "",
+                status = data["status"] ?: "NEW"
             )
             showNotification(alert)
             saveAlert(alert)
@@ -43,7 +41,7 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
         val channelId = "HDD_MONITOR_CHANNEL"
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
             .setContentTitle(alert.title)
-            .setContentText(alert.description)
+            .setContentText(alert.text)
             .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
@@ -59,12 +57,12 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        notificationManager.notify(alert.id.hashCode(), notificationBuilder.build())
+        notificationManager.notify(alert.ID.hashCode(), notificationBuilder.build())
     }
 
     private fun saveAlert(alert: Alert) {
         CoroutineScope(Dispatchers.IO).launch {
-            alertRepository.createAlert(alert.clientId, alert)
+            alertRepository.createAlert(alert.ID_CLIENT, alert)
         }
     }
 

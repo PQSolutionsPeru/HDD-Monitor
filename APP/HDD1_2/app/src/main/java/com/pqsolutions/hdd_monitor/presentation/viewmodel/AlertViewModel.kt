@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.Alert
 import com.pqsolutions.hdd_monitor.data.AlertRepository
 import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.pqsolutions.hdd_monitor.data.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -26,19 +27,57 @@ class AlertViewModel @Inject constructor(
     fun loadAlerts() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.clientIdFlow.filterNotNull().flatMapLatest { clientId ->
-                alertRepository.getAlertsFlow(clientId)
-            }.catch { e ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Error al cargar las alertas"
-                )
-            }.collect { alerts ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    alerts = alerts,
-                    error = null
-                )
+            userPreferences.userDataFlow.collect { userData ->
+                when (userData?.role) {
+                    UserRole.ADMIN -> {
+                        alertRepository.getAllAlertsFlow()
+                            .catch { e ->
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    error = e.message ?: "Error al cargar las alertas"
+                                )
+                            }
+                            .collect { alerts ->
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    alerts = alerts,
+                                    error = null
+                                )
+                            }
+                    }
+                    UserRole.USER -> {
+                        val clientId = userData.clientId
+                        if (clientId.isNotEmpty()) {
+                            alertRepository.getAlertsFlow(clientId)
+                                .catch { e ->
+                                    _uiState.value = _uiState.value.copy(
+                                        isLoading = false,
+                                        error = e.message ?: "Error al cargar las alertas"
+                                    )
+                                }
+                                .collect { alerts ->
+                                    _uiState.value = _uiState.value.copy(
+                                        isLoading = false,
+                                        alerts = alerts,
+                                        error = null
+                                    )
+                                }
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                alerts = emptyList(),
+                                error = "ID de cliente no válido"
+                            )
+                        }
+                    }
+                    null -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            alerts = emptyList(),
+                            error = "No se encontraron datos de usuario"
+                        )
+                    }
+                }
             }
         }
     }
@@ -46,11 +85,37 @@ class AlertViewModel @Inject constructor(
     fun createAlert(alert: Alert) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
-                val result = alertRepository.createAlert(clientId, alert)
+            userPreferences.userDataFlow.firstOrNull()?.let { userData ->
+                when (userData.role) {
+                    UserRole.ADMIN -> {
+                        val result = alertRepository.createAlertForClient(alert.ID_CLIENT, alert)
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = result.exceptionOrNull()?.message
+                        )
+                        loadAlerts()
+                    }
+                    UserRole.USER -> {
+                        val clientId = userData.clientId
+                        if (clientId.isNotEmpty()) {
+                            val result = alertRepository.createAlert(clientId, alert)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = result.exceptionOrNull()?.message
+                            )
+                            loadAlerts()
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "ID de cliente no válido"
+                            )
+                        }
+                    }
+                }
+            } ?: run {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = result.exceptionOrNull()?.message
+                    error = "No se encontraron datos de usuario"
                 )
             }
         }
@@ -59,11 +124,37 @@ class AlertViewModel @Inject constructor(
     fun updateAlert(alert: Alert) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
-                val result = alertRepository.updateAlert(clientId, alert)
+            userPreferences.userDataFlow.firstOrNull()?.let { userData ->
+                when (userData.role) {
+                    UserRole.ADMIN -> {
+                        val result = alertRepository.updateAlertForClient(alert.ID_CLIENT, alert)
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = result.exceptionOrNull()?.message
+                        )
+                        loadAlerts()
+                    }
+                    UserRole.USER -> {
+                        val clientId = userData.clientId
+                        if (clientId.isNotEmpty()) {
+                            val result = alertRepository.updateAlert(clientId, alert)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = result.exceptionOrNull()?.message
+                            )
+                            loadAlerts()
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "ID de cliente no válido"
+                            )
+                        }
+                    }
+                }
+            } ?: run {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = result.exceptionOrNull()?.message
+                    error = "No se encontraron datos de usuario"
                 )
             }
         }
@@ -72,11 +163,45 @@ class AlertViewModel @Inject constructor(
     fun deleteAlert(alertId: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
-                val result = alertRepository.deleteAlert(clientId, alertId)
+            userPreferences.userDataFlow.firstOrNull()?.let { userData ->
+                when (userData.role) {
+                    UserRole.ADMIN -> {
+                        val alert = _uiState.value.alerts.find { it.ID == alertId }
+                        if (alert != null) {
+                            val result = alertRepository.deleteAlertForClient(alert.ID_CLIENT, alertId)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = result.exceptionOrNull()?.message
+                            )
+                            loadAlerts()
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "Alerta no encontrada"
+                            )
+                        }
+                    }
+                    UserRole.USER -> {
+                        val clientId = userData.clientId
+                        if (clientId.isNotEmpty()) {
+                            val result = alertRepository.deleteAlert(clientId, alertId)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = result.exceptionOrNull()?.message
+                            )
+                            loadAlerts()
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "ID de cliente no válido"
+                            )
+                        }
+                    }
+                }
+            } ?: run {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = result.exceptionOrNull()?.message
+                    error = "No se encontraron datos de usuario"
                 )
             }
         }

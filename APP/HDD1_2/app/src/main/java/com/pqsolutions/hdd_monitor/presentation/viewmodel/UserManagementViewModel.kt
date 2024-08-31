@@ -69,7 +69,8 @@ class UserManagementViewModel @Inject constructor(
     fun deleteUser(userData: UserData) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = userRepository.deleteUser(userData.id, userData.role, userData.clientId)
+            // Ajusta la llamada al método deleteUser pasando solo userId y clientId
+            val result = userRepository.deleteUser(userData.id, userData.clientId)
             if (result.isSuccess) {
                 loadUsers()
             } else {

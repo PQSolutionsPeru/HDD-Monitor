@@ -1,14 +1,14 @@
 package com.pqsolutions.hdd_monitor.data
 
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class PanelRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
@@ -41,18 +41,11 @@ class PanelRepository @Inject constructor(
         panels.forEach { panel ->
             panel.relays.forEach { relay ->
                 if (relay.status != "OK") {
-                    val priority = when (relay.status) {
-                        "CRITICAL" -> "HIGH"
-                        "WARNING" -> "MEDIUM"
-                        else -> "LOW"
-                    }
                     val alert = Alert(
-                        clientId = clientId,
+                        ID_CLIENT = clientId,
                         title = "Cambio de Estado de Relé",
-                        description = "El relé ${relay.name} en el panel ${panel.name} cambió a estado ${relay.status}",
-                        dateTime = System.currentTimeMillis().toString(),
-                        status = "NEW",
-                        priority = priority
+                        text = "El relé ${relay.name} en el panel ${panel.name} cambió a estado ${relay.status}",
+                        status = "NEW"
                     )
                     CoroutineScope(Dispatchers.IO).launch {
                         alertRepository.createAlert(clientId, alert)

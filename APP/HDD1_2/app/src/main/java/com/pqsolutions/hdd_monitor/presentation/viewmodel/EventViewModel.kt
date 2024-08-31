@@ -6,6 +6,7 @@ import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.EventWithMetadata
 import com.pqsolutions.hdd_monitor.data.EventRepository
 import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.pqsolutions.hdd_monitor.data.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -20,8 +21,22 @@ class EventViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(EventUiState())
     val uiState: StateFlow<EventUiState> = _uiState.asStateFlow()
 
+    private val _isAdmin = MutableStateFlow(false)
+    val isAdmin: StateFlow<Boolean> = _isAdmin.asStateFlow()
+
     init {
         loadEvents()
+        checkAdminStatus()
+    }
+
+    private fun checkAdminStatus() {
+        viewModelScope.launch {
+            userPreferences.userDataFlow
+                .filterNotNull()
+                .collect { userData ->
+                    _isAdmin.value = userData.role == UserRole.ADMIN
+                }
+        }
     }
 
     fun loadEvents() {
@@ -30,10 +45,10 @@ class EventViewModel @Inject constructor(
             userPreferences.userDataFlow
                 .filterNotNull()
                 .flatMapLatest { userData ->
-                    if (userData.clientId.isNotEmpty()) {
-                        eventRepository.getEventsFlow(userData.clientId)
-                    } else {
-                        flow { emit(emptyList()) }
+                    when {
+                        userData.role == UserRole.ADMIN -> eventRepository.getAllEventsFlow()
+                        userData.clientId.isNotEmpty() -> eventRepository.getEventsFlow(userData.clientId)
+                        else -> flow { emit(emptyList()) }
                     }
                 }
                 .catch { e ->
@@ -76,40 +91,30 @@ class EventViewModel @Inject constructor(
     fun updateEvent(eventWithMetadata: EventWithMetadata) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.userDataFlow
-                .filterNotNull()
-                .first { it.clientId.isNotEmpty() }
-                .let { userData ->
-                    try {
-                        eventRepository.updateEvent(userData.clientId, eventWithMetadata.panelId, eventWithMetadata.eventId, eventWithMetadata.event)
-                        loadEvents() // Reload events after updating
-                    } catch (e: Exception) {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = e.message ?: "Error updating event"
-                        )
-                    }
-                }
+            try {
+                eventRepository.updateEvent(eventWithMetadata.clientId, eventWithMetadata.panelId, eventWithMetadata.eventId, eventWithMetadata.event)
+                loadEvents() // Reload events after updating
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error updating event"
+                )
+            }
         }
     }
 
     fun deleteEvent(eventWithMetadata: EventWithMetadata) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.userDataFlow
-                .filterNotNull()
-                .first { it.clientId.isNotEmpty() }
-                .let { userData ->
-                    try {
-                        eventRepository.deleteEvent(userData.clientId, eventWithMetadata.panelId, eventWithMetadata.eventId)
-                        loadEvents() // Reload events after deleting
-                    } catch (e: Exception) {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = e.message ?: "Error deleting event"
-                        )
-                    }
-                }
+            try {
+                eventRepository.deleteEvent(eventWithMetadata.clientId, eventWithMetadata.panelId, eventWithMetadata.eventId)
+                loadEvents() // Reload events after deleting
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error deleting event"
+                )
+            }
         }
     }
 }

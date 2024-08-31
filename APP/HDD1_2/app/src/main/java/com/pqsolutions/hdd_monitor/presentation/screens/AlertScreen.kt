@@ -84,7 +84,7 @@ fun AlertScreen(
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(alerts, key = { it.id }) { alert ->
+                            items(alerts, key = { alert -> alert.ID.ifEmpty { "${alert.ID_CLIENT}_${alert.hashCode()}" } }) { alert ->
                                 AlertItem(
                                     alert = alert,
                                     isAdmin = isAdmin,
@@ -95,7 +95,7 @@ fun AlertScreen(
                                     onDeleteClick = {
                                         performHapticFeedback(context)
                                         playSoundEffect(context, R.raw.button_click)
-                                        viewModel.deleteAlert(alert.id)
+                                        viewModel.deleteAlert(alert.ID)
                                     }
                                 )
                             }
@@ -174,20 +174,12 @@ fun AlertItem(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = stringResource(R.string.date_time, alert.dateTime),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
                 text = stringResource(R.string.status, alert.status),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                text = stringResource(R.string.priority, alert.priority),
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = alert.description,
+                text = alert.text,
                 style = MaterialTheme.typography.bodySmall
             )
             if (isAdmin) {
@@ -222,8 +214,8 @@ fun AlertDialog(
     onConfirm: (Alert) -> Unit
 ) {
     var title by remember { mutableStateOf(alert?.title ?: "") }
-    var description by remember { mutableStateOf(alert?.description ?: "") }
-    var priority by remember { mutableStateOf(alert?.priority ?: "Low") }
+    var text by remember { mutableStateOf(alert?.text ?: "") }
+    var status by remember { mutableStateOf(alert?.status ?: "PROGRAMADO") }
     val context = LocalContext.current
 
     AlertDialog(
@@ -239,31 +231,25 @@ fun AlertDialog(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
+                    value = text,
+                    onValueChange = { text = it },
                     label = { Text(stringResource(R.string.description)) },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(stringResource(R.string.priority), style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.status), style = MaterialTheme.typography.bodyLarge)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(
-                        selected = priority == "Low",
-                        onClick = { priority = "Low" }
+                        selected = status == "PROGRAMADO",
+                        onClick = { status = "PROGRAMADO" }
                     )
-                    Text(stringResource(R.string.low), style = MaterialTheme.typography.bodyMedium)
+                    Text("PROGRAMADO", style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.width(16.dp))
                     RadioButton(
-                        selected = priority == "Medium",
-                        onClick = { priority = "Medium" }
+                        selected = status == "ACEPTADO",
+                        onClick = { status = "ACEPTADO" }
                     )
-                    Text(stringResource(R.string.medium), style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    RadioButton(
-                        selected = priority == "High",
-                        onClick = { priority = "High" }
-                    )
-                    Text(stringResource(R.string.high), style = MaterialTheme.typography.bodyMedium)
+                    Text("ACEPTADO", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
@@ -272,12 +258,11 @@ fun AlertDialog(
                 performHapticFeedback(context)
                 playSoundEffect(context, R.raw.button_click)
                 onConfirm(Alert(
-                    id = alert?.id ?: "",
+                    ID = alert?.ID ?: "",
+                    ID_CLIENT = alert?.ID_CLIENT ?: "",
                     title = title,
-                    description = description,
-                    priority = priority,
-                    dateTime = alert?.dateTime ?: System.currentTimeMillis().toString(),
-                    status = alert?.status ?: "Active"
+                    text = text,
+                    status = status
                 ))
             }) {
                 Text(stringResource(R.string.confirm), style = MaterialTheme.typography.labelLarge)

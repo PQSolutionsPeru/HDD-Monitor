@@ -11,8 +11,8 @@ class EventRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
     fun getEventsFlow(clientId: String): Flow<List<EventWithMetadata>> = callbackFlow {
-        val eventsRef = firestore.collection("hdd-monitor/accounts/clients/$clientId/panels")
-        val listenerRegistration = eventsRef.addSnapshotListener { snapshot, error ->
+        val panelsRef = firestore.collection("hdd-monitor/accounts/clients/$clientId/panels")
+        val listenerRegistration = panelsRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 close(error)
                 return@addSnapshotListener
@@ -29,7 +29,9 @@ class EventRepository @Inject constructor(
                                 event = it,
                                 eventId = eventDoc.id,
                                 panelId = panelDoc.id,
-                                panelName = panelDoc.getString("name") ?: ""
+                                panelName = panelDoc.getString("name") ?: "",
+                                clientId = clientId,
+                                clientName = "" // Client name not needed for single client view
                             )
                             allEvents.add(eventWithMetadata)
                         }
@@ -37,6 +39,46 @@ class EventRepository @Inject constructor(
                     trySend(allEvents)
                 }.addOnFailureListener { e ->
                     close(e)
+                }
+            }
+        }
+
+        awaitClose { listenerRegistration.remove() }
+    }
+
+    fun getAllEventsFlow(): Flow<List<EventWithMetadata>> = callbackFlow {
+        val clientsRef = firestore.collection("hdd-monitor/accounts/clients")
+        val listenerRegistration = clientsRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+
+            val allEvents = mutableListOf<EventWithMetadata>()
+            snapshot?.documents?.forEach { clientDoc ->
+                val clientId = clientDoc.id
+                val panelsRef = clientDoc.reference.collection("panels")
+                panelsRef.get().addOnSuccessListener { panelsSnapshot ->
+                    panelsSnapshot.documents.forEach { panelDoc ->
+                        val panelEventsRef = panelDoc.reference.collection("panel_events_log")
+                        panelEventsRef.get().addOnSuccessListener { panelEventsSnapshot ->
+                            panelEventsSnapshot.documents.forEach { eventDoc ->
+                                val event = eventDoc.toObject(Event::class.java)
+                                event?.let {
+                                    val eventWithMetadata = EventWithMetadata(
+                                        event = it,
+                                        eventId = eventDoc.id,
+                                        panelId = panelDoc.id,
+                                        panelName = panelDoc.getString("name") ?: "",
+                                        clientId = clientId,
+                                        clientName = clientDoc.getString("name") ?: ""
+                                    )
+                                    allEvents.add(eventWithMetadata)
+                                }
+                            }
+                            trySend(allEvents)
+                        }
+                    }
                 }
             }
         }
@@ -76,5 +118,7 @@ data class EventWithMetadata(
     val event: Event,
     val eventId: String,
     val panelId: String,
-    val panelName: String
+    val panelName: String,
+    val clientId: String,
+    val clientName: String
 )
