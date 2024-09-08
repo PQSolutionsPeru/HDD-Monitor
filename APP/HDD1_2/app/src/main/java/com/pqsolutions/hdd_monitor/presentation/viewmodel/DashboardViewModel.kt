@@ -37,8 +37,9 @@ class DashboardViewModel @Inject constructor(
                 val currentUser = userRepository.getCurrentUser()
                 Log.d("DashboardViewModel", "Current user: $currentUser")
                 if (currentUser != null) {
-                    Log.d("DashboardViewModel", "Fetching all panels")
-                    panelRepository.getAllPanelsFlow()
+                    val clientId = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientId
+                    Log.d("DashboardViewModel", "Fetching panels for clientId: $clientId")
+                    panelRepository.getPanelsFlow(clientId)
                         .catch { error ->
                             Log.e("DashboardViewModel", "Error loading panels: ${error.message}", error)
                             _uiState.value = _uiState.value.copy(

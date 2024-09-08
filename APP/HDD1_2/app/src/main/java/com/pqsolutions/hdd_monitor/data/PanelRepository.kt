@@ -6,7 +6,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.*
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -24,93 +24,119 @@ class PanelRepository @Inject constructor(
 ) {
     private var lastNotifiedStates = mutableMapOf<String, String>()
 
-    fun getAllPanelsFlow(): Flow<List<Panel>> = callbackFlow {
+    fun getPanelsFlow(clientId: String?): Flow<List<Panel>> = callbackFlow {
         val panelList = mutableListOf<Panel>()
-        val listeners = mutableListOf<() -> Unit>()
+        val listeners = mutableListOf<ListenerRegistration>()
 
-        val clientsListener = firestore.collection("hdd-monitor/accounts/clients")
-            .addSnapshotListener { snapshot, error ->
+        val clientsListener: ListenerRegistration = if (clientId != null) {
+            val clientDocRef = firestore.collection("hdd-monitor/accounts/clients").document(clientId)
+            clientDocRef.addSnapshotListener { snapshot: DocumentSnapshot?, error: FirebaseFirestoreException? ->
                 if (error != null) {
-                    Log.e("PanelRepository", "Error listening to clients: ${error.message}")
+                    Log.e("PanelRepository", "Error listening to client: ${error.message}")
                     return@addSnapshotListener
                 }
 
-                snapshot?.documentChanges?.forEach { change ->
-                    val clientDoc = change.document
-                    val clientId = clientDoc.id
-
-                    when (change.type) {
-                        com.google.firebase.firestore.DocumentChange.Type.ADDED,
-                        com.google.firebase.firestore.DocumentChange.Type.MODIFIED -> {
-                            val panelsListener = clientDoc.reference.collection("panels")
-                                .addSnapshotListener { panelsSnapshot, panelsError ->
-                                    if (panelsError != null) {
-                                        Log.e("PanelRepository", "Error listening to panels: ${panelsError.message}")
-                                        return@addSnapshotListener
-                                    }
-
-                                    panelsSnapshot?.documentChanges?.forEach { panelChange ->
-                                        val panelDoc = panelChange.document
-                                        val panel = panelDoc.toObject(Panel::class.java).copy(
-                                            ID = panelDoc.id,
-                                            clientId = clientId
-                                        )
-
-                                        when (panelChange.type) {
-                                            com.google.firebase.firestore.DocumentChange.Type.ADDED -> {
-                                                panelList.add(panel)
-                                            }
-                                            com.google.firebase.firestore.DocumentChange.Type.MODIFIED -> {
-                                                val index = panelList.indexOfFirst { it.ID == panel.ID }
-                                                if (index != -1) {
-                                                    panelList[index] = panel
-                                                } else {
-                                                    panelList.add(panel)
-                                                }
-                                            }
-                                            com.google.firebase.firestore.DocumentChange.Type.REMOVED -> {
-                                                panelList.removeAll { it.ID == panel.ID }
-                                            }
-                                        }
-
-                                        val relaysListener = panelDoc.reference.collection("relays")
-                                            .addSnapshotListener { relaysSnapshot, relaysError ->
-                                                if (relaysError != null) {
-                                                    Log.e("PanelRepository", "Error listening to relays: ${relaysError.message}")
-                                                    return@addSnapshotListener
-                                                }
-
-                                                val relayList = relaysSnapshot?.documents?.mapNotNull { relayDoc ->
-                                                    relayDoc.toObject(Relay::class.java)?.copy(name = relayDoc.id)
-                                                } ?: emptyList()
-
-                                                val updatedPanel = panelList.find { it.ID == panel.ID }
-                                                updatedPanel?.let {
-                                                    it.relays = relayList
-                                                    checkForChangesAndNotify(it)
-                                                }
-
-                                                trySend(panelList.toList())
-                                            }
-                                        listeners.add { relaysListener.remove() }
-                                    }
-                                    trySend(panelList.toList())
-                                }
-                            listeners.add { panelsListener.remove() }
-                        }
-                        com.google.firebase.firestore.DocumentChange.Type.REMOVED -> {
-                            panelList.removeAll { it.clientId == clientId }
-                            trySend(panelList.toList())
-                        }
+                snapshot?.let { clientDoc ->
+                    handleClientDocument(clientDoc, panelList, listeners) {
+                        trySend(panelList.toList())
                     }
                 }
             }
+        } else {
+            firestore.collection("hdd-monitor/accounts/clients")
+                .addSnapshotListener { snapshot: QuerySnapshot?, error: FirebaseFirestoreException? ->
+                    if (error != null) {
+                        Log.e("PanelRepository", "Error listening to clients: ${error.message}")
+                        return@addSnapshotListener
+                    }
 
-        listeners.add { clientsListener.remove() }
+                    snapshot?.documentChanges?.forEach { change: DocumentChange ->
+                        val clientDoc = change.document
+                        when (change.type) {
+                            DocumentChange.Type.ADDED,
+                            DocumentChange.Type.MODIFIED -> {
+                                handleClientDocument(clientDoc, panelList, listeners) {
+                                    trySend(panelList.toList())
+                                }
+                            }
+                            DocumentChange.Type.REMOVED -> {
+                                panelList.removeAll { it.clientId == clientDoc.id }
+                                trySend(panelList.toList())
+                            }
+                        }
+                    }
+                }
+        }
+
+        listeners.add(clientsListener)
 
         awaitClose {
-            listeners.forEach { it() }
+            listeners.forEach { it.remove() }
         }
+    }
+
+    private fun handleClientDocument(
+        clientDoc: DocumentSnapshot,
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ) {
+        val clientId = clientDoc.id
+        val panelsListener = clientDoc.reference.collection("panels")
+            .addSnapshotListener { panelsSnapshot: QuerySnapshot?, panelsError: FirebaseFirestoreException? ->
+                if (panelsError != null) {
+                    Log.e("PanelRepository", "Error listening to panels: ${panelsError.message}")
+                    return@addSnapshotListener
+                }
+
+                panelsSnapshot?.documentChanges?.forEach { panelChange: DocumentChange ->
+                    val panelDoc = panelChange.document
+                    val panel = panelDoc.toObject(Panel::class.java)?.copy(
+                        ID = panelDoc.id,
+                        clientId = clientId
+                    ) ?: return@forEach
+
+                    when (panelChange.type) {
+                        DocumentChange.Type.ADDED -> {
+                            panelList.add(panel)
+                        }
+                        DocumentChange.Type.MODIFIED -> {
+                            val index = panelList.indexOfFirst { it.ID == panel.ID }
+                            if (index != -1) {
+                                panelList[index] = panel
+                            } else {
+                                panelList.add(panel)
+                            }
+                        }
+                        DocumentChange.Type.REMOVED -> {
+                            panelList.removeAll { it.ID == panel.ID }
+                        }
+                    }
+
+                    val relaysListener = panelDoc.reference.collection("relays")
+                        .addSnapshotListener { relaysSnapshot: QuerySnapshot?, relaysError: FirebaseFirestoreException? ->
+                            if (relaysError != null) {
+                                Log.e("PanelRepository", "Error listening to relays: ${relaysError.message}")
+                                return@addSnapshotListener
+                            }
+
+                            val relayList = relaysSnapshot?.documents?.mapNotNull { relayDoc ->
+                                relayDoc.toObject(Relay::class.java)?.copy(name = relayDoc.id)
+                            } ?: emptyList()
+
+                            val updatedPanel = panelList.find { it.ID == panel.ID }
+                            updatedPanel?.let {
+                                it.relays = relayList
+                                checkForChangesAndNotify(it)
+                            }
+
+                            onUpdate()
+                        }
+                    listeners.add(relaysListener)
+                }
+                onUpdate()
+            }
+        listeners.add(panelsListener)
     }
 
     private fun checkForChangesAndNotify(panel: Panel) {

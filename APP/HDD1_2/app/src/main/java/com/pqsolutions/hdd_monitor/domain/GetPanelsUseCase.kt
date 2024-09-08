@@ -9,8 +9,8 @@ class GetPanelsUseCase @Inject constructor(
     private val panelRepository: PanelRepository
 ) {
     operator fun invoke(params: Params): Flow<List<Panel>> {
-        return panelRepository.getAllPanelsFlow()
+        return panelRepository.getPanelsFlow(params.clientId)
     }
 
-    data class Params(val clientId: String)
+    data class Params(val clientId: String?)
 }

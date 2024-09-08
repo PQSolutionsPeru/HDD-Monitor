@@ -67,7 +67,7 @@ fun UserDashboardScreen(
                 }
             }
             Spacer(modifier = Modifier.height(32.dp))
-            PanelsList(uiState)
+            PanelsList(uiState.panels)
             Spacer(modifier = Modifier.height(32.dp))
             DashboardButton(
                 onClick = {
