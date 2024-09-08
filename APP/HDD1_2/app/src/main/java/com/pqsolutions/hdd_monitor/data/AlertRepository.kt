@@ -54,6 +54,25 @@ class AlertRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
+    fun getAlertsFlowForAllClients(): Flow<List<Alert>> = callbackFlow {
+        val listenerRegistration = firestore.collectionGroup("alerts")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                snapshot?.let {
+                    val alerts = it.documents.mapNotNull { doc ->
+                        doc.toObject(Alert::class.java)?.let { alert ->
+                            if (alert.ID.isEmpty()) alert.copy(ID = doc.id) else alert
+                        }
+                    }
+                    trySend(alerts)
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
     suspend fun getAlerts(clientId: String): Result<List<Alert>> = runCatching {
         if (clientId.isEmpty()) {
             return@runCatching emptyList()
@@ -167,11 +186,3 @@ class AlertRepository @Inject constructor(
         messaging.unsubscribeFromTopic(topic).await()
     }
 }
-
-data class Alert(
-    val ID: String = "",
-    val ID_CLIENT: String = "",
-    val title: String = "",
-    val text: String = "",
-    val status: String = ""
-)

@@ -4,7 +4,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.domain.GetPanelsUseCase
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.data.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +17,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
-    private val getPanelsUseCase: GetPanelsUseCase
+    private val panelRepository: PanelRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -23,45 +26,62 @@ class DashboardViewModel @Inject constructor(
 
     init {
         Log.d("DashboardViewModel", "ViewModel initialized")
+        loadPanels()
     }
 
     fun loadPanels() {
         Log.d("DashboardViewModel", "Loading panels")
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            getPanelsUseCase(GetPanelsUseCase.Params("client_id")) // Replace with actual client ID
-                .catch { error ->
-                    Log.e("DashboardViewModel", "Error loading panels: ${error.message}", error)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                Log.d("DashboardViewModel", "Current user: $currentUser")
+                if (currentUser != null) {
+                    Log.d("DashboardViewModel", "Fetching all panels")
+                    panelRepository.getAllPanelsFlow()
+                        .catch { error ->
+                            Log.e("DashboardViewModel", "Error loading panels: ${error.message}", error)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = error.message ?: "Unknown error occurred"
+                            )
+                        }
+                        .collect { panels ->
+                            Log.d("DashboardViewModel", "Panels loaded: ${panels.size}")
+                            panels.forEach { panel ->
+                                Log.d("DashboardViewModel", "Panel ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.clientId}) relays: ${panel.relays}")
+                            }
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                panels = panels,
+                                error = null
+                            )
+                            checkForAlerts(panels)
+                        }
+                } else {
+                    Log.e("DashboardViewModel", "No authenticated user found")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = error.message
+                        error = "No se encontró usuario autenticado"
                     )
                 }
-                .collect { panels ->
-                    Log.d("DashboardViewModel", "Panels loaded: ${panels.size}")
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        panels = panels
-                    )
-                    checkForAlerts(panels)
-                }
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error desconocido"
+                )
+            }
         }
     }
 
     private fun checkForAlerts(panels: List<Panel>) {
-        Log.d("DashboardViewModel", "Checking for alerts")
-        val newAlerts = mutableListOf<String>()
-        panels.forEach { panel ->
-            panel.relays.forEach { relay ->
-                if (relay.status != "OK") {
-                    val alertMessage = "Alerta: ${relay.name} en ${panel.name} está en estado ${relay.status}"
-                    Log.d("DashboardViewModel", "New alert: $alertMessage")
-                    newAlerts.add(alertMessage)
-                }
+        val alerts = panels.flatMap { panel ->
+            panel.relays.filter { it.status != "OK" }.map { relay ->
+                "Panel ${panel.name}: ${relay.name} estado ${relay.status}"
             }
         }
-        _uiState.value = _uiState.value.copy(alerts = newAlerts)
-        Log.d("DashboardViewModel", "Total alerts: ${newAlerts.size}")
+        _uiState.value = _uiState.value.copy(alerts = alerts)
     }
 }
 

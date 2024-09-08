@@ -21,8 +21,12 @@ class EventRepository @Inject constructor(
             val allEvents = mutableListOf<EventWithMetadata>()
             snapshot?.documents?.forEach { panelDoc ->
                 val panelEventsRef = panelDoc.reference.collection("panel_events_log")
-                panelEventsRef.get().addOnSuccessListener { panelEventsSnapshot ->
-                    panelEventsSnapshot.documents.forEach { eventDoc ->
+                panelEventsRef.addSnapshotListener { panelEventsSnapshot, panelEventsError ->
+                    if (panelEventsError != null) {
+                        close(panelEventsError)
+                        return@addSnapshotListener
+                    }
+                    panelEventsSnapshot?.documents?.forEach { eventDoc ->
                         val event = eventDoc.toObject(Event::class.java)
                         event?.let {
                             val eventWithMetadata = EventWithMetadata(
@@ -37,8 +41,6 @@ class EventRepository @Inject constructor(
                         }
                     }
                     trySend(allEvents)
-                }.addOnFailureListener { e ->
-                    close(e)
                 }
             }
         }

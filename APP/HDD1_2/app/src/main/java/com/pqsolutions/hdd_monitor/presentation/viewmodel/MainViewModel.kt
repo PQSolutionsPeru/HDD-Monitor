@@ -3,17 +3,20 @@ package com.pqsolutions.hdd_monitor.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.AuthRepository
-import com.pqsolutions.hdd_monitor.data.UserData
-import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.google.firebase.messaging.FirebaseMessaging
+import com.pqsolutions.hdd_monitor.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val userRepository: UserRepository,
     private val userPreferences: UserPreferences
 ) : ViewModel() {
 
@@ -42,6 +45,28 @@ class MainViewModel @Inject constructor(
                 _uiState.value = state
             }
         }
+        checkAuthState()
+    }
+
+    private fun checkAuthState() {
+        viewModelScope.launch {
+            val currentUser = userRepository.getCurrentUser()
+            Log.d("MainViewModel", "Current user: $currentUser")
+            if (currentUser != null) {
+                userPreferences.setUserData(currentUser)
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = true,
+                    userData = currentUser,
+                    error = null
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = false,
+                    userData = null,
+                    error = null
+                )
+            }
+        }
     }
 
     fun onEvent(event: MainUiEvent) {
@@ -63,8 +88,14 @@ class MainViewModel @Inject constructor(
                 authRepository.login(email, password).fold(
                     onSuccess = { user ->
                         userPreferences.setUserData(user)
-                        userPreferences.setAuthToken("dummy_token") // Replace with actual token
-                        userPreferences.setLastSyncDate(System.currentTimeMillis())
+                        updateFCMToken()
+                        addUserActivity(user.id, user.clientId, "Inicio de sesión")
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            isLoggedIn = true,
+                            userData = user,
+                            error = null
+                        )
                         Log.d("MainViewModel", "Login successful for user: ${user.name}")
                     },
                     onFailure = { e ->
@@ -89,8 +120,17 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d("MainViewModel", "Attempting logout")
             try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
+                    addUserActivity(currentUser.id, currentUser.clientId, "Cierre de sesión")
+                }
                 authRepository.logout()
                 userPreferences.clearUserData()
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = false,
+                    userData = null,
+                    error = null
+                )
                 Log.d("MainViewModel", "Logout successful")
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Logout failed: ${e.message}", e)
@@ -120,6 +160,47 @@ class MainViewModel @Inject constructor(
     private fun setNotificationsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             userPreferences.setNotificationsEnabled(enabled)
+        }
+    }
+
+    private fun updateFCMToken() {
+        viewModelScope.launch {
+            try {
+                val token = FirebaseMessaging.getInstance().token.await()
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
+                    userRepository.updateUserToken(currentUser.id, token)
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error updating FCM token: ${e.message}")
+            }
+        }
+    }
+
+    private fun addUserActivity(userId: String, clientId: String, action: String) {
+        viewModelScope.launch {
+            try {
+                val timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                val activity = UserActivity(userId, clientId, timestamp, action)
+                userRepository.addUserActivity(activity)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error adding user activity: ${e.message}")
+            }
+        }
+    }
+
+    fun sendMessage(subject: String, content: String) {
+        viewModelScope.launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
+                    val timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                    val message = Message(currentUser.id, currentUser.clientId, content, subject, timestamp)
+                    userRepository.addMessage(message)
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error sending message: ${e.message}")
+            }
         }
     }
 }

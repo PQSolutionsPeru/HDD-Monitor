@@ -1,127 +1,437 @@
-### data\AlertRepository.kt ###
+### google-services.json ###
+
+{
+  "project_info": {
+    "project_number": "1002136032862",
+    "project_id": "fir-hdd-monitor-d00de",
+    "storage_bucket": "fir-hdd-monitor-d00de.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1002136032862:android:44e8c6751e458dca3dc6cf",
+        "android_client_info": {
+          "package_name": "com.pqsolutions.hdd_monitor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3lWszDhwWGiUTx0ENpjdgrrHwFzLfKX8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1002136032862:android:4596239ca6c555e43dc6cf",
+        "android_client_info": {
+          "package_name": "com.pqsolutions.hdd_monitor.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3lWszDhwWGiUTx0ENpjdgrrHwFzLfKX8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+
+==================================================
+
+### src\main\java\com\pqsolutions\hdd_monitor\data\PanelRepository.kt ###
 
 package com.pqsolutions.hdd_monitor.data
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
+import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import com.pqsolutions.hdd_monitor.R
 
-class AlertRepository @Inject constructor(
+class PanelRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val messaging: FirebaseMessaging
+    private val firebaseMessaging: FirebaseMessaging,
+    private val context: Context
 ) {
-    fun getAlertsFlow(clientId: String): Flow<List<Alert>> = callbackFlow {
-        val listenerRegistration = if (clientId.isNotEmpty()) {
-            firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        close(error)
-                        return@addSnapshotListener
+    private var lastNotifiedStates = mutableMapOf<String, String>()
+
+    fun getAllPanelsFlow(): Flow<List<Panel>> = callbackFlow {
+        val clientsQuery = firestore.collection("hdd-monitor/accounts/clients")
+
+        val listener = clientsQuery.addSnapshotListener { clientsSnapshot, error ->
+            if (error != null) {
+                Log.e("PanelRepository", "Error listening to clients: ${error.message}")
+                return@addSnapshotListener
+            }
+
+            clientsSnapshot?.let { clients ->
+                val panelList = mutableListOf<Panel>()
+                var pendingClients = clients.documents.size
+
+                clients.documents.forEach { clientDoc ->
+                    val clientId = clientDoc.id
+                    Log.d("PanelRepository", "Processing client: $clientId")
+                    val panelsQuery = clientDoc.reference.collection("panels")
+
+                    panelsQuery.get().addOnSuccessListener { panelsSnapshot ->
+                        Log.d("PanelRepository", "Fetched ${panelsSnapshot.documents.size} panels for client $clientId")
+
+                        panelsSnapshot.documents.forEach { panelDoc ->
+                            val panel = panelDoc.toObject(Panel::class.java)?.copy(
+                                ID = panelDoc.id,
+                                clientId = clientId
+                            )
+
+                            panel?.let {
+                                panelDoc.reference.collection("relays").get().addOnSuccessListener { relaysSnapshot ->
+                                    val relayList = relaysSnapshot.documents.mapNotNull { relayDoc ->
+                                        relayDoc.toObject(Relay::class.java)?.copy(name = relayDoc.id)
+                                    }
+                                    it.relays = relayList
+                                    Log.d("PanelRepository", "Panel ${it.name} has ${relayList.size} relays")
+                                    checkForChangesAndNotify(it)
+
+                                    panelList.add(it)
+
+                                    if (panelList.size == panelsSnapshot.size()) {
+                                        pendingClients--
+                                        if (pendingClients == 0) {
+                                            Log.d("PanelRepository", "All panels loaded. Total: ${panelList.size}")
+                                            trySend(panelList.toList())
+                                        }
+                                    }
+                                }.addOnFailureListener { e ->
+                                    Log.e("PanelRepository", "Error fetching relays for panel ${panel.name}: ${e.message}")
+                                }
+                            }
+                        }
+                    }.addOnFailureListener { e ->
+                        Log.e("PanelRepository", "Error fetching panels for client $clientId: ${e.message}")
+                        pendingClients--
+                        if (pendingClients == 0) {
+                            Log.d("PanelRepository", "All panels loaded (with errors). Total: ${panelList.size}")
+                            trySend(panelList.toList())
+                        }
                     }
-                    snapshot?.let { trySend(it.toObjects(Alert::class.java)) }
                 }
-        } else {
-            firestore.collectionGroup("alerts")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        close(error)
-                        return@addSnapshotListener
-                    }
-                    snapshot?.let { trySend(it.toObjects(Alert::class.java)) }
+            }
+        }
+
+        awaitClose { listener.remove() }
+    }
+
+    private fun checkForChangesAndNotify(panel: Panel) {
+        panel.relays.forEach { relay ->
+            val relayKey = "${panel.ID}_${relay.name}"
+            val lastStatus = lastNotifiedStates[relayKey]
+            if (lastStatus != null && lastStatus != relay.status) {
+                if (relay.status != "OK" || (lastStatus != "OK" && relay.status == "OK")) {
+                    showNotification(panel, relay)
                 }
-        }
-        awaitClose { listenerRegistration.remove() }
-    }
-
-    suspend fun getAlerts(clientId: String): Result<List<Alert>> = runCatching {
-        if (clientId.isNotEmpty()) {
-            firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-                .get()
-                .await()
-                .toObjects(Alert::class.java)
-        } else {
-            firestore.collectionGroup("alerts")
-                .get()
-                .await()
-                .toObjects(Alert::class.java)
+                lastNotifiedStates[relayKey] = relay.status
+            } else if (lastStatus == null) {
+                lastNotifiedStates[relayKey] = relay.status
+                if (relay.status != "OK") {
+                    showNotification(panel, relay)
+                }
+            }
         }
     }
 
-    suspend fun createAlert(clientId: String, alert: Alert): Result<Unit> = runCatching {
-        val alertWithId = if (alert.id.isEmpty()) {
-            alert.copy(id = firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts").document().id)
-        } else {
-            alert
+    private fun showNotification(panel: Panel, relay: Relay) {
+        val channelId = "panel_updates"
+        val notificationId = "${panel.ID}_${relay.name}".hashCode()
+
+        val notificationBuilder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Actualización en ${panel.name}")
+            .setContentText("${relay.name} estado: ${relay.status}")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Actualizaciones de Panel",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notificaciones de cambios en los paneles"
+            }
+            notificationManager.createNotificationChannel(channel)
         }
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .document(alertWithId.id)
-            .set(alertWithId)
-            .await()
+
+        notificationManager.notify(notificationId, notificationBuilder.build())
     }
 
-    suspend fun updateAlert(clientId: String, alert: Alert): Result<Unit> = runCatching {
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .document(alert.id)
-            .set(alert)
-            .await()
+    suspend fun subscribeToClientTopic(clientId: String) = withContext(Dispatchers.IO) {
+        firebaseMessaging.subscribeToTopic("client_$clientId").await()
     }
 
-    suspend fun deleteAlert(clientId: String, alertId: String): Result<Unit> = runCatching {
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .document(alertId)
-            .delete()
-            .await()
-    }
-
-    suspend fun subscribeToAlertTopic(clientId: String) {
-        val topic = "client_${clientId}_alerts"
-        messaging.subscribeToTopic(topic).await()
-    }
-
-    suspend fun unsubscribeFromAlertTopic(clientId: String) {
-        val topic = "client_${clientId}_alerts"
-        messaging.unsubscribeFromTopic(topic).await()
+    suspend fun unsubscribeFromClientTopic(clientId: String) = withContext(Dispatchers.IO) {
+        firebaseMessaging.unsubscribeFromTopic("client_$clientId").await()
     }
 }
 
-data class Alert(
-    val id: String = "",
-    val clientId: String = "",
-    val title: String = "",
-    val description: String = "",
-    val dateTime: String = "",
+data class Panel(
+    val ID: String = "",
+    val name: String = "",
+    val location: String = "",
+    val SSID: String = "",
+    val SSID_CON: String = "",
+    val SSID_PW: String = "",
+    val ESP32_IP: String = "",
+    val ID_CLIENT: String = "",
+    var relays: List<Relay> = emptyList(),
+    var clientId: String = ""
+)
+
+data class Relay(
+    val name: String = "",
     val status: String = "",
-    val priority: String = ""
+    val date_time: String = ""
 )
 
 ==================================================
 
-### presentation\screens\AdminDashboardScreen.kt ###
+### src\main\java\com\pqsolutions\hdd_monitor\di\FirebaseModule.kt ###
+
+package com.pqsolutions.hdd_monitor.di
+
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.messaging.FirebaseMessaging
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object FirebaseModule {
+    @Provides
+    @Singleton
+    fun provideFirebaseAuth(): FirebaseAuth = FirebaseAuth.getInstance()
+
+    @Provides
+    @Singleton
+    fun provideFirebaseFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
+
+    @Provides
+    @Singleton
+    fun provideFirebaseMessaging(): FirebaseMessaging = FirebaseMessaging.getInstance()
+}
+
+==================================================
+
+### src\main\java\com\pqsolutions\hdd_monitor\domain\GetPanelsUseCase.kt ###
+
+package com.pqsolutions.hdd_monitor.domain
+
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import kotlinx.coroutines.flow.Flow
+import javax.inject.Inject
+
+class GetPanelsUseCase @Inject constructor(
+    private val panelRepository: PanelRepository
+) {
+    operator fun invoke(params: Params): Flow<List<Panel>> {
+        return panelRepository.getAllPanelsFlow()
+    }
+
+    data class Params(val clientId: String)
+}
+
+==================================================
+
+### src\main\java\com\pqsolutions\hdd_monitor\presentation\navigation\AppNavigation.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.navigation
+
+import android.util.Log
+import androidx.compose.runtime.*
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.pqsolutions.hdd_monitor.data.UserRole
+import com.pqsolutions.hdd_monitor.presentation.screens.*
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
+
+@Composable
+fun AppNavigation(viewModel: MainViewModel) {
+    Log.d("AppNavigation", "Starting AppNavigation composition")
+    val uiState by viewModel.uiState.collectAsState()
+    val navController = rememberNavController()
+
+    NavHost(
+        navController = navController,
+        startDestination = if (uiState.isFirstLaunch) "onboarding" else if (uiState.isLoggedIn) "dashboard" else "login"
+    ) {
+        composable("onboarding") {
+            OnboardingScreen(
+                onFinish = {
+                    viewModel.onEvent(MainUiEvent.FinishOnboarding)
+                    navController.navigate("login") {
+                        popUpTo("onboarding") { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable("login") {
+            Log.d("AppNavigation", "Navigating to Login Screen")
+            LoginScreen(
+                onLoginClick = { email, password ->
+                    Log.d("AppNavigation", "Login attempt with email: $email")
+                    viewModel.onEvent(MainUiEvent.Login(email, password))
+                }
+            )
+        }
+        composable("dashboard") {
+            Log.d("AppNavigation", "Navigating to Dashboard. User role: ${uiState.userData?.role}")
+            when (uiState.userData?.role) {
+                UserRole.ADMIN -> AdminDashboardScreen(
+                    onLogoutClick = {
+                        Log.d("AppNavigation", "Admin logout clicked")
+                        viewModel.onEvent(MainUiEvent.Logout)
+                    },
+                    onManageUsersClick = {
+                        Log.d("AppNavigation", "Navigate to User Management")
+                        navController.navigate("user_management")
+                    },
+                    onViewAlertsClick = {
+                        Log.d("AppNavigation", "Navigate to Alerts")
+                        navController.navigate("alerts")
+                    },
+                    onViewEventHistoryClick = {
+                        Log.d("AppNavigation", "Navigate to Event History")
+                        navController.navigate("event_history")
+                    }
+                )
+                UserRole.USER -> UserDashboardScreen(
+                    onLogoutClick = {
+                        Log.d("AppNavigation", "User logout clicked")
+                        viewModel.onEvent(MainUiEvent.Logout)
+                    },
+                    onViewEventHistoryClick = {
+                        Log.d("AppNavigation", "Navigate to Event History")
+                        navController.navigate("event_history")
+                    },
+                    onViewAlertsClick = {
+                        Log.d("AppNavigation", "Navigate to Alerts")
+                        navController.navigate("alerts")
+                    }
+                )
+                else -> {
+                    Log.d("AppNavigation", "Invalid user role, navigating to Login")
+                    LaunchedEffect(Unit) {
+                        navController.navigate("login") {
+                            popUpTo("dashboard") { inclusive = true }
+                        }
+                    }
+                }
+            }
+        }
+        composable("user_management") {
+            Log.d("AppNavigation", "Navigating to User Management Screen")
+            UserManagementScreen(
+                onBackClick = {
+                    Log.d("AppNavigation", "Navigating back from User Management")
+                    navController.popBackStack()
+                }
+            )
+        }
+        composable("event_history") {
+            Log.d("AppNavigation", "Navigating to Event History Screen")
+            EventHistoryScreen(
+                onBackClick = {
+                    Log.d("AppNavigation", "Navigating back from Event History")
+                    navController.popBackStack()
+                }
+            )
+        }
+        composable("alerts") {
+            Log.d("AppNavigation", "Navigating to Alerts Screen")
+            AlertScreen(
+                onBackClick = {
+                    Log.d("AppNavigation", "Navigating back from Alerts")
+                    navController.popBackStack()
+                },
+                isAdmin = uiState.userData?.role == UserRole.ADMIN
+            )
+        }
+    }
+
+    LaunchedEffect(uiState.currentRoute) {
+        Log.d("AppNavigation", "LaunchedEffect: Current route changed to ${uiState.currentRoute}")
+        if (uiState.currentRoute != navController.currentDestination?.route) {
+            navController.navigate(uiState.currentRoute) {
+                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            }
+        }
+    }
+
+    Log.d("AppNavigation", "AppNavigation composition completed")
+}
+
+==================================================
+
+### src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\AdminDashboardScreen.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.Relay
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import com.pqsolutions.hdd_monitor.presentation.components.DashboardButton
-import com.pqsolutions.hdd_monitor.presentation.components.PanelsList
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -198,7 +508,7 @@ fun AdminDashboardScreen(
                 }
             }
             Spacer(modifier = Modifier.height(32.dp))
-            PanelsList(uiState)
+            PanelsList(uiState.panels)
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = {
@@ -219,221 +529,82 @@ fun AdminDashboardScreen(
     Log.d("AdminDashboardScreen", "AdminDashboardScreen composition completed")
 }
 
-==================================================
-
-### presentation\screens\AlertScreen.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.screens
-
-import androidx.compose.animation.*
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Alert
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.AlertViewModel
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-
-@OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun AlertScreen(
-    viewModel: AlertViewModel = hiltViewModel(),
-    onBackClick: () -> Unit,
-    isAdmin: Boolean
-) {
-    HDD1_2Theme {
-        val uiState by viewModel.uiState.collectAsState()
-        var showDialog by remember { mutableStateOf(false) }
-        var editingAlert by remember { mutableStateOf<Alert?>(null) }
-        val context = LocalContext.current
-
-        LaunchedEffect(Unit) {
-            viewModel.loadAlerts()
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
+fun PanelsList(panels: List<Panel>) {
+    Text(
+        text = "Paneles de Incendio (${panels.size})",
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.primary
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    if (panels.isEmpty()) {
+        Text("No hay paneles disponibles")
+    } else {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(R.string.alerts),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            when {
-                uiState.isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                uiState.error != null -> {
-                    ErrorMessage(
-                        message = uiState.error,
-                        onRetry = { viewModel.loadAlerts() }
-                    )
-                }
-                uiState.alerts.isEmpty() -> {
-                    Text(
-                        text = stringResource(R.string.no_alerts),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                else -> {
-                    AnimatedContent(
-                        targetState = uiState.alerts,
-                        transitionSpec = {
-                            fadeIn(initialAlpha = 0.3f) togetherWith fadeOut(targetAlpha = 0f)
-                        }
-                    ) { alerts ->
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            items(alerts, key = { it.id }) { alert ->
-                                AlertItem(
-                                    alert = alert,
-                                    isAdmin = isAdmin,
-                                    onEditClick = {
-                                        editingAlert = alert
-                                        showDialog = true
-                                    },
-                                    onDeleteClick = {
-                                        performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
-                                        viewModel.deleteAlert(alert.id)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
+            items(panels) { panel ->
+                PanelItem(panel)
             }
-            Spacer(modifier = Modifier.height(24.dp))
-            if (isAdmin) {
-                Button(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        editingAlert = null
-                        showDialog = true
-                    },
-                    modifier = Modifier.fillMaxWidth().height(56.dp)
-                ) {
-                    Text(stringResource(R.string.create_new_alert), style = MaterialTheme.typography.labelLarge)
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            Button(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onBackClick()
-                },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-            ) {
-                Text(stringResource(R.string.back), style = MaterialTheme.typography.labelLarge)
-            }
-        }
-
-        if (showDialog) {
-            AlertDialog(
-                alert = editingAlert,
-                onDismiss = { showDialog = false },
-                onConfirm = { alert ->
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    if (editingAlert == null) {
-                        viewModel.createAlert(alert)
-                    } else {
-                        viewModel.updateAlert(alert)
-                    }
-                    showDialog = false
-                }
-            )
         }
     }
 }
 
 @Composable
-fun AlertItem(
-    alert: Alert,
-    isAdmin: Boolean,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit
-) {
-    val context = LocalContext.current
+fun PanelItem(panel: Panel) {
+    var expanded by remember { mutableStateOf(false) }
+    val allRelaysOk = panel.relays.all { it.status == "OK" }
+    val statusColor = if (allRelaysOk) Color.Green else Color.Red
+    val statusText = if (allRelaysOk) "OK" else {
+        panel.relays.filter { it.status != "OK" }.joinToString(", ") { it.name }
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { expanded = !expanded }
             .padding(vertical = 8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = if (allRelaysOk) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+        )
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = alert.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
+                text = panel.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.date_time, alert.dateTime),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                text = stringResource(R.string.status, alert.status),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                text = stringResource(R.string.priority, alert.priority),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
+            Text(text = "IP: ${panel.ESP32_IP}", style = MaterialTheme.typography.bodyMedium)
+            Text(text = "Cliente: ${panel.clientId}", style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = alert.description,
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (isAdmin) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    IconButton(onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onEditClick()
-                    }) {
-                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit_alert))
-                    }
-                    IconButton(onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onDeleteClick()
-                    }) {
-                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_alert))
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Estado:",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = statusColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (expanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Detalles de relays:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                panel.relays.forEach { relay ->
+                    RelayStatus(relay)
                 }
             }
         }
@@ -441,197 +612,121 @@ fun AlertItem(
 }
 
 @Composable
-fun AlertDialog(
-    alert: Alert? = null,
-    onDismiss: () -> Unit,
-    onConfirm: (Alert) -> Unit
-) {
-    var title by remember { mutableStateOf(alert?.title ?: "") }
-    var description by remember { mutableStateOf(alert?.description ?: "") }
-    var priority by remember { mutableStateOf(alert?.priority ?: "Low") }
-    val context = LocalContext.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (alert == null) stringResource(R.string.add_alert) else stringResource(R.string.edit_alert)) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text(stringResource(R.string.title)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text(stringResource(R.string.description)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(stringResource(R.string.priority), style = MaterialTheme.typography.bodyLarge)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = priority == "Low",
-                        onClick = { priority = "Low" }
-                    )
-                    Text(stringResource(R.string.low), style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    RadioButton(
-                        selected = priority == "Medium",
-                        onClick = { priority = "Medium" }
-                    )
-                    Text(stringResource(R.string.medium), style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    RadioButton(
-                        selected = priority == "High",
-                        onClick = { priority = "High" }
-                    )
-                    Text(stringResource(R.string.high), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onConfirm(Alert(
-                    id = alert?.id ?: "",
-                    title = title,
-                    description = description,
-                    priority = priority,
-                    dateTime = alert?.dateTime ?: System.currentTimeMillis().toString(),
-                    status = alert?.status ?: "Active"
-                ))
-            }) {
-                Text(stringResource(R.string.confirm), style = MaterialTheme.typography.labelLarge)
-            }
-        },
-        dismissButton = {
-            Button(onClick = {
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onDismiss()
-            }) {
-                Text(stringResource(R.string.cancel), style = MaterialTheme.typography.labelLarge)
-            }
-        }
-    )
-}
-
-@Composable
-fun ErrorMessage(message: String?, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+fun RelayStatus(relay: Relay) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = message ?: stringResource(R.string.unknown_error),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.error
+            text = relay.name,
+            style = MaterialTheme.typography.bodySmall
         )
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onRetry) {
-            Text(stringResource(R.string.retry))
-        }
+        Text(
+            text = relay.status,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (relay.status == "OK") Color.Green else Color.Red,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
 ==================================================
 
-### presentation\viewmodel\AlertViewModel.kt ###
+### src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\DashboardViewModel.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.Alert
-import com.pqsolutions.hdd_monitor.data.AlertRepository
-import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.data.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class AlertViewModel @Inject constructor(
-    private val alertRepository: AlertRepository,
-    private val userPreferences: UserPreferences
+class DashboardViewModel @Inject constructor(
+    private val panelRepository: PanelRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(AlertUiState())
-    val uiState: StateFlow<AlertUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(DashboardUiState())
+    val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     init {
-        loadAlerts()
+        Log.d("DashboardViewModel", "ViewModel initialized")
+        loadPanels()
     }
 
-    fun loadAlerts() {
+    fun loadPanels() {
+        Log.d("DashboardViewModel", "Loading panels")
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.clientIdFlow.filterNotNull().flatMapLatest { clientId ->
-                alertRepository.getAlertsFlow(clientId)
-            }.catch { e ->
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                Log.d("DashboardViewModel", "Current user: $currentUser")
+                if (currentUser != null) {
+                    Log.d("DashboardViewModel", "Fetching all panels")
+                    panelRepository.getAllPanelsFlow()
+                        .catch { error ->
+                            Log.e("DashboardViewModel", "Error loading panels: ${error.message}", error)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = error.message ?: "Unknown error occurred"
+                            )
+                        }
+                        .collect { panels ->
+                            Log.d("DashboardViewModel", "Panels loaded: ${panels.size}")
+                            panels.forEach { panel ->
+                                Log.d("DashboardViewModel", "Panel ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.clientId}) relays: ${panel.relays}")
+                            }
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                panels = panels,
+                                error = null
+                            )
+                            checkForAlerts(panels)
+                        }
+                } else {
+                    Log.e("DashboardViewModel", "No authenticated user found")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "No se encontró usuario autenticado"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error: ${e.message}", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.message ?: "Error al cargar las alertas"
-                )
-            }.collect { alerts ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    alerts = alerts,
-                    error = null
+                    error = e.message ?: "Error desconocido"
                 )
             }
         }
     }
 
-    fun createAlert(alert: Alert) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
-                val result = alertRepository.createAlert(clientId, alert)
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = result.exceptionOrNull()?.message
-                )
+    private fun checkForAlerts(panels: List<Panel>) {
+        val alerts = panels.flatMap { panel ->
+            panel.relays.filter { it.status != "OK" }.map { relay ->
+                "Panel ${panel.name}: ${relay.name} estado ${relay.status}"
             }
         }
-    }
-
-    fun updateAlert(alert: Alert) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
-                val result = alertRepository.updateAlert(clientId, alert)
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = result.exceptionOrNull()?.message
-                )
-            }
-        }
-    }
-
-    fun deleteAlert(alertId: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.clientIdFlow.filterNotNull().first().let { clientId ->
-                val result = alertRepository.deleteAlert(clientId, alertId)
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = result.exceptionOrNull()?.message
-                )
-            }
-        }
+        _uiState.value = _uiState.value.copy(alerts = alerts)
     }
 }
 
-data class AlertUiState(
+data class DashboardUiState(
     val isLoading: Boolean = false,
-    val alerts: List<Alert> = emptyList(),
-    val error: String? = null
+    val panels: List<Panel> = emptyList(),
+    val error: String? = null,
+    val alerts: List<String> = emptyList()
 )
 
 ==================================================

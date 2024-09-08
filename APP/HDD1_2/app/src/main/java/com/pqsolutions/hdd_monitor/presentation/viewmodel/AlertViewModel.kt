@@ -30,7 +30,7 @@ class AlertViewModel @Inject constructor(
             userPreferences.userDataFlow.collect { userData ->
                 when (userData?.role) {
                     UserRole.ADMIN -> {
-                        alertRepository.getAllAlertsFlow()
+                        alertRepository.getAlertsFlowForAllClients()
                             .catch { e ->
                                 _uiState.value = _uiState.value.copy(
                                     isLoading = false,
