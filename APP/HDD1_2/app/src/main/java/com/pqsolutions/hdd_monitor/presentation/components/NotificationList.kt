@@ -17,7 +17,7 @@ import androidx.compose.material.icons.filled.Close
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 
 @Composable
-fun NotificationList(notifications: List<Alert>) {
+fun NotificationList(notifications: List<Alert>, onConfirmClick: (Alert) -> Unit) {
     HDD1_2Theme {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -29,7 +29,8 @@ fun NotificationList(notifications: List<Alert>) {
                     alert = notification,
                     isAdmin = false,
                     onEditClick = { },
-                    onDeleteClick = { }
+                    onDeleteClick = { },
+                    onConfirmClick = { onConfirmClick(notification) }
                 )
             }
         }

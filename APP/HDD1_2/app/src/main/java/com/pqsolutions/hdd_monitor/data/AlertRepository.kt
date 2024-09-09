@@ -86,38 +86,26 @@ class AlertRepository @Inject constructor(
             }
     }
 
-    suspend fun createAlert(clientId: String, alert: Alert): Result<Unit> = runCatching {
-        if (clientId.isEmpty()) {
-            throw IllegalArgumentException("Client ID cannot be empty")
+    suspend fun createAlert(clientIds: List<String>, alert: Alert): Result<Unit> = runCatching {
+        if (clientIds.isEmpty()) {
+            throw IllegalArgumentException("Client IDs list cannot be empty")
         }
 
-        val alertData = hashMapOf(
-            "ID" to alert.ID,
-            "ID_CLIENT" to clientId,
-            "title" to alert.title,
-            "text" to alert.text,
-            "status" to alert.status
-        )
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .add(alertData)
-            .await()
-    }
+        val batch = firestore.batch()
 
-    suspend fun createAlertForClient(clientId: String, alert: Alert): Result<Unit> = runCatching {
-        if (clientId.isEmpty()) {
-            throw IllegalArgumentException("Client ID cannot be empty")
+        clientIds.forEach { clientId ->
+            val alertRef = firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts").document()
+            val alertData = hashMapOf(
+                "ID" to alertRef.id,
+                "ID_CLIENT" to clientId,
+                "title" to alert.title,
+                "text" to alert.text,
+                "status" to alert.status
+            )
+            batch.set(alertRef, alertData)
         }
 
-        val alertData = hashMapOf(
-            "ID" to alert.ID,
-            "ID_CLIENT" to clientId,
-            "title" to alert.title,
-            "text" to alert.text,
-            "status" to alert.status
-        )
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .add(alertData)
-            .await()
+        batch.commit().await()
     }
 
     suspend fun updateAlert(clientId: String, alert: Alert): Result<Unit> = runCatching {
@@ -137,35 +125,18 @@ class AlertRepository @Inject constructor(
             .await()
     }
 
-    suspend fun updateAlertForClient(clientId: String, alert: Alert): Result<Unit> = runCatching {
-        if (clientId.isEmpty()) {
-            throw IllegalArgumentException("Client ID cannot be empty")
-        }
-
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .document(alert.ID)
-            .update(
-                mapOf(
-                    "title" to alert.title,
-                    "text" to alert.text,
-                    "status" to alert.status
-                )
-            )
-            .await()
-    }
-
-    suspend fun deleteAlert(clientId: String, alertId: String): Result<Unit> = runCatching {
+    suspend fun updateAlertStatus(clientId: String, alertId: String, newStatus: String): Result<Unit> = runCatching {
         if (clientId.isEmpty()) {
             throw IllegalArgumentException("Client ID cannot be empty")
         }
 
         firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
             .document(alertId)
-            .delete()
+            .update("status", newStatus)
             .await()
     }
 
-    suspend fun deleteAlertForClient(clientId: String, alertId: String): Result<Unit> = runCatching {
+    suspend fun deleteAlert(clientId: String, alertId: String): Result<Unit> = runCatching {
         if (clientId.isEmpty()) {
             throw IllegalArgumentException("Client ID cannot be empty")
         }
@@ -184,5 +155,15 @@ class AlertRepository @Inject constructor(
     suspend fun unsubscribeFromAlertTopic(clientId: String) {
         val topic = "client_${clientId}_alerts"
         messaging.unsubscribeFromTopic(topic).await()
+    }
+
+    suspend fun getClients(): List<Client> {
+        return firestore.collection("hdd-monitor/accounts/clients")
+            .get()
+            .await()
+            .documents
+            .mapNotNull { doc ->
+                doc.toObject(Client::class.java)?.copy(ID = doc.id)
+            }
     }
 }

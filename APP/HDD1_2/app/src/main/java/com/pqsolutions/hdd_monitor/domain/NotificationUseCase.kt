@@ -14,6 +14,6 @@ class NotificationUseCase @Inject constructor(
 
     suspend fun handleNewNotification(alert: Alert) {
         // Aquí puedes agregar lógica adicional si es necesario
-        alertRepository.createAlert(alert.ID_CLIENT, alert)
+        alertRepository.createAlert(listOf(alert.ID_CLIENT), alert)
     }
 }

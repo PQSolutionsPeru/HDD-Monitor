@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.data.Alert
+import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.AlertViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
@@ -37,6 +38,9 @@ fun AlertScreen(
 
         LaunchedEffect(Unit) {
             viewModel.loadAlerts()
+            if (isAdmin) {
+                viewModel.loadClients()
+            }
         }
 
         Column(
@@ -95,7 +99,12 @@ fun AlertScreen(
                                     onDeleteClick = {
                                         performHapticFeedback(context)
                                         playSoundEffect(context, R.raw.button_click)
-                                        viewModel.deleteAlert(alert.ID)
+                                        viewModel.deleteAlert(alert.ID_CLIENT, alert.ID)
+                                    },
+                                    onConfirmClick = {
+                                        performHapticFeedback(context)
+                                        playSoundEffect(context, R.raw.button_click)
+                                        viewModel.confirmAlert(alert.ID_CLIENT, alert.ID)
                                     }
                                 )
                             }
@@ -134,12 +143,14 @@ fun AlertScreen(
         if (showDialog) {
             AlertDialog(
                 alert = editingAlert,
+                clients = uiState.clients,
+                isAdmin = isAdmin,
                 onDismiss = { showDialog = false },
-                onConfirm = { alert ->
+                onConfirm = { alert, selectedClients ->
                     performHapticFeedback(context)
                     playSoundEffect(context, R.raw.button_click)
                     if (editingAlert == null) {
-                        viewModel.createAlert(alert)
+                        viewModel.createAlert(alert, selectedClients)
                     } else {
                         viewModel.updateAlert(alert)
                     }
@@ -155,7 +166,8 @@ fun AlertItem(
     alert: Alert,
     isAdmin: Boolean,
     onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onConfirmClick: () -> Unit
 ) {
     val context = LocalContext.current
     Card(
@@ -182,11 +194,11 @@ fun AlertItem(
                 text = alert.text,
                 style = MaterialTheme.typography.bodySmall
             )
-            if (isAdmin) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (isAdmin) {
                     IconButton(onClick = {
                         performHapticFeedback(context)
                         playSoundEffect(context, R.raw.button_click)
@@ -201,6 +213,16 @@ fun AlertItem(
                     }) {
                         Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_alert))
                     }
+                } else if (alert.status != "ACEPTADO") {
+                    Button(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onConfirmClick()
+                        }
+                    ) {
+                        Text("Confirmar Alerta") // Cambiado de stringResource a texto directo
+                    }
                 }
             }
         }
@@ -210,12 +232,15 @@ fun AlertItem(
 @Composable
 fun AlertDialog(
     alert: Alert? = null,
+    clients: List<Client>,
+    isAdmin: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (Alert) -> Unit
+    onConfirm: (Alert, List<String>) -> Unit
 ) {
     var title by remember { mutableStateOf(alert?.title ?: "") }
     var text by remember { mutableStateOf(alert?.text ?: "") }
     var status by remember { mutableStateOf(alert?.status ?: "PROGRAMADO") }
+    var selectedClients by remember { mutableStateOf(listOf<String>()) }
     val context = LocalContext.current
 
     AlertDialog(
@@ -251,19 +276,41 @@ fun AlertDialog(
                     )
                     Text("ACEPTADO", style = MaterialTheme.typography.bodyMedium)
                 }
+                if (isAdmin && alert == null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Seleccionar Clientes", style = MaterialTheme.typography.bodyLarge) // Cambiado de stringResource a texto directo
+                    clients.forEach { client ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = selectedClients.contains(client.ID),
+                                onCheckedChange = { isChecked ->
+                                    selectedClients = if (isChecked) {
+                                        selectedClients + client.ID
+                                    } else {
+                                        selectedClients - client.ID
+                                    }
+                                }
+                            )
+                            Text(client.name, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(onClick = {
                 performHapticFeedback(context)
                 playSoundEffect(context, R.raw.button_click)
-                onConfirm(Alert(
-                    ID = alert?.ID ?: "",
-                    ID_CLIENT = alert?.ID_CLIENT ?: "",
-                    title = title,
-                    text = text,
-                    status = status
-                ))
+                onConfirm(
+                    Alert(
+                        ID = alert?.ID ?: "",
+                        ID_CLIENT = alert?.ID_CLIENT ?: "",
+                        title = title,
+                        text = text,
+                        status = status
+                    ),
+                    selectedClients
+                )
             }) {
                 Text(stringResource(R.string.confirm), style = MaterialTheme.typography.labelLarge)
             }
