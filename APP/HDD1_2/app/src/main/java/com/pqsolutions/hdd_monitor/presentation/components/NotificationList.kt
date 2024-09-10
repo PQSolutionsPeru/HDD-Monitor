@@ -14,24 +14,43 @@ import com.pqsolutions.hdd_monitor.data.Alert
 import com.pqsolutions.hdd_monitor.presentation.screens.AlertItem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun NotificationList(notifications: List<Alert>, onConfirmClick: (Alert) -> Unit) {
     HDD1_2Theme {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(notifications) { notification ->
-                AlertItem(
-                    alert = notification,
-                    isAdmin = false,
-                    onEditClick = { },
-                    onDeleteClick = { },
-                    onConfirmClick = { onConfirmClick(notification) }
+        if (notifications.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No hay notificaciones nuevas",
+                    style = MaterialTheme.typography.bodyLarge
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(notifications) { notification ->
+                    AlertItem(
+                        alert = notification,
+                        isAdmin = false,
+                        onEditClick = { },
+                        onDeleteClick = { },
+                        onConfirmClick = { onConfirmClick(notification) }
+                    )
+                }
             }
         }
     }
@@ -130,13 +149,13 @@ fun HddAlertItem(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = alert.text, // Cambiado de description a text
+                    text = alert.text,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = alert.status, // Cambiado de dateTime a status
+                    text = alert.status,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -147,6 +166,32 @@ fun HddAlertItem(
                     contentDescription = "Dismiss",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotificationIcon(
+    hasNewNotifications: Boolean,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick) {
+        Box {
+            Icon(
+                imageVector = Icons.Default.Notifications,
+                contentDescription = "Notifications",
+                tint = if (hasNewNotifications) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
+            if (hasNewNotifications) {
+                Badge(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                    modifier = Modifier.align(Alignment.TopEnd)
+                ) {
+                    Text("!")
+                }
             }
         }
     }

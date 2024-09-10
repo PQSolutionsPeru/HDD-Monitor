@@ -16,13 +16,14 @@ import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.data.UserRole
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.UserManagementViewModel
 import androidx.compose.animation.ExperimentalAnimationApi
+import com.pqsolutions.hdd_monitor.presentation.components.NotificationIcon
 
 @OptIn(ExperimentalAnimationApi::class)
-
 @Composable
 fun UserManagementScreen(
     viewModel: UserManagementViewModel = hiltViewModel(),
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    hasPendingNotifications: Boolean
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
@@ -33,10 +34,20 @@ fun UserManagementScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = "Gestión de Usuarios",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Gestión de Usuarios",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            NotificationIcon(
+                hasNewNotifications = hasPendingNotifications,
+                onClick = { /* Handle notification click */ }
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
         when {
             uiState.isLoading -> {

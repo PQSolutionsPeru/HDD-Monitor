@@ -10,12 +10,14 @@ import com.pqsolutions.hdd_monitor.data.UserRole
 import com.pqsolutions.hdd_monitor.presentation.screens.*
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
+import com.pqsolutions.hdd_monitor.presentation.components.NotificationIcon
 
 @Composable
 fun AppNavigation(viewModel: MainViewModel) {
     Log.d("AppNavigation", "Starting AppNavigation composition")
     val uiState by viewModel.uiState.collectAsState()
     val navController = rememberNavController()
+    val hasPendingNotifications by viewModel.hasPendingNotifications.collectAsState()
 
     NavHost(
         navController = navController,
@@ -59,7 +61,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                     onViewEventHistoryClick = {
                         Log.d("AppNavigation", "Navigate to Event History")
                         navController.navigate("event_history")
-                    }
+                    },
+                    hasPendingNotifications = hasPendingNotifications
                 )
                 UserRole.USER -> UserDashboardScreen(
                     onLogoutClick = {
@@ -73,7 +76,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                     onViewAlertsClick = {
                         Log.d("AppNavigation", "Navigate to Alerts")
                         navController.navigate("alerts")
-                    }
+                    },
+                    hasPendingNotifications = hasPendingNotifications
                 )
                 else -> {
                     Log.d("AppNavigation", "Invalid user role, navigating to Login")
@@ -91,7 +95,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                 onBackClick = {
                     Log.d("AppNavigation", "Navigating back from User Management")
                     navController.popBackStack()
-                }
+                },
+                hasPendingNotifications = hasPendingNotifications
             )
         }
         composable("event_history") {
@@ -100,7 +105,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                 onBackClick = {
                     Log.d("AppNavigation", "Navigating back from Event History")
                     navController.popBackStack()
-                }
+                },
+                hasPendingNotifications = hasPendingNotifications
             )
         }
         composable("alerts") {
@@ -110,7 +116,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                     Log.d("AppNavigation", "Navigating back from Alerts")
                     navController.popBackStack()
                 },
-                isAdmin = uiState.userData?.role == UserRole.ADMIN
+                isAdmin = uiState.userData?.role == UserRole.ADMIN,
+                hasPendingNotifications = hasPendingNotifications
             )
         }
     }

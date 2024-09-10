@@ -5,8 +5,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +22,11 @@ import com.pqsolutions.hdd_monitor.presentation.theme.*
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import kotlinx.coroutines.delay
+import androidx.compose.animation.core.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun DashboardButton(
@@ -70,7 +73,7 @@ fun PanelsList(uiState: DashboardUiState) {
             Log.d("DashboardComponents", "PanelsList: Loading")
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxWidth().height(200.dp)
             ) {
                 CircularProgressIndicator(
                     color = MaterialTheme.colorScheme.primary,
@@ -99,12 +102,9 @@ fun PanelsList(uiState: DashboardUiState) {
                     AlertsList(uiState.alerts)
                     Spacer(modifier = Modifier.height(24.dp))
                 }
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(uiState.panels) { panel ->
-                        PanelItem(panel)
-                    }
+                uiState.panels.forEach { panel ->
+                    PanelItem(panel)
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
@@ -214,6 +214,36 @@ fun StatusChip(status: String) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelLarge,
             color = textColor
+        )
+    }
+}
+
+@Composable
+fun AnimatedNotificationBell(
+    hasNewNotifications: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val angle by infiniteTransition.animateFloat(
+        initialValue = -20f,
+        targetValue = 20f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+    ) {
+        Icon(
+            imageVector = Icons.Default.Notifications,
+            contentDescription = "Notificaciones",
+            modifier = Modifier
+                .rotate(if (hasNewNotifications) angle else 0f),
+            tint = if (hasNewNotifications) Color.Red else Color.Gray
         )
     }
 }

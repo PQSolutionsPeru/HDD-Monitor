@@ -1,7 +1,6 @@
 package com.pqsolutions.hdd_monitor.data
 
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -9,8 +8,7 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 class AlertRepository @Inject constructor(
-    private val firestore: FirebaseFirestore,
-    private val messaging: FirebaseMessaging
+    private val firestore: FirebaseFirestore
 ) {
     fun getAllAlertsFlow(): Flow<List<Alert>> = callbackFlow {
         val listenerRegistration = firestore.collectionGroup("alerts")
@@ -52,38 +50,6 @@ class AlertRepository @Inject constructor(
                 }
             }
         awaitClose { listenerRegistration.remove() }
-    }
-
-    fun getAlertsFlowForAllClients(): Flow<List<Alert>> = callbackFlow {
-        val listenerRegistration = firestore.collectionGroup("alerts")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-                snapshot?.let {
-                    val alerts = it.documents.mapNotNull { doc ->
-                        doc.toObject(Alert::class.java)?.let { alert ->
-                            if (alert.ID.isEmpty()) alert.copy(ID = doc.id) else alert
-                        }
-                    }
-                    trySend(alerts)
-                }
-            }
-        awaitClose { listenerRegistration.remove() }
-    }
-
-    suspend fun getAlerts(clientId: String): Result<List<Alert>> = runCatching {
-        if (clientId.isEmpty()) {
-            return@runCatching emptyList()
-        }
-
-        firestore.collection("hdd-monitor/accounts/clients/$clientId/alerts")
-            .get()
-            .await()
-            .documents.mapNotNull { doc ->
-                doc.toObject(Alert::class.java)
-            }
     }
 
     suspend fun createAlert(clientIds: List<String>, alert: Alert): Result<Unit> = runCatching {
@@ -145,16 +111,6 @@ class AlertRepository @Inject constructor(
             .document(alertId)
             .delete()
             .await()
-    }
-
-    suspend fun subscribeToAlertTopic(clientId: String) {
-        val topic = "client_${clientId}_alerts"
-        messaging.subscribeToTopic(topic).await()
-    }
-
-    suspend fun unsubscribeFromAlertTopic(clientId: String) {
-        val topic = "client_${clientId}_alerts"
-        messaging.unsubscribeFromTopic(topic).await()
     }
 
     suspend fun getClients(): List<Client> {

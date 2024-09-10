@@ -17,11 +17,15 @@ import javax.inject.Inject
 class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
-    private val userPreferences: UserPreferences
+    private val userPreferences: UserPreferences,
+    private val alertRepository: AlertRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    private val _hasPendingNotifications = MutableStateFlow(false)
+    val hasPendingNotifications: StateFlow<Boolean> = _hasPendingNotifications.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -46,6 +50,7 @@ class MainViewModel @Inject constructor(
             }
         }
         checkAuthState()
+        checkPendingNotifications()
     }
 
     private fun checkAuthState() {
@@ -65,6 +70,18 @@ class MainViewModel @Inject constructor(
                     userData = null,
                     error = null
                 )
+            }
+        }
+    }
+
+    private fun checkPendingNotifications() {
+        viewModelScope.launch {
+            val currentUser = userRepository.getCurrentUser()
+            if (currentUser != null) {
+                alertRepository.getAlertsFlow(currentUser.clientId)
+                    .collect { alerts ->
+                        _hasPendingNotifications.value = alerts.any { it.status == "PROGRAMADO" }
+                    }
             }
         }
     }

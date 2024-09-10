@@ -16,7 +16,8 @@ import com.pqsolutions.hdd_monitor.presentation.viewmodel.EventViewModel
 @Composable
 fun EventHistoryScreen(
     viewModel: EventViewModel = hiltViewModel(),
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    hasPendingNotifications: Boolean
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
@@ -31,11 +32,21 @@ fun EventHistoryScreen(
                 .fillMaxSize()
                 .padding(24.dp)
         ) {
-            Text(
-                text = "Historial de Eventos",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Historial de Eventos",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AnimatedNotificationBell(
+                    hasNewNotifications = hasPendingNotifications,
+                    onClick = { /* Handle notification click */ }
+                )
+            }
             Spacer(modifier = Modifier.height(32.dp))
 
             when {

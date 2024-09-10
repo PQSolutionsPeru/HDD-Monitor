@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class EventRepository @Inject constructor(
     private val firestore: FirebaseFirestore
@@ -59,6 +61,7 @@ class EventRepository @Inject constructor(
             val allEvents = mutableListOf<EventWithMetadata>()
             snapshot?.documents?.forEach { clientDoc ->
                 val clientId = clientDoc.id
+                val clientName = clientDoc.getString("name") ?: ""
                 val panelsRef = clientDoc.reference.collection("panels")
                 panelsRef.get().addOnSuccessListener { panelsSnapshot ->
                     panelsSnapshot.documents.forEach { panelDoc ->
@@ -73,12 +76,12 @@ class EventRepository @Inject constructor(
                                         panelId = panelDoc.id,
                                         panelName = panelDoc.getString("name") ?: "",
                                         clientId = clientId,
-                                        clientName = clientDoc.getString("name") ?: ""
+                                        clientName = clientName
                                     )
                                     allEvents.add(eventWithMetadata)
                                 }
                             }
-                            trySend(allEvents)
+                            trySend(allEvents.toList())
                         }
                     }
                 }

@@ -5,8 +5,8 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +24,7 @@ import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -32,12 +33,14 @@ fun AdminDashboardScreen(
     onLogoutClick: () -> Unit,
     onManageUsersClick: () -> Unit,
     onViewAlertsClick: () -> Unit,
-    onViewEventHistoryClick: () -> Unit
+    onViewEventHistoryClick: () -> Unit,
+    hasPendingNotifications: Boolean
 ) {
     Log.d("AdminDashboardScreen", "Composing AdminDashboardScreen")
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
         val context = LocalContext.current
+        val scrollState = rememberScrollState()
 
         LaunchedEffect(Unit) {
             Log.d("AdminDashboardScreen", "LaunchedEffect: Loading panels")
@@ -48,13 +51,24 @@ fun AdminDashboardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
+                .verticalScroll(scrollState)
                 .padding(24.dp)
         ) {
-            Text(
-                text = stringResource(R.string.admin_dashboard_title),
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.admin_dashboard_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AnimatedNotificationBell(
+                    hasNewNotifications = hasPendingNotifications,
+                    onClick = onViewAlertsClick
+                )
+            }
             Spacer(modifier = Modifier.height(32.dp))
             AnimatedVisibility(
                 visible = true,
@@ -132,10 +146,10 @@ fun PanelsList(panels: List<Panel>) {
     if (panels.isEmpty()) {
         Text("No hay paneles disponibles")
     } else {
-        LazyColumn(
+        Column(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(panels) { panel ->
+            panels.forEach { panel ->
                 PanelItem(panel)
             }
         }

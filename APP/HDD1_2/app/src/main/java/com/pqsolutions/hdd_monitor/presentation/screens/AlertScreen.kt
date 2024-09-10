@@ -1,16 +1,19 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -22,13 +25,38 @@ import com.pqsolutions.hdd_monitor.presentation.viewmodel.AlertViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
+
+@Composable
+fun AnimatedNotificationBell(hasNewNotifications: Boolean, onClick: () -> Unit) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val angle by infiniteTransition.animateFloat(
+        initialValue = -20f,
+        targetValue = 20f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = Icons.Default.Notifications,
+            contentDescription = "Notificaciones",
+            modifier = Modifier
+                .size(24.dp)
+                .rotate(if (hasNewNotifications) angle else 0f)
+        )
+    }
+}
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun AlertScreen(
     viewModel: AlertViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
-    isAdmin: Boolean
+    isAdmin: Boolean,
+    hasPendingNotifications: Boolean
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
@@ -48,11 +76,21 @@ fun AlertScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            Text(
-                text = stringResource(R.string.alerts),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.alerts),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AnimatedNotificationBell(
+                    hasNewNotifications = hasPendingNotifications,
+                    onClick = { /* No action needed here */ }
+                )
+            }
             Spacer(modifier = Modifier.height(24.dp))
             when {
                 uiState.isLoading -> {
@@ -186,17 +224,23 @@ fun AlertItem(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = stringResource(R.string.status, alert.status),
-                style = MaterialTheme.typography.bodyMedium
+                text = "Estado: ${alert.status}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = when (alert.status) {
+                    "PROGRAMADO" -> MaterialTheme.colorScheme.secondary
+                    "ACEPTADO" -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = alert.text,
                 style = MaterialTheme.typography.bodySmall
             )
+            Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 if (isAdmin) {
                     IconButton(onClick = {
@@ -204,14 +248,14 @@ fun AlertItem(
                         playSoundEffect(context, R.raw.button_click)
                         onEditClick()
                     }) {
-                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit_alert))
+                        Icon(Icons.Default.Edit, contentDescription = "Editar alerta")
                     }
                     IconButton(onClick = {
                         performHapticFeedback(context)
                         playSoundEffect(context, R.raw.button_click)
                         onDeleteClick()
                     }) {
-                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_alert))
+                        Icon(Icons.Default.Delete, contentDescription = "Eliminar alerta")
                     }
                 } else if (alert.status != "ACEPTADO") {
                     Button(
@@ -221,7 +265,7 @@ fun AlertItem(
                             onConfirmClick()
                         }
                     ) {
-                        Text("Confirmar Alerta") // Cambiado de stringResource a texto directo
+                        Text("Confirmar Alerta")
                     }
                 }
             }
@@ -278,20 +322,29 @@ fun AlertDialog(
                 }
                 if (isAdmin && alert == null) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Seleccionar Clientes", style = MaterialTheme.typography.bodyLarge) // Cambiado de stringResource a texto directo
-                    clients.forEach { client ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = selectedClients.contains(client.ID),
-                                onCheckedChange = { isChecked ->
-                                    selectedClients = if (isChecked) {
-                                        selectedClients + client.ID
-                                    } else {
-                                        selectedClients - client.ID
+                    Text("Seleccionar Destinatarios", style = MaterialTheme.typography.bodyLarge)
+                    LazyColumn(
+                        modifier = Modifier.height(200.dp)
+                    ) {
+                        items(clients) { client ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selectedClients.contains(client.ID),
+                                    onCheckedChange = { isChecked ->
+                                        selectedClients = if (isChecked) {
+                                            selectedClients + client.ID
+                                        } else {
+                                            selectedClients - client.ID
+                                        }
                                     }
-                                }
-                            )
-                            Text(client.name, style = MaterialTheme.typography.bodyMedium)
+                                )
+                                Text(client.name, style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
                 }
