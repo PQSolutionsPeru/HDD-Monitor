@@ -12,12 +12,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.data.EventWithMetadata
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.EventViewModel
+import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 
 @Composable
 fun EventHistoryScreen(
     viewModel: EventViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
-    hasPendingNotifications: Boolean
+    hasPendingNotifications: Boolean,
+    onNotificationClick: () -> Unit
 ) {
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
@@ -44,7 +46,7 @@ fun EventHistoryScreen(
                 )
                 AnimatedNotificationBell(
                     hasNewNotifications = hasPendingNotifications,
-                    onClick = { /* Handle notification click */ }
+                    onClick = onNotificationClick
                 )
             }
             Spacer(modifier = Modifier.height(32.dp))
@@ -70,6 +72,7 @@ fun EventHistoryScreen(
                 }
                 else -> {
                     LazyColumn(
+                        modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         items(uiState.events) { eventWithMetadata ->

@@ -15,15 +15,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.data.UserRole
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.UserManagementViewModel
-import androidx.compose.animation.ExperimentalAnimationApi
-import com.pqsolutions.hdd_monitor.presentation.components.NotificationIcon
+import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 
-@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun UserManagementScreen(
     viewModel: UserManagementViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
-    hasPendingNotifications: Boolean
+    hasPendingNotifications: Boolean,
+    onNotificationClick: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
@@ -43,15 +42,15 @@ fun UserManagementScreen(
                 text = "Gestión de Usuarios",
                 style = MaterialTheme.typography.headlineMedium
             )
-            NotificationIcon(
+            AnimatedNotificationBell(
                 hasNewNotifications = hasPendingNotifications,
-                onClick = { /* Handle notification click */ }
+                onClick = onNotificationClick
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
         when {
             uiState.isLoading -> {
-                CircularProgressIndicator()
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             }
             uiState.error != null -> {
                 Text(
@@ -60,7 +59,10 @@ fun UserManagementScreen(
                 )
             }
             else -> {
-                LazyColumn {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     items(uiState.users) { user ->
                         UserItem(
                             user = user,

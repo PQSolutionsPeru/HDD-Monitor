@@ -3,7 +3,6 @@ package com.pqsolutions.hdd_monitor.presentation.screens
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +24,7 @@ import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
+import androidx.compose.foundation.clickable
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable

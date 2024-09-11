@@ -5,15 +5,15 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -26,29 +26,6 @@ import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
-
-@Composable
-fun AnimatedNotificationBell(hasNewNotifications: Boolean, onClick: () -> Unit) {
-    val infiniteTransition = rememberInfiniteTransition()
-    val angle by infiniteTransition.animateFloat(
-        initialValue = -20f,
-        targetValue = 20f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-
-    IconButton(onClick = onClick) {
-        Icon(
-            imageVector = Icons.Default.Notifications,
-            contentDescription = "Notificaciones",
-            modifier = Modifier
-                .size(24.dp)
-                .rotate(if (hasNewNotifications) angle else 0f)
-        )
-    }
-}
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -94,14 +71,9 @@ fun AlertScreen(
             Spacer(modifier = Modifier.height(24.dp))
             when {
                 uiState.isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
                 }
                 uiState.error != null -> {
                     ErrorMessage(
@@ -117,35 +89,29 @@ fun AlertScreen(
                     )
                 }
                 else -> {
-                    AnimatedContent(
-                        targetState = uiState.alerts,
-                        transitionSpec = {
-                            fadeIn(initialAlpha = 0.3f) togetherWith fadeOut(targetAlpha = 0f)
-                        }
-                    ) { alerts ->
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            items(alerts, key = { alert -> alert.ID.ifEmpty { "${alert.ID_CLIENT}_${alert.hashCode()}" } }) { alert ->
-                                AlertItem(
-                                    alert = alert,
-                                    isAdmin = isAdmin,
-                                    onEditClick = {
-                                        editingAlert = alert
-                                        showDialog = true
-                                    },
-                                    onDeleteClick = {
-                                        performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
-                                        viewModel.deleteAlert(alert.ID_CLIENT, alert.ID)
-                                    },
-                                    onConfirmClick = {
-                                        performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
-                                        viewModel.confirmAlert(alert.ID_CLIENT, alert.ID)
-                                    }
-                                )
-                            }
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(uiState.alerts, key = { alert -> alert.ID.ifEmpty { "${alert.ID_CLIENT}_${alert.hashCode()}" } }) { alert ->
+                            AlertItem(
+                                alert = alert,
+                                isAdmin = isAdmin,
+                                onEditClick = {
+                                    editingAlert = alert
+                                    showDialog = true
+                                },
+                                onDeleteClick = {
+                                    performHapticFeedback(context)
+                                    playSoundEffect(context, R.raw.button_click)
+                                    viewModel.deleteAlert(alert.ID_CLIENT, alert.ID)
+                                },
+                                onConfirmClick = {
+                                    performHapticFeedback(context)
+                                    playSoundEffect(context, R.raw.button_click)
+                                    viewModel.confirmAlert(alert.ID_CLIENT, alert.ID)
+                                }
+                            )
                         }
                     }
                 }

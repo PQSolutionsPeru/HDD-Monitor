@@ -1,57 +1,112 @@
-### components\NotificationList.kt ###
+### components\DashboardComponents.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.components
 
+import android.util.Log
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.data.Alert
-import com.pqsolutions.hdd_monitor.presentation.screens.AlertItem
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.Relay
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardUiState
+import com.pqsolutions.hdd_monitor.presentation.theme.*
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import kotlinx.coroutines.delay
+import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 
 @Composable
-fun NotificationList(notifications: List<Alert>, onConfirmClick: (Alert) -> Unit) {
-    HDD1_2Theme {
-        if (notifications.isEmpty()) {
+fun DashboardButton(
+    onClick: () -> Unit,
+    text: String,
+    colors: ButtonColors = ButtonDefaults.buttonColors()
+) {
+    Log.d("DashboardComponents", "Composing DashboardButton: $text")
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (isPressed) 0.95f else 1f)
+
+    Button(
+        onClick = {
+            Log.d("DashboardComponents", "DashboardButton clicked: $text")
+            isPressed = true
+            onClick()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .scale(scale),
+        colors = colors,
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onPrimary
+        )
+    }
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            delay(100)
+            isPressed = false
+        }
+    }
+}
+
+@Composable
+fun PanelsList(uiState: DashboardUiState) {
+    Log.d("DashboardComponents", "Composing PanelsList")
+    when {
+        uiState.isLoading -> {
+            Log.d("DashboardComponents", "PanelsList: Loading")
             Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxWidth().height(200.dp)
             ) {
-                Text(
-                    text = "No hay notificaciones nuevas",
-                    style = MaterialTheme.typography.bodyLarge
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(64.dp)
                 )
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(notifications) { notification ->
-                    AlertItem(
-                        alert = notification,
-                        isAdmin = false,
-                        onEditClick = { },
-                        onDeleteClick = { },
-                        onConfirmClick = { onConfirmClick(notification) }
-                    )
+        }
+        uiState.error != null -> {
+            Log.d("DashboardComponents", "PanelsList: Error - ${uiState.error}")
+            Text(
+                text = stringResource(R.string.error_message, uiState.error),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+        else -> {
+            Log.d("DashboardComponents", "PanelsList: Displaying ${uiState.panels.size} panels")
+            Column {
+                Text(
+                    text = stringResource(R.string.fire_panels),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                if (uiState.alerts.isNotEmpty()) {
+                    AlertsList(uiState.alerts)
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+                uiState.panels.forEach { panel ->
+                    PanelItem(panel)
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
@@ -59,146 +114,139 @@ fun NotificationList(notifications: List<Alert>, onConfirmClick: (Alert) -> Unit
 }
 
 @Composable
-fun HddButton(
-    onClick: () -> Unit,
-    text: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(56.dp),
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
-        )
-    ) {
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-@Composable
-fun HddOutlinedTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    isError: Boolean = false,
-    errorMessage: String? = null,
-    isPassword: Boolean = false
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        modifier = modifier.fillMaxWidth(),
-        isError = isError,
-        visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline
-        ),
-        textStyle = MaterialTheme.typography.bodyLarge
-    )
-    if (isError && errorMessage != null) {
+fun AlertsList(alerts: List<String>) {
+    Log.d("DashboardComponents", "Composing AlertsList: ${alerts.size} alerts")
+    Column {
         Text(
-            text = errorMessage,
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+            text = stringResource(R.string.active_alerts),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.error
         )
-    }
-}
-
-@Composable
-fun HddCard(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        content()
-    }
-}
-
-@Composable
-fun HddAlertItem(
-    alert: Alert,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    HddCard(
-        modifier = modifier.padding(vertical = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = alert.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = alert.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = alert.status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onDismiss) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun NotificationIcon(
-    hasNewNotifications: Boolean,
-    onClick: () -> Unit
-) {
-    IconButton(onClick = onClick) {
-        Box {
-            Icon(
-                imageVector = Icons.Default.Notifications,
-                contentDescription = "Notifications",
-                tint = if (hasNewNotifications) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-            )
+        Spacer(modifier = Modifier.height(16.dp))
+        alerts.forEach { alert ->
             AnimatedVisibility(
-                visible = hasNewNotifications,
+                visible = true,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                androidx.compose.material3.Badge(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                    modifier = Modifier.offset(x = 10.dp, y = (-10).dp)
-                ) {
-                    Text("!")
-                }
+                Text(
+                    text = alert,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
+    }
+}
+
+@Composable
+fun PanelItem(panel: Panel) {
+    Log.d("DashboardComponents", "Composing PanelItem: ${panel.name}")
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                Log.d("DashboardComponents", "PanelItem clicked: ${panel.name}")
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                // Implementar acción al hacer clic en el panel
+            },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp)
+        ) {
+            Text(
+                text = panel.name,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.location, panel.location),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            panel.relays.forEach { relay ->
+                RelayStatusItem(relay)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun RelayStatusItem(relay: Relay) {
+    Log.d("DashboardComponents", "Composing RelayStatusItem: ${relay.name}")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = relay.name,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        StatusChip(status = relay.status)
+    }
+}
+
+@Composable
+fun StatusChip(status: String) {
+    Log.d("DashboardComponents", "Composing StatusChip: $status")
+    val (backgroundColor, textColor) = when (status) {
+        "OK" -> HddGreen to HddWhite
+        "WARNING" -> HddYellow to HddBlack
+        else -> HddRed to HddWhite
+    }
+
+    Surface(
+        color = backgroundColor,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Text(
+            text = status,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = textColor
+        )
+    }
+}
+
+@Composable
+fun AnimatedNotificationBell(
+    hasNewNotifications: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val angle by infiniteTransition.animateFloat(
+        initialValue = -20f,
+        targetValue = 20f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+    ) {
+        Icon(
+            imageVector = Icons.Default.Notifications,
+            contentDescription = "Notificaciones",
+            modifier = Modifier
+                .rotate(if (hasNewNotifications) angle else 0f),
+            tint = if (hasNewNotifications) Color.Red else Color.Gray
+        )
     }
 }
 
@@ -325,7 +373,6 @@ fun AppNavigation(viewModel: MainViewModel) {
                     navController.popBackStack()
                 },
                 isAdmin = uiState.userData?.role == UserRole.ADMIN,
-                viewModel = viewModel,
                 hasPendingNotifications = hasPendingNotifications
             )
         }
@@ -341,6 +388,249 @@ fun AppNavigation(viewModel: MainViewModel) {
     }
 
     Log.d("AppNavigation", "AppNavigation composition completed")
+}
+
+==================================================
+
+### screens\AdminDashboardScreen.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.screens
+
+import android.util.Log
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.Relay
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
+import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+fun AdminDashboardScreen(
+    viewModel: DashboardViewModel = hiltViewModel(),
+    onLogoutClick: () -> Unit,
+    onManageUsersClick: () -> Unit,
+    onViewAlertsClick: () -> Unit,
+    onViewEventHistoryClick: () -> Unit,
+    hasPendingNotifications: Boolean
+) {
+    Log.d("AdminDashboardScreen", "Composing AdminDashboardScreen")
+    HDD1_2Theme {
+        val uiState by viewModel.uiState.collectAsState()
+        val context = LocalContext.current
+        val scrollState = rememberScrollState()
+
+        LaunchedEffect(Unit) {
+            Log.d("AdminDashboardScreen", "LaunchedEffect: Loading panels")
+            viewModel.loadPanels()
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .verticalScroll(scrollState)
+                .padding(24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.admin_dashboard_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AnimatedNotificationBell(
+                    hasNewNotifications = hasPendingNotifications,
+                    onClick = onViewAlertsClick
+                )
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    Button(
+                        onClick = {
+                            Log.d("AdminDashboardScreen", "Manage Users button clicked")
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onManageUsersClick()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.manage_users))
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            Log.d("AdminDashboardScreen", "View Alerts button clicked")
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewAlertsClick()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.view_alerts))
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            Log.d("AdminDashboardScreen", "View Event History button clicked")
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewEventHistoryClick()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.view_event_history))
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            PanelsList(uiState.panels)
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(
+                onClick = {
+                    Log.d("AdminDashboardScreen", "Logout button clicked")
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onLogoutClick()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary
+                )
+            ) {
+                Text(stringResource(R.string.logout))
+            }
+        }
+    }
+    Log.d("AdminDashboardScreen", "AdminDashboardScreen composition completed")
+}
+
+@Composable
+fun PanelsList(panels: List<Panel>) {
+    Text(
+        text = "Paneles de Incendio (${panels.size})",
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.primary
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    if (panels.isEmpty()) {
+        Text("No hay paneles disponibles")
+    } else {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            panels.forEach { panel ->
+                PanelItem(panel)
+            }
+        }
+    }
+}
+
+@Composable
+fun PanelItem(panel: Panel) {
+    var expanded by remember { mutableStateOf(false) }
+    val allRelaysOk = panel.relays.all { it.status == "OK" }
+    val statusColor = if (allRelaysOk) Color.Green else Color.Red
+    val statusText = if (allRelaysOk) "OK" else {
+        panel.relays.filter { it.status != "OK" }.joinToString(", ") { it.name }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (allRelaysOk) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = panel.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
+            Text(text = "IP: ${panel.ESP32_IP}", style = MaterialTheme.typography.bodyMedium)
+            Text(text = "Cliente: ${panel.clientId}", style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Estado:",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = statusColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (expanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Detalles de relays:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                panel.relays.forEach { relay ->
+                    RelayStatus(relay)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RelayStatus(relay: Relay) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = relay.name,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = relay.status,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (relay.status == "OK") Color.Green else Color.Red,
+            fontWeight = FontWeight.Bold
+        )
+    }
 }
 
 ==================================================
@@ -750,6 +1040,476 @@ fun ErrorMessage(message: String?, onRetry: () -> Unit) {
 
 ==================================================
 
+### screens\EventHistoryScreen.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.pqsolutions.hdd_monitor.data.EventWithMetadata
+import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.EventViewModel
+
+@Composable
+fun EventHistoryScreen(
+    viewModel: EventViewModel = hiltViewModel(),
+    onBackClick: () -> Unit,
+    hasPendingNotifications: Boolean
+) {
+    HDD1_2Theme {
+        val uiState by viewModel.uiState.collectAsState()
+        val isAdmin by viewModel.isAdmin.collectAsState()
+
+        LaunchedEffect(key1 = true) {
+            viewModel.loadEvents()
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Historial de Eventos",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AnimatedNotificationBell(
+                    hasNewNotifications = hasPendingNotifications,
+                    onClick = { /* Handle notification click */ }
+                )
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+
+            when {
+                uiState.isLoading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                }
+                uiState.error != null -> {
+                    Text(
+                        text = "Error: ${uiState.error}",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                }
+                uiState.events.isEmpty() -> {
+                    Text(
+                        text = "No hay eventos registrados",
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(uiState.events) { eventWithMetadata ->
+                            EventItem(eventWithMetadata, isAdmin = isAdmin)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(
+                onClick = onBackClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+            ) {
+                Text(
+                    "Volver",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EventItem(eventWithMetadata: EventWithMetadata, isAdmin: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = eventWithMetadata.event.date_time,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = eventWithMetadata.event.type,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = eventWithMetadata.event.description,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Estado: ${eventWithMetadata.event.solved_status}",
+                style = MaterialTheme.typography.bodySmall,
+                color = when (eventWithMetadata.event.solved_status) {
+                    "Resuelto" -> MaterialTheme.colorScheme.primary
+                    "Pendiente" -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Panel: ${eventWithMetadata.panelName}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (isAdmin) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Cliente: ${eventWithMetadata.clientName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+==================================================
+
+### screens\LoginScreen.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.presentation.components.HddButton
+import com.pqsolutions.hdd_monitor.presentation.components.HddOutlinedTextField
+import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import androidx.compose.animation.ExperimentalAnimationApi
+
+@OptIn(ExperimentalAnimationApi::class)
+
+@Composable
+fun LoginScreen(onLoginClick: (String, String) -> Unit) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(Dimensions.paddingLarge),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = stringResource(R.string.app_name),
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { contentDescription = "App title" }
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        HddOutlinedTextField(
+            value = email,
+            onValueChange = { email = it },
+            label = stringResource(R.string.email),
+            modifier = Modifier.semantics { contentDescription = "Email input field" }
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingMedium))
+        HddOutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = stringResource(R.string.password),
+            isPassword = true,
+            modifier = Modifier.semantics { contentDescription = "Password input field" }
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        HddButton(
+            onClick = {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onLoginClick(email, password)
+            },
+            text = stringResource(R.string.login),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(Dimensions.buttonHeight)
+                .semantics { contentDescription = "Login button" }
+        )
+    }
+}
+
+==================================================
+
+### screens\OnboardingScreen.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.screens
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.presentation.components.HddButton
+import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun OnboardingScreen(onFinish: () -> Unit) {
+    val pages = listOf(
+        OnboardingPage(
+            title = "Bienvenido a HDD Monitor",
+            description = "Monitorea y gestiona tus paneles de incendio de manera fácil y eficiente.",
+            imageRes = R.drawable.onboarding_image
+        ),
+        OnboardingPage(
+            title = "Alertas en tiempo real",
+            description = "Recibe notificaciones instantáneas sobre el estado de tus paneles.",
+            imageRes = R.drawable.onboarding_image
+        ),
+        OnboardingPage(
+            title = "Gestión simplificada",
+            description = "Administra usuarios, paneles y eventos desde una sola aplicación.",
+            imageRes = R.drawable.onboarding_image
+        )
+    )
+
+    val pagerState = rememberPagerState { pages.size }
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f)
+        ) { page ->
+            OnboardingPageContent(pages[page])
+        }
+
+        Row(
+            Modifier
+                .height(50.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            repeat(pages.size) { iteration ->
+                val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                Box(
+                    modifier = Modifier
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .size(8.dp)
+                )
+            }
+        }
+
+        HddButton(
+            onClick = {
+                if (pagerState.currentPage < pages.lastIndex) {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    }
+                } else {
+                    onFinish()
+                }
+            },
+            text = if (pagerState.currentPage == pages.lastIndex) "Empezar" else "Siguiente",
+            modifier = Modifier
+                .padding(Dimensions.paddingMedium)
+                .fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+fun OnboardingPageContent(page: OnboardingPage) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(Dimensions.paddingLarge),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Image(
+            painter = painterResource(id = page.imageRes),
+            contentDescription = null,
+            modifier = Modifier.size(200.dp)
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        Text(
+            text = page.title,
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(Dimensions.spacingMedium))
+        Text(
+            text = page.description,
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+data class OnboardingPage(
+    val title: String,
+    val description: String,
+    val imageRes: Int
+)
+
+==================================================
+
+### screens\UserDashboardScreen.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.screens
+
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
+import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import com.pqsolutions.hdd_monitor.presentation.components.DashboardButton
+import com.pqsolutions.hdd_monitor.presentation.components.PanelsList
+import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
+
+@Composable
+fun UserDashboardScreen(
+    viewModel: DashboardViewModel = hiltViewModel(),
+    onLogoutClick: () -> Unit,
+    onViewEventHistoryClick: () -> Unit,
+    onViewAlertsClick: () -> Unit,
+    hasPendingNotifications: Boolean
+) {
+    HDD1_2Theme {
+        val uiState by viewModel.uiState.collectAsState()
+        val context = LocalContext.current
+        val scrollState = rememberScrollState()
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .verticalScroll(scrollState)
+                .padding(24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.user_dashboard_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AnimatedNotificationBell(
+                    hasNewNotifications = hasPendingNotifications,
+                    onClick = onViewAlertsClick
+                )
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewEventHistoryClick()
+                        },
+                        text = stringResource(R.string.view_event_history)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DashboardButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            onViewAlertsClick()
+                        },
+                        text = stringResource(R.string.view_alerts)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            PanelsList(uiState)
+            Spacer(modifier = Modifier.height(32.dp))
+            DashboardButton(
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onLogoutClick()
+                },
+                text = stringResource(R.string.logout),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary
+                )
+            )
+        }
+    }
+}
+
+==================================================
+
 ### screens\UserManagementScreen.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.screens
@@ -770,13 +1530,14 @@ import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.data.UserRole
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.UserManagementViewModel
 import androidx.compose.animation.ExperimentalAnimationApi
+import com.pqsolutions.hdd_monitor.presentation.components.NotificationIcon
 
 @OptIn(ExperimentalAnimationApi::class)
-
 @Composable
 fun UserManagementScreen(
     viewModel: UserManagementViewModel = hiltViewModel(),
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    hasPendingNotifications: Boolean
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
@@ -787,10 +1548,20 @@ fun UserManagementScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = "Gestión de Usuarios",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Gestión de Usuarios",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            NotificationIcon(
+                hasNewNotifications = hasPendingNotifications,
+                onClick = { /* Handle notification click */ }
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
         when {
             uiState.isLoading -> {
@@ -959,222 +1730,97 @@ fun UserDialog(
 
 ==================================================
 
-### viewmodel\AlertViewModel.kt ###
+### theme\Theme.kt ###
 
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
+package com.pqsolutions.hdd_monitor.presentation.theme
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.Alert
-import com.pqsolutions.hdd_monitor.data.AlertRepository
-import com.pqsolutions.hdd_monitor.data.UserPreferences
-import com.pqsolutions.hdd_monitor.data.UserRole
-import com.pqsolutions.hdd_monitor.data.Client
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import javax.inject.Inject
+import android.app.Activity
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
-@HiltViewModel
-class AlertViewModel @Inject constructor(
-    private val alertRepository: AlertRepository,
-    private val userPreferences: UserPreferences
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(AlertUiState())
-    val uiState: StateFlow<AlertUiState> = _uiState.asStateFlow()
-
-    init {
-        loadAlerts()
-        loadClients()
-    }
-
-    fun loadAlerts() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.userDataFlow.collect { userData ->
-                when (userData?.role) {
-                    UserRole.ADMIN -> {
-                        alertRepository.getAllAlertsFlow()
-                            .catch { e ->
-                                _uiState.value = _uiState.value.copy(
-                                    isLoading = false,
-                                    error = e.message ?: "Error al cargar las alertas"
-                                )
-                            }
-                            .collect { alerts ->
-                                _uiState.value = _uiState.value.copy(
-                                    isLoading = false,
-                                    alerts = alerts,
-                                    error = null
-                                )
-                            }
-                    }
-                    UserRole.USER -> {
-                        val clientId = userData.clientId
-                        if (clientId.isNotEmpty()) {
-                            alertRepository.getAlertsFlow(clientId)
-                                .catch { e ->
-                                    _uiState.value = _uiState.value.copy(
-                                        isLoading = false,
-                                        error = e.message ?: "Error al cargar las alertas"
-                                    )
-                                }
-                                .collect { alerts ->
-                                    _uiState.value = _uiState.value.copy(
-                                        isLoading = false,
-                                        alerts = alerts,
-                                        error = null
-                                    )
-                                }
-                        } else {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                alerts = emptyList(),
-                                error = "ID de cliente no válido"
-                            )
-                        }
-                    }
-                    null -> {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            alerts = emptyList(),
-                            error = "No se encontraron datos de usuario"
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    fun createAlert(alert: Alert, selectedClients: List<String>) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.userDataFlow.firstOrNull()?.let { userData ->
-                when (userData.role) {
-                    UserRole.ADMIN -> {
-                        val result = alertRepository.createAlert(selectedClients, alert)
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = result.exceptionOrNull()?.message
-                        )
-                        loadAlerts()
-                    }
-                    UserRole.USER -> {
-                        val clientId = userData.clientId
-                        if (clientId.isNotEmpty()) {
-                            val result = alertRepository.createAlert(listOf(clientId), alert)
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                error = result.exceptionOrNull()?.message
-                            )
-                            loadAlerts()
-                        } else {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                error = "ID de cliente no válido"
-                            )
-                        }
-                    }
-                }
-            } ?: run {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "No se encontraron datos de usuario"
-                )
-            }
-        }
-    }
-
-    fun updateAlert(alert: Alert) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            userPreferences.userDataFlow.firstOrNull()?.let { userData ->
-                when (userData.role) {
-                    UserRole.ADMIN -> {
-                        val result = alertRepository.updateAlert(alert.ID_CLIENT, alert)
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = result.exceptionOrNull()?.message
-                        )
-                        loadAlerts()
-                    }
-                    UserRole.USER -> {
-                        val clientId = userData.clientId
-                        if (clientId.isNotEmpty()) {
-                            val result = alertRepository.updateAlert(clientId, alert)
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                error = result.exceptionOrNull()?.message
-                            )
-                            loadAlerts()
-                        } else {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                error = "ID de cliente no válido"
-                            )
-                        }
-                    }
-                }
-            } ?: run {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "No se encontraron datos de usuario"
-                )
-            }
-        }
-    }
-
-    fun deleteAlert(clientId: String, alertId: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.deleteAlert(clientId, alertId)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.exceptionOrNull()?.message
-            )
-            loadAlerts()
-        }
-    }
-
-    fun confirmAlert(clientId: String, alertId: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.updateAlertStatus(clientId, alertId, "ACEPTADO")
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.exceptionOrNull()?.message
-            )
-            loadAlerts()
-        }
-    }
-
-    fun loadClients() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            try {
-                val clients = alertRepository.getClients()
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    clients = clients,
-                    error = null
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Error al cargar los clientes"
-                )
-            }
-        }
-    }
-}
-
-data class AlertUiState(
-    val isLoading: Boolean = false,
-    val alerts: List<Alert> = emptyList(),
-    val clients: List<Client> = emptyList(),
-    val error: String? = null
+private val LightColorScheme = lightColorScheme(
+    primary = HddRed,
+    onPrimary = HddWhite,
+    primaryContainer = HddDarkRed,
+    onPrimaryContainer = HddWhite,
+    secondary = HddGrey,
+    onSecondary = HddWhite,
+    secondaryContainer = HddLightGrey,
+    onSecondaryContainer = HddBlack,
+    tertiary = HddBlue,
+    onTertiary = HddWhite,
+    tertiaryContainer = HddLightBlue,
+    onTertiaryContainer = HddWhite,
+    error = HddRed,
+    onError = HddWhite,
+    errorContainer = HddDarkRed,
+    onErrorContainer = HddWhite,
+    background = HddWhite,
+    onBackground = HddBlack,
+    surface = HddWhite,
+    onSurface = HddBlack
 )
+
+private val DarkColorScheme = darkColorScheme(
+    primary = HddRed,
+    onPrimary = HddWhite,
+    primaryContainer = HddDarkRed,
+    onPrimaryContainer = HddWhite,
+    secondary = HddLightGrey,
+    onSecondary = HddBlack,
+    secondaryContainer = HddGrey,
+    onSecondaryContainer = HddWhite,
+    tertiary = HddLightBlue,
+    onTertiary = HddWhite,
+    tertiaryContainer = HddBlue,
+    onTertiaryContainer = HddWhite,
+    error = HddRed,
+    onError = HddWhite,
+    errorContainer = HddDarkRed,
+    onErrorContainer = HddWhite,
+    background = HddDarkGrey,
+    onBackground = HddWhite,
+    surface = HddDarkGrey,
+    onSurface = HddWhite
+)
+
+@Composable
+fun HDD1_2Theme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            window.statusBarColor = colorScheme.primary.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+        }
+    }
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = Typography,
+        content = content
+    )
+}
 
 ==================================================
 
@@ -1424,6 +2070,46 @@ sealed class MainUiEvent {
     data class SetLanguage(val language: String) : MainUiEvent()
     data class SetNotificationsEnabled(val enabled: Boolean) : MainUiEvent()
 }
+
+==================================================
+
+### viewmodel\NotificationViewModel.kt ###
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+class NotificationViewModel : ViewModel() {
+    private val _hasNewNotifications = MutableStateFlow(false)
+    val hasNewNotifications: StateFlow<Boolean> = _hasNewNotifications
+
+    private val _notifications = MutableStateFlow<List<Notification>>(emptyList())
+    val notifications: StateFlow<List<Notification>> = _notifications
+
+    init {
+        viewModelScope.launch {
+            // Aquí deberías observar los cambios en Firestore
+            // y actualizar _hasNewNotifications y _notifications
+        }
+    }
+
+    fun markAllAsRead() {
+        viewModelScope.launch {
+            // Marcar todas las notificaciones como leídas en Firestore
+            _hasNewNotifications.value = false
+        }
+    }
+}
+
+data class Notification(
+    val id: String,
+    val title: String,
+    val message: String,
+    val timestamp: Long,
+    val isRead: Boolean
+)
 
 ==================================================
 

@@ -217,33 +217,3 @@ fun StatusChip(status: String) {
         )
     }
 }
-
-@Composable
-fun AnimatedNotificationBell(
-    hasNewNotifications: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val infiniteTransition = rememberInfiniteTransition()
-    val angle by infiniteTransition.animateFloat(
-        initialValue = -20f,
-        targetValue = 20f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-
-    IconButton(
-        onClick = onClick,
-        modifier = modifier
-    ) {
-        Icon(
-            imageVector = Icons.Default.Notifications,
-            contentDescription = "Notificaciones",
-            modifier = Modifier
-                .rotate(if (hasNewNotifications) angle else 0f),
-            tint = if (hasNewNotifications) Color.Red else Color.Gray
-        )
-    }
-}

@@ -96,7 +96,11 @@ fun AppNavigation(viewModel: MainViewModel) {
                     Log.d("AppNavigation", "Navigating back from User Management")
                     navController.popBackStack()
                 },
-                hasPendingNotifications = hasPendingNotifications
+                hasPendingNotifications = hasPendingNotifications,
+                onNotificationClick = {
+                    Log.d("AppNavigation", "Navigate to Alerts from User Management")
+                    navController.navigate("alerts")
+                }
             )
         }
         composable("event_history") {
@@ -106,7 +110,11 @@ fun AppNavigation(viewModel: MainViewModel) {
                     Log.d("AppNavigation", "Navigating back from Event History")
                     navController.popBackStack()
                 },
-                hasPendingNotifications = hasPendingNotifications
+                hasPendingNotifications = hasPendingNotifications,
+                onNotificationClick = {
+                    Log.d("AppNavigation", "Navigate to Alerts from Event History")
+                    navController.navigate("alerts")
+                }
             )
         }
         composable("alerts") {
