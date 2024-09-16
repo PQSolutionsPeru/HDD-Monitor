@@ -34,50 +34,20 @@ private val LightColorScheme = lightColorScheme(
     onSurface = HddBlack
 )
 
-private val DarkColorScheme = darkColorScheme(
-    primary = HddRed,
-    onPrimary = HddWhite,
-    primaryContainer = HddDarkRed,
-    onPrimaryContainer = HddWhite,
-    secondary = HddLightGrey,
-    onSecondary = HddBlack,
-    secondaryContainer = HddGrey,
-    onSecondaryContainer = HddWhite,
-    tertiary = HddLightBlue,
-    onTertiary = HddWhite,
-    tertiaryContainer = HddBlue,
-    onTertiaryContainer = HddWhite,
-    error = HddRed,
-    onError = HddWhite,
-    errorContainer = HddDarkRed,
-    onErrorContainer = HddWhite,
-    background = HddDarkGrey,
-    onBackground = HddWhite,
-    surface = HddDarkGrey,
-    onSurface = HddWhite
-)
-
 @Composable
 fun HDD1_2Theme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = LightColorScheme  // Siempre usar el esquema de color claro
 
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
         }
     }
 

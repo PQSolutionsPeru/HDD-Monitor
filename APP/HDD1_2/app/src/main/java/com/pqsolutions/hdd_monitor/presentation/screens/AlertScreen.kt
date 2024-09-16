@@ -255,7 +255,7 @@ fun AlertItem(
                             val message = "Buen día, quisiera conversar sobre el evento \"${alert.title}\""
                             val encodedMessage = URLEncoder.encode(message, StandardCharsets.UTF_8.toString())
                             val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("https://wa.me/+51933533004?text=$encodedMessage")
+                                data = Uri.parse("https://wa.me/+51993533004?text=$encodedMessage")
                             }
                             context.startActivity(intent)
                         },
