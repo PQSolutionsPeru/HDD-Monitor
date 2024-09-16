@@ -2,7 +2,7 @@ package com.pqsolutions.hdd_monitor.presentation.components
 
 import android.util.Log
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,7 +10,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -22,11 +24,52 @@ import com.pqsolutions.hdd_monitor.presentation.theme.*
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import kotlinx.coroutines.delay
-import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
+
+@Composable
+fun AnimatedNotificationBell(
+    hasNewNotifications: Boolean,
+    onClick: () -> Unit
+) {
+    Log.d("AnimatedNotificationBell", "Composing AnimatedNotificationBell, hasNewNotifications: $hasNewNotifications")
+    val rotation = remember { Animatable(0f) }
+    val scale = remember { Animatable(1f) }
+
+    LaunchedEffect(hasNewNotifications) {
+        if (hasNewNotifications) {
+            rotation.animateTo(
+                targetValue = 20f,
+                animationSpec = repeatable(
+                    iterations = 2,
+                    animation = tween(durationMillis = 200, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                )
+            )
+            scale.animateTo(
+                targetValue = 1.2f,
+                animationSpec = tween(durationMillis = 200, easing = LinearEasing)
+            )
+            scale.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 200, easing = LinearEasing)
+            )
+        }
+    }
+
+    Icon(
+        imageVector = Icons.Default.Notifications,
+        contentDescription = "Notifications",
+        modifier = Modifier
+            .rotate(rotation.value)
+            .scale(scale.value)
+            .clickable {
+                Log.d("AnimatedNotificationBell", "Notification bell clicked")
+                onClick()
+            },
+        tint = if (hasNewNotifications) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    )
+}
 
 @Composable
 fun DashboardButton(

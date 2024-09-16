@@ -174,10 +174,10 @@ class AlertViewModel @Inject constructor(
         }
     }
 
-    fun confirmAlert(clientId: String, alertId: String) {
+    fun updateAlertStatus(clientId: String, alertId: String, newStatus: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = alertRepository.updateAlertStatus(clientId, alertId, "ACEPTADO")
+            val result = alertRepository.updateAlertStatus(clientId, alertId, newStatus)
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 error = result.exceptionOrNull()?.message

@@ -47,6 +47,7 @@ class MainViewModel @Inject constructor(
                 )
             }.collect { state ->
                 _uiState.value = state
+                Log.d("MainViewModel", "UI State updated: $state")
             }
         }
         checkAuthState()
@@ -64,6 +65,7 @@ class MainViewModel @Inject constructor(
                     userData = currentUser,
                     error = null
                 )
+                checkPendingNotifications()
             } else {
                 _uiState.value = _uiState.value.copy(
                     isLoggedIn = false,
@@ -77,10 +79,13 @@ class MainViewModel @Inject constructor(
     private fun checkPendingNotifications() {
         viewModelScope.launch {
             val currentUser = userRepository.getCurrentUser()
+            Log.d("MainViewModel", "Checking pending notifications for user: ${currentUser?.id}")
             if (currentUser != null) {
                 alertRepository.getAlertsFlow(currentUser.clientId)
                     .collect { alerts ->
-                        _hasPendingNotifications.value = alerts.any { it.status == "PROGRAMADO" }
+                        val hasPending = alerts.any { it.status == "PROGRAMADO" }
+                        _hasPendingNotifications.value = hasPending
+                        Log.d("MainViewModel", "Pending notifications updated: $hasPending")
                     }
             }
         }
@@ -106,7 +111,6 @@ class MainViewModel @Inject constructor(
                     onSuccess = { user ->
                         userPreferences.setUserData(user)
                         updateFCMToken()
-                        addUserActivity(user.id, user.clientId, "Inicio de sesión")
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             isLoggedIn = true,
@@ -114,6 +118,7 @@ class MainViewModel @Inject constructor(
                             error = null
                         )
                         Log.d("MainViewModel", "Login successful for user: ${user.name}")
+                        checkPendingNotifications()
                     },
                     onFailure = { e ->
                         Log.e("MainViewModel", "Login failed: ${e.message}", e)
@@ -137,10 +142,6 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d("MainViewModel", "Attempting logout")
             try {
-                val currentUser = userRepository.getCurrentUser()
-                if (currentUser != null) {
-                    addUserActivity(currentUser.id, currentUser.clientId, "Cierre de sesión")
-                }
                 authRepository.logout()
                 userPreferences.clearUserData()
                 _uiState.value = _uiState.value.copy(
@@ -148,6 +149,7 @@ class MainViewModel @Inject constructor(
                     userData = null,
                     error = null
                 )
+                _hasPendingNotifications.value = false
                 Log.d("MainViewModel", "Logout successful")
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Logout failed: ${e.message}", e)
@@ -190,18 +192,6 @@ class MainViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error updating FCM token: ${e.message}")
-            }
-        }
-    }
-
-    private fun addUserActivity(userId: String, clientId: String, action: String) {
-        viewModelScope.launch {
-            try {
-                val timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                val activity = UserActivity(userId, clientId, timestamp, action)
-                userRepository.addUserActivity(activity)
-            } catch (e: Exception) {
-                Log.e("MainViewModel", "Error adding user activity: ${e.message}")
             }
         }
     }

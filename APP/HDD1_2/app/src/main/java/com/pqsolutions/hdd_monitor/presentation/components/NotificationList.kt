@@ -24,7 +24,11 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.graphics.Color
 
 @Composable
-fun NotificationList(notifications: List<Alert>, onConfirmClick: (Alert) -> Unit) {
+fun NotificationList(
+    notifications: List<Alert>,
+    onConfirmClick: (Alert) -> Unit,
+    onRejectClick: (Alert) -> Unit
+) {
     HDD1_2Theme {
         if (notifications.isEmpty()) {
             Box(
@@ -48,7 +52,8 @@ fun NotificationList(notifications: List<Alert>, onConfirmClick: (Alert) -> Unit
                         isAdmin = false,
                         onEditClick = { },
                         onDeleteClick = { },
-                        onConfirmClick = { onConfirmClick(notification) }
+                        onConfirmClick = { onConfirmClick(notification) },
+                        onRejectClick = { onRejectClick(notification) }
                     )
                 }
             }

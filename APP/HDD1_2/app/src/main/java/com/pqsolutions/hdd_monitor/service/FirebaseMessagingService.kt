@@ -53,7 +53,7 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
             ID_CLIENT = data["ID_CLIENT"] ?: "",
             title = data["title"] ?: "",
             text = data["text"] ?: "",
-            status = data["status"] ?: "NEW"
+            status = data["status"] ?: "PROGRAMADO"
         )
         showNotification(alert.title, alert.text)
         saveAlert(alert)

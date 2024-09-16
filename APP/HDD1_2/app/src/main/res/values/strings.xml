@@ -32,4 +32,6 @@
     <string name="email">Email</string>
     <string name="password">Contraseña</string>
     <string name="login">Iniciar sesión</string>
+    <string name="accept">Aceptar</string>
+    <string name="contact_admin">Contactar al Administrador</string>
 </resources>

@@ -1,5 +1,7 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
@@ -26,6 +28,8 @@ import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -54,18 +58,22 @@ fun AlertScreen(
                 .padding(16.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = stringResource(R.string.alerts),
                     style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
                 )
                 AnimatedNotificationBell(
                     hasNewNotifications = hasPendingNotifications,
-                    onClick = { /* No action needed here */ }
+                    onClick = { /* No action needed here */ },
+                    modifier = Modifier.size(48.dp)
                 )
             }
             Spacer(modifier = Modifier.height(24.dp))
@@ -109,7 +117,12 @@ fun AlertScreen(
                                 onConfirmClick = {
                                     performHapticFeedback(context)
                                     playSoundEffect(context, R.raw.button_click)
-                                    viewModel.confirmAlert(alert.ID_CLIENT, alert.ID)
+                                    viewModel.updateAlertStatus(alert.ID_CLIENT, alert.ID, "ACEPTADO")
+                                },
+                                onRejectClick = {
+                                    performHapticFeedback(context)
+                                    playSoundEffect(context, R.raw.button_click)
+                                    viewModel.updateAlertStatus(alert.ID_CLIENT, alert.ID, "RECHAZADO")
                                 }
                             )
                         }
@@ -171,7 +184,8 @@ fun AlertItem(
     isAdmin: Boolean,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onConfirmClick: () -> Unit
+    onConfirmClick: () -> Unit,
+    onRejectClick: () -> Unit
 ) {
     val context = LocalContext.current
     Card(
@@ -195,6 +209,7 @@ fun AlertItem(
                 color = when (alert.status) {
                     "PROGRAMADO" -> MaterialTheme.colorScheme.secondary
                     "ACEPTADO" -> MaterialTheme.colorScheme.tertiary
+                    "RECHAZADO" -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurface
                 }
             )
@@ -223,7 +238,7 @@ fun AlertItem(
                     }) {
                         Icon(Icons.Default.Delete, contentDescription = "Eliminar alerta")
                     }
-                } else if (alert.status != "ACEPTADO") {
+                } else if (alert.status == "PROGRAMADO") {
                     Button(
                         onClick = {
                             performHapticFeedback(context)
@@ -231,7 +246,22 @@ fun AlertItem(
                             onConfirmClick()
                         }
                     ) {
-                        Text("Confirmar Alerta")
+                        Text(stringResource(R.string.accept))
+                    }
+                    Button(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            val message = "Buen día, quisiera conversar sobre el evento \"${alert.title}\""
+                            val encodedMessage = URLEncoder.encode(message, StandardCharsets.UTF_8.toString())
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("https://wa.me/+51933533004?text=$encodedMessage")
+                            }
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Text(stringResource(R.string.contact_admin))
                     }
                 }
             }

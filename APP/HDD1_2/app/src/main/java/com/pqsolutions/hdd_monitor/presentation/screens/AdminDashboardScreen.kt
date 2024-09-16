@@ -23,8 +23,11 @@ import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -36,7 +39,7 @@ fun AdminDashboardScreen(
     onViewEventHistoryClick: () -> Unit,
     hasPendingNotifications: Boolean
 ) {
-    Log.d("AdminDashboardScreen", "Composing AdminDashboardScreen")
+    Log.d("AdminDashboardScreen", "Starting composition with hasPendingNotifications: $hasPendingNotifications")
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
         val context = LocalContext.current
@@ -55,18 +58,26 @@ fun AdminDashboardScreen(
                 .padding(24.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = stringResource(R.string.admin_dashboard_title),
                     style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
                 )
+                // Removed the Box with background color
                 AnimatedNotificationBell(
                     hasNewNotifications = hasPendingNotifications,
-                    onClick = onViewAlertsClick
+                    onClick = {
+                        Log.d("AdminDashboardScreen", "Notification bell clicked")
+                        onViewAlertsClick()
+                    },
+                    modifier = Modifier.size(48.dp)
                 )
             }
             Spacer(modifier = Modifier.height(32.dp))
@@ -132,7 +143,7 @@ fun AdminDashboardScreen(
             }
         }
     }
-    Log.d("AdminDashboardScreen", "AdminDashboardScreen composition completed")
+    Log.d("AdminDashboardScreen", "Finishing composition")
 }
 
 @Composable

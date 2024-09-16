@@ -178,31 +178,6 @@ class UserRepository @Inject constructor(
         }
     }
 
-    suspend fun addUserActivity(activity: UserActivity): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
-            firestore.collection("hdd-monitor/accounts/user_activities")
-                .add(activity)
-                .await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun getUserActivities(userId: String): Result<List<UserActivity>> = withContext(Dispatchers.IO) {
-        try {
-            val activities = firestore.collection("hdd-monitor/accounts/user_activities")
-                .whereEqualTo("id_USER", userId)
-                .get()
-                .await()
-                .documents
-                .mapNotNull { it.toObject(UserActivity::class.java) }
-            Result.success(activities)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     suspend fun addMessage(message: Message): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             firestore.collection("hdd-monitor/accounts/messages")
@@ -228,13 +203,6 @@ class UserRepository @Inject constructor(
         }
     }
 }
-
-data class UserActivity(
-    val id_USER: String = "",
-    val id_CLIENT: String = "",
-    val timestamp: String = "",
-    val action: String = ""
-)
 
 data class Message(
     val ID_USER: String = "",

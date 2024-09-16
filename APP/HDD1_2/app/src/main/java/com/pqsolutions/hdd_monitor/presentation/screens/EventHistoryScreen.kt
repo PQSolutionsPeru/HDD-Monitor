@@ -35,18 +35,22 @@ fun EventHistoryScreen(
                 .padding(24.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "Historial de Eventos",
                     style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
                 )
                 AnimatedNotificationBell(
                     hasNewNotifications = hasPendingNotifications,
-                    onClick = onNotificationClick
+                    onClick = onNotificationClick,
+                    modifier = Modifier.size(48.dp)
                 )
             }
             Spacer(modifier = Modifier.height(32.dp))
