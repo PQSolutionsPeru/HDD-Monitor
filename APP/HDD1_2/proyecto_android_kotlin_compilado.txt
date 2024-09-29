@@ -1,163 +1,291 @@
-### build.gradle.kts ###
+### data\PanelRepository.kt ###
 
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.hilt.android)
-    alias(libs.plugins.google.services)
-    kotlin("kapt")
-}
+package com.pqsolutions.hdd_monitor.data
 
-android {
-    namespace = "com.pqsolutions.hdd_monitor"
-    compileSdk = 34
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.google.firebase.firestore.*
+import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.functions.FirebaseFunctions
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import com.pqsolutions.hdd_monitor.R
 
-    defaultConfig {
-        applicationId = "com.pqsolutions.hdd_monitor"
-        minSdk = 29
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+class PanelRepository @Inject constructor(
+    private val firestore: FirebaseFirestore,
+    private val firebaseMessaging: FirebaseMessaging,
+    private val context: Context
+) {
+    private val lastNotifiedStates = mutableMapOf<String, String>()
+    private val firebaseFunctions: FirebaseFunctions = FirebaseFunctions.getInstance()
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
+    fun getPanelsFlow(clientId: String?): Flow<List<Panel>> = callbackFlow {
+        val panelList = mutableListOf<Panel>()
+        val listeners = mutableListOf<ListenerRegistration>()
+
+        val clientsListener: ListenerRegistration = if (clientId != null) {
+            listenToSingleClient(clientId, panelList, listeners) { trySend(panelList.toList()) }
+        } else {
+            listenToAllClients(panelList, listeners) { trySend(panelList.toList()) }
+        }
+
+        listeners.add(clientsListener)
+
+        awaitClose {
+            listeners.forEach { it.remove() }
+        }
+    }.flowOn(Dispatchers.IO)
+
+    private fun listenToSingleClient(
+        clientId: String,
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ): ListenerRegistration {
+        val clientDocRef = firestore.collection("hdd-monitor/accounts/clients").document(clientId)
+        return clientDocRef.addSnapshotListener { snapshot: DocumentSnapshot?, error: FirebaseFirestoreException? ->
+            if (error != null) {
+                Log.e(TAG, "Error listening to client: ${error.message}")
+                return@addSnapshotListener
+            }
+
+            snapshot?.let { clientDoc ->
+                handleClientDocument(clientDoc, panelList, listeners, onUpdate)
+            }
         }
     }
 
-    buildTypes {
-        debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
-            resValue("string", "app_name", "HDD Monitor Debug")
+    private fun listenToAllClients(
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ): ListenerRegistration {
+        return firestore.collection("hdd-monitor/accounts/clients")
+            .addSnapshotListener { snapshot: QuerySnapshot?, error: FirebaseFirestoreException? ->
+                if (error != null) {
+                    Log.e(TAG, "Error listening to clients: ${error.message}")
+                    return@addSnapshotListener
+                }
+
+                snapshot?.documentChanges?.forEach { change: DocumentChange ->
+                    val clientDoc = change.document
+                    when (change.type) {
+                        DocumentChange.Type.ADDED,
+                        DocumentChange.Type.MODIFIED -> {
+                            handleClientDocument(clientDoc, panelList, listeners, onUpdate)
+                        }
+                        DocumentChange.Type.REMOVED -> {
+                            panelList.removeAll { it.clientId == clientDoc.id }
+                            onUpdate()
+                        }
+                    }
+                }
+            }
+    }
+
+    private fun handleClientDocument(
+        clientDoc: DocumentSnapshot,
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ) {
+        val clientId = clientDoc.id
+        val panelsListener = clientDoc.reference.collection("panels")
+            .addSnapshotListener { panelsSnapshot: QuerySnapshot?, panelsError: FirebaseFirestoreException? ->
+                if (panelsError != null) {
+                    Log.e(TAG, "Error listening to panels: ${panelsError.message}")
+                    return@addSnapshotListener
+                }
+
+                panelsSnapshot?.documentChanges?.forEach { panelChange: DocumentChange ->
+                    handlePanelChange(panelChange, clientId, panelList, listeners, onUpdate)
+                }
+                onUpdate()
+            }
+        listeners.add(panelsListener)
+    }
+
+    private fun handlePanelChange(
+        panelChange: DocumentChange,
+        clientId: String,
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ) {
+        val panelDoc = panelChange.document
+        val panel = panelDoc.toObject(Panel::class.java)?.copy(
+            ID = panelDoc.id,
+            clientId = clientId
+        ) ?: return
+
+        when (panelChange.type) {
+            DocumentChange.Type.ADDED -> {
+                panelList.add(panel)
+                addRelaysListener(panelDoc, panel, panelList, listeners, onUpdate)
+            }
+            DocumentChange.Type.MODIFIED -> {
+                val index = panelList.indexOfFirst { it.ID == panel.ID }
+                if (index != -1) {
+                    panelList[index] = panel.copy(relays = panelList[index].relays)
+                } else {
+                    panelList.add(panel)
+                }
+                addRelaysListener(panelDoc, panel, panelList, listeners, onUpdate)
+            }
+            DocumentChange.Type.REMOVED -> {
+                panelList.removeAll { it.ID == panel.ID }
+            }
         }
-        release {
-            isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            resValue("string", "app_name", "HDD Monitor")
+    }
+
+    private fun addRelaysListener(
+        panelDoc: DocumentSnapshot,
+        panel: Panel,
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ) {
+        val relaysListener = panelDoc.reference.collection("relays")
+            .addSnapshotListener { relaysSnapshot: QuerySnapshot?, relaysError: FirebaseFirestoreException? ->
+                if (relaysError != null) {
+                    Log.e(TAG, "Error listening to relays: ${relaysError.message}")
+                    return@addSnapshotListener
+                }
+
+                val relayList = relaysSnapshot?.documents?.mapNotNull { relayDoc ->
+                    relayDoc.toObject(Relay::class.java)?.copy(name = relayDoc.id)
+                } ?: emptyList()
+
+                val panelIndex = panelList.indexOfFirst { it.ID == panel.ID }
+                if (panelIndex != -1) {
+                    panelList[panelIndex] = panelList[panelIndex].copy(relays = relayList)
+                    checkForChangesAndNotify(panelList[panelIndex])
+                }
+
+                Log.d(TAG, "Relays updated for panel ${panel.name}: ${relayList.size} relays")
+                onUpdate()
+            }
+        listeners.add(relaysListener)
+    }
+
+    private fun checkForChangesAndNotify(panel: Panel) {
+        panel.relays.forEach { relay ->
+            val relayKey = "${panel.ID}_${relay.name}"
+            val lastStatus = lastNotifiedStates[relayKey]
+            if (lastStatus != null && lastStatus != relay.status) {
+                if (relay.status != "OK" || (lastStatus != "OK" && relay.status == "OK")) {
+                    sendCloudFunctionNotification(panel, relay)
+                }
+                lastNotifiedStates[relayKey] = relay.status
+            } else if (lastStatus == null) {
+                lastNotifiedStates[relayKey] = relay.status
+                if (relay.status != "OK") {
+                    sendCloudFunctionNotification(panel, relay)
+                }
+            }
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+
+    private fun sendCloudFunctionNotification(panel: Panel, relay: Relay) {
+        val data = hashMapOf(
+            "panelId" to panel.ID,
+            "panelName" to panel.name,
+            "relayName" to relay.name,
+            "relayStatus" to relay.status,
+            "clientId" to panel.clientId
+        )
+
+        Log.d(TAG, "Attempting to call Cloud Function")
+
+        firebaseFunctions
+            .getHttpsCallable("sendPanelNotification")
+            .call(data)
+            .addOnSuccessListener { result ->
+                Log.d(TAG, "Notification sent successfully")
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Error sending notification: ${e.message}", e)
+                sendLocalNotification(panel, relay)
+            }
     }
-    kotlinOptions {
-        jvmTarget = "17"
+
+    private fun sendLocalNotification(panel: Panel, relay: Relay) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "panel_updates"
+        val channelName = "Panel Updates"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notificationBuilder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Estado del Panel Actualizado")
+            .setContentText("Panel: ${panel.name}, Relay: ${relay.name}, Estado: ${relay.status}")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+
+        notificationManager.notify(panel.ID.hashCode(), notificationBuilder.build())
     }
-    buildFeatures {
-        compose = true
-    }
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.compose.compiler.get()
-    }
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+
+    suspend fun subscribeToClientTopic(clientId: String) = withContext(Dispatchers.IO) {
+        try {
+            firebaseMessaging.subscribeToTopic("client_$clientId").await()
+            Log.d(TAG, "Subscribed to topic: client_$clientId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error subscribing to topic: client_$clientId", e)
+            throw e
         }
     }
+
+    suspend fun unsubscribeFromClientTopic(clientId: String) = withContext(Dispatchers.IO) {
+        try {
+            firebaseMessaging.unsubscribeFromTopic("client_$clientId").await()
+            Log.d(TAG, "Unsubscribed from topic: client_$clientId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unsubscribing from topic: client_$clientId", e)
+            throw e
+        }
+    }
+
+    companion object {
+        private const val TAG = "PanelRepository"
+    }
 }
 
-dependencies {
-    val composeBom = platform(libs.androidx.compose.bom)
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
+data class Panel(
+    val ID: String = "",
+    val name: String = "",
+    val location: String = "",
+    val SSID: String = "",
+    val SSID_CON: String = "",
+    val SSID_PW: String = "",
+    val ESP32_IP: String = "",
+    val ID_CLIENT: String = "",
+    var relays: List<Relay> = emptyList(),
+    var clientId: String = ""
+)
 
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.runtime)
-
-    implementation(libs.hilt.android)
-    kapt(libs.hilt.android.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
-
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-messaging-ktx")
-
-    implementation("androidx.navigation:navigation-compose:2.7.6")
-    implementation("androidx.paging:paging-compose:3.2.1")
-
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.6.4")
-
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito:mockito-core:3.12.4")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.4")
-    androidTestImplementation(libs.androidx.test.ext.junit)
-    androidTestImplementation(libs.androidx.test.espresso.core)
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
-    implementation("androidx.datastore:datastore-preferences-core:1.0.0")
-}
-
-kotlin {
-    jvmToolchain(17)
-}
-
-kapt {
-    correctErrorTypes = true
-    useBuildCache = true
-}
+data class Relay(
+    val name: String = "",
+    val status: String = "",
+    val date_time: String = ""
+)
 
 ==================================================
 
-### src\main\AndroidManifest.xml ###
-
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-    <uses-permission android:name="android.permission.VIBRATE" />
-
-    <application
-        android:name=".HddApplication"
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.HDD1_2"
-        tools:targetApi="31">
-
-        <activity
-            android:name=".presentation.MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.HDD1_2">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
-        <service
-            android:name=".service.HddFirebaseMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
-
-    </application>
-
-</manifest>
-
-==================================================
-
-### src\main\java\com\pqsolutions\hdd_monitor\presentation\MainActivity.kt ###
+### presentation\MainActivity.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation
 
@@ -183,57 +311,193 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("MainActivity", "onCreate called")
+        Log.d(TAG, "onCreate called")
 
+        initializeFirebase()
+        setAppContent()
+
+        Log.d(TAG, "onCreate completed")
+    }
+
+    private fun initializeFirebase() {
         FirebaseApp.initializeApp(this)
-        Log.d("MainActivity", "FirebaseApp initialized")
+        Log.d(TAG, "FirebaseApp initialized")
+    }
 
+    private fun setAppContent() {
+        Log.d(TAG, "Setting content")
         setContent {
-            Log.d("MainActivity", "Setting content")
             HDD1_2Theme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val uiState by viewModel.uiState.collectAsState()
-                    Log.d("MainActivity", "Current UI State: $uiState")
+                    Log.d(TAG, "Current UI State: $uiState")
 
                     AppNavigation(viewModel)
                 }
             }
         }
-        Log.d("MainActivity", "onCreate completed")
     }
 
     override fun onStart() {
         super.onStart()
-        Log.d("MainActivity", "onStart called")
+        Log.d(TAG, "onStart called")
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d("MainActivity", "onResume called")
+        Log.d(TAG, "onResume called")
     }
 
     override fun onPause() {
         super.onPause()
-        Log.d("MainActivity", "onPause called")
+        Log.d(TAG, "onPause called")
     }
 
     override fun onStop() {
         super.onStop()
-        Log.d("MainActivity", "onStop called")
+        Log.d(TAG, "onStop called")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d("MainActivity", "onDestroy called")
+        Log.d(TAG, "onDestroy called")
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
     }
 }
 
 ==================================================
 
-### src\main\java\com\pqsolutions\hdd_monitor\presentation\screens\AdminDashboardScreen.kt ###
+### presentation\navigation\AppNavigation.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.navigation
+
+import android.util.Log
+import androidx.compose.runtime.*
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.pqsolutions.hdd_monitor.data.UserRole
+import com.pqsolutions.hdd_monitor.presentation.screens.*
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
+
+private const val TAG = "AppNavigation"
+
+@Composable
+fun AppNavigation(viewModel: MainViewModel) {
+    Log.d(TAG, "Starting AppNavigation composition")
+    val uiState by viewModel.uiState.collectAsState()
+    val navController = rememberNavController()
+    val hasPendingNotifications by viewModel.hasPendingNotifications.collectAsState()
+
+    NavHost(
+        navController = navController,
+        startDestination = getStartDestination(uiState.isFirstLaunch, uiState.isLoggedIn)
+    ) {
+        composable("onboarding") {
+            OnboardingScreen(
+                onFinish = {
+                    viewModel.onEvent(MainUiEvent.FinishOnboarding)
+                    navController.navigateToLogin()
+                }
+            )
+        }
+        composable("login") {
+            LoginScreen(
+                onLoginClick = { email, password ->
+                    Log.d(TAG, "Login attempt with email: $email")
+                    viewModel.onEvent(MainUiEvent.Login(email, password))
+                }
+            )
+        }
+        composable("dashboard") {
+            Log.d(TAG, "Navigating to Dashboard. User role: ${uiState.userData?.role}")
+            when (uiState.userData?.role) {
+                UserRole.ADMIN -> AdminDashboardScreen(
+                    onLogoutClick = { handleLogout(viewModel) },
+                    onManageUsersClick = { navController.navigate("user_management") },
+                    onViewAlertsClick = { navController.navigate("alerts") },
+                    onViewEventHistoryClick = { navController.navigate("event_history") },
+                    hasPendingNotifications = hasPendingNotifications
+                )
+                UserRole.USER -> UserDashboardScreen(
+                    onLogoutClick = { handleLogout(viewModel) },
+                    onViewEventHistoryClick = { navController.navigate("event_history") },
+                    onViewAlertsClick = { navController.navigate("alerts") },
+                    hasPendingNotifications = hasPendingNotifications
+                )
+                else -> {
+                    Log.d(TAG, "Invalid user role, navigating to Login")
+                    LaunchedEffect(Unit) {
+                        navController.navigateToLogin()
+                    }
+                }
+            }
+        }
+        composable("user_management") {
+            UserManagementScreen(
+                onBackClick = { navController.popBackStack() },
+                hasPendingNotifications = hasPendingNotifications,
+                onNotificationClick = { navController.navigate("alerts") }
+            )
+        }
+        composable("event_history") {
+            EventHistoryScreen(
+                onBackClick = { navController.popBackStack() },
+                hasPendingNotifications = hasPendingNotifications,
+                onNotificationClick = { navController.navigate("alerts") }
+            )
+        }
+        composable("alerts") {
+            AlertScreen(
+                onBackClick = { navController.popBackStack() },
+                isAdmin = uiState.userData?.role == UserRole.ADMIN,
+                hasPendingNotifications = hasPendingNotifications
+            )
+        }
+    }
+
+    LaunchedEffect(uiState.currentRoute) {
+        Log.d(TAG, "LaunchedEffect: Current route changed to ${uiState.currentRoute}")
+        if (uiState.currentRoute != navController.currentDestination?.route) {
+            navController.navigate(uiState.currentRoute) {
+                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            }
+        }
+    }
+
+    Log.d(TAG, "AppNavigation composition completed")
+}
+
+private fun getStartDestination(isFirstLaunch: Boolean, isLoggedIn: Boolean): String {
+    return when {
+        isFirstLaunch -> "onboarding"
+        isLoggedIn -> "dashboard"
+        else -> "login"
+    }
+}
+
+private fun handleLogout(viewModel: MainViewModel) {
+    Log.d(TAG, "Logout clicked")
+    viewModel.onEvent(MainUiEvent.Logout)
+}
+
+private fun NavHostController.navigateToLogin() {
+    navigate("login") {
+        popUpTo(graph.startDestinationId) { inclusive = true }
+    }
+}
+
+==================================================
+
+### presentation\screens\UserDashboardScreen.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.screens
 
@@ -247,45 +511,40 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.Relay
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import androidx.compose.foundation.clickable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.ui.graphics.vector.ImageVector
+import com.pqsolutions.hdd_monitor.presentation.components.DashboardButton
+import com.pqsolutions.hdd_monitor.presentation.components.PanelsList
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 
-@OptIn(ExperimentalAnimationApi::class)
+private const val TAG = "UserDashboardScreen"
+
 @Composable
-fun AdminDashboardScreen(
+fun UserDashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
     onLogoutClick: () -> Unit,
-    onManageUsersClick: () -> Unit,
-    onViewAlertsClick: () -> Unit,
     onViewEventHistoryClick: () -> Unit,
+    onViewAlertsClick: () -> Unit,
     hasPendingNotifications: Boolean
 ) {
-    Log.d("AdminDashboardScreen", "Composing AdminDashboardScreen, hasPendingNotifications: $hasPendingNotifications")
+    Log.d(TAG, "Composing UserDashboardScreen, hasPendingNotifications: $hasPendingNotifications")
+
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
         val context = LocalContext.current
         val scrollState = rememberScrollState()
 
-        LaunchedEffect(Unit) {
-            Log.d("AdminDashboardScreen", "LaunchedEffect: Loading panels")
-            viewModel.loadPanels()
-        }
+        HandleLifecycleEvents(viewModel)
 
         Column(
             modifier = Modifier
@@ -294,313 +553,603 @@ fun AdminDashboardScreen(
                 .verticalScroll(scrollState)
                 .padding(24.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.admin_dashboard_title),
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                AnimatedNotificationBell(
-                    hasNewNotifications = hasPendingNotifications,
-                    onClick = {
-                        Log.d("AdminDashboardScreen", "Notification bell clicked")
-                        onViewAlertsClick()
-                    },
-                    modifier = Modifier.size(48.dp)
-                )
-            }
+            DashboardHeader(
+                hasPendingNotifications = hasPendingNotifications,
+                onViewAlertsClick = onViewAlertsClick
+            )
             Spacer(modifier = Modifier.height(32.dp))
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column {
-                    Button(
-                        onClick = {
-                            Log.d("AdminDashboardScreen", "Manage Users button clicked")
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            onManageUsersClick()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.manage_users))
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            Log.d("AdminDashboardScreen", "View Alerts button clicked")
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            onViewAlertsClick()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.view_alerts))
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            Log.d("AdminDashboardScreen", "View Event History button clicked")
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            onViewEventHistoryClick()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.view_event_history))
-                    }
+            DashboardActions(
+                onViewEventHistoryClick = onViewEventHistoryClick,
+                onViewAlertsClick = onViewAlertsClick,
+                context = context
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            PanelsList(uiState)
+            Spacer(modifier = Modifier.height(32.dp))
+            LogoutButton(onLogoutClick, context)
+        }
+    }
+
+    Log.d(TAG, "UserDashboardScreen composition completed")
+}
+
+@Composable
+private fun HandleLifecycleEvents(viewModel: DashboardViewModel) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    Log.d(TAG, "ON_RESUME: Refreshing panels")
+                    viewModel.refreshPanels()
                 }
-            }
-            Spacer(modifier = Modifier.height(32.dp))
-            PanelsList(uiState.panels)
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(
-                onClick = {
-                    Log.d("AdminDashboardScreen", "Logout button clicked")
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onLogoutClick()
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary
-                )
-            ) {
-                Text(stringResource(R.string.logout))
+                Lifecycle.Event.ON_PAUSE -> {
+                    Log.d(TAG, "ON_PAUSE: Cancelling current job")
+                    viewModel.cancelCurrentJob()
+                }
+                else -> {} // Do nothing for other events
             }
         }
-    }
-    Log.d("AdminDashboardScreen", "AdminDashboardScreen composition completed")
-}
-
-@Composable
-fun PanelsList(panels: List<Panel>) {
-    Text(
-        text = "Paneles de Incendio (${panels.size})",
-        style = MaterialTheme.typography.headlineSmall,
-        color = MaterialTheme.colorScheme.primary
-    )
-    Spacer(modifier = Modifier.height(16.dp))
-    if (panels.isEmpty()) {
-        Text("No hay paneles disponibles")
-    } else {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            panels.forEach { panel ->
-                PanelItem(panel)
-            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 }
 
 @Composable
-fun PanelItem(panel: Panel) {
-    var expanded by remember { mutableStateOf(false) }
-    val allRelaysOk = panel.relays.all { it.status == "OK" }
-    val statusColor = if (allRelaysOk) Color.Green else Color.Red
-    val statusText = if (allRelaysOk) "OK" else {
-        panel.relays.filter { it.status != "OK" }.joinToString(", ") { it.name }
-    }
-
-    Card(
+private fun DashboardHeader(
+    hasPendingNotifications: Boolean,
+    onViewAlertsClick: () -> Unit
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = !expanded }
-            .padding(vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (allRelaysOk) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = panel.name,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "IP: ${panel.ESP32_IP}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "Cliente: ${panel.clientId}", style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Estado:",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = statusText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = statusColor,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Detalles de relays:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                panel.relays.forEach { relay ->
-                    RelayStatus(relay)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun RelayStatus(relay: Relay) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
+            .padding(bottom = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = relay.name,
-            style = MaterialTheme.typography.bodySmall
+            text = stringResource(R.string.user_dashboard_title),
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f)
         )
-        Text(
-            text = relay.status,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (relay.status == "OK") Color.Green else Color.Red,
-            fontWeight = FontWeight.Bold
+        AnimatedNotificationBell(
+            hasNewNotifications = hasPendingNotifications,
+            onClick = {
+                Log.d(TAG, "Notification bell clicked")
+                onViewAlertsClick()
+            },
+            modifier = Modifier.size(48.dp)
         )
     }
 }
 
-==================================================
-
-### src\main\java\com\pqsolutions\hdd_monitor\presentation\theme\Color.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.theme
-
-import androidx.compose.ui.graphics.Color
-
-// Colores principales
-val HddRed = Color(0xFFF43131)
-val HddDarkRed = Color(0xFFB50000)
-val HddGrey = Color(0xFF58595B)
-val HddLightGrey = Color(0xFFF1F1F1)
-
-// Colores secundarios
-val HddWhite = Color(0xFFFFFFFF)
-val HddBlack = Color(0xFF000000)
-val HddGreen = Color(0xFF4CAF50)
-val HddYellow = Color(0xFFFFC107)
-
-// Colores adicionales para mayor variedad
-val HddOrange = Color(0xFFFFA500)
-val HddBlue = Color(0xFF2196F3)
-val HddLightBlue = Color(0xFF03A9F4)
-val HddDarkGrey = Color(0xFF333333)
-
-==================================================
-
-### src\main\java\com\pqsolutions\hdd_monitor\presentation\theme\Theme.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.theme
-
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
-
-private val LightColorScheme = lightColorScheme(
-    primary = HddRed,
-    onPrimary = HddWhite,
-    primaryContainer = HddDarkRed,
-    onPrimaryContainer = HddWhite,
-    secondary = HddGrey,
-    onSecondary = HddWhite,
-    secondaryContainer = HddLightGrey,
-    onSecondaryContainer = HddBlack,
-    tertiary = HddBlue,
-    onTertiary = HddWhite,
-    tertiaryContainer = HddLightBlue,
-    onTertiaryContainer = HddWhite,
-    error = HddRed,
-    onError = HddWhite,
-    errorContainer = HddDarkRed,
-    onErrorContainer = HddWhite,
-    background = HddWhite,
-    onBackground = HddBlack,
-    surface = HddWhite,
-    onSurface = HddBlack
-)
-
-private val DarkColorScheme = darkColorScheme(
-    primary = HddRed,
-    onPrimary = HddWhite,
-    primaryContainer = HddDarkRed,
-    onPrimaryContainer = HddWhite,
-    secondary = HddLightGrey,
-    onSecondary = HddBlack,
-    secondaryContainer = HddGrey,
-    onSecondaryContainer = HddWhite,
-    tertiary = HddLightBlue,
-    onTertiary = HddWhite,
-    tertiaryContainer = HddBlue,
-    onTertiaryContainer = HddWhite,
-    error = HddRed,
-    onError = HddWhite,
-    errorContainer = HddDarkRed,
-    onErrorContainer = HddWhite,
-    background = HddDarkGrey,
-    onBackground = HddWhite,
-    surface = HddDarkGrey,
-    onSurface = HddWhite
-)
+@Composable
+private fun DashboardActions(
+    onViewEventHistoryClick: () -> Unit,
+    onViewAlertsClick: () -> Unit,
+    context: android.content.Context
+) {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically()
+    ) {
+        Column {
+            DashboardButton(
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onViewEventHistoryClick()
+                },
+                text = stringResource(R.string.view_event_history)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            DashboardButton(
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onViewAlertsClick()
+                },
+                text = stringResource(R.string.view_alerts)
+            )
+        }
+    }
+}
 
 @Composable
-fun HDD1_2Theme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
-    content: @Composable () -> Unit
-) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
-        }
-    }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
+private fun LogoutButton(onLogoutClick: () -> Unit, context: android.content.Context) {
+    DashboardButton(
+        onClick = {
+            performHapticFeedback(context)
+            playSoundEffect(context, R.raw.button_click)
+            onLogoutClick()
+        },
+        text = stringResource(R.string.logout),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.secondary
+        )
     )
+}
+
+==================================================
+
+### presentation\viewmodel\DashboardViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.data.UserRole
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import javax.inject.Inject
+
+@HiltViewModel
+class DashboardViewModel @Inject constructor(
+    private val panelRepository: PanelRepository,
+    private val userRepository: UserRepository,
+    @ApplicationContext private val context: Context
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(DashboardUiState())
+    val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+
+    private var panelsJob: Job? = null
+
+    private val panelUpdateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "com.pqsolutions.hdd_monitor.PANEL_UPDATE") {
+                val panelName = intent.getStringExtra("panelName") ?: return
+                val relayName = intent.getStringExtra("relayName") ?: return
+                val relayStatus = intent.getStringExtra("relayStatus") ?: return
+                updatePanelState(panelName, relayName, relayStatus)
+            }
+        }
+    }
+
+    init {
+        Log.d(TAG, "ViewModel initialized")
+        registerPanelUpdateReceiver()
+        loadPanels()
+    }
+
+    private fun registerPanelUpdateReceiver() {
+        context.registerReceiver(
+            panelUpdateReceiver,
+            IntentFilter("com.pqsolutions.hdd_monitor.PANEL_UPDATE")
+        )
+    }
+
+    fun loadPanels() {
+        Log.d(TAG, "Loading panels")
+        panelsJob?.cancel()
+        panelsJob = viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isLoading = true, error = null) }
+                val currentUser = userRepository.getCurrentUser()
+                Log.d(TAG, "Current user: $currentUser")
+                if (currentUser != null) {
+                    val clientId = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientId
+                    Log.d(TAG, "Fetching panels for clientId: $clientId")
+                    panelRepository.getPanelsFlow(clientId)
+                        .catch { error ->
+                            handlePanelLoadError(error)
+                        }
+                        .collect { panels ->
+                            handlePanelsLoaded(panels)
+                        }
+                } else {
+                    handleNoAuthenticatedUser()
+                }
+            } catch (e: CancellationException) {
+                Log.d(TAG, "Panel loading was cancelled")
+                // No need to update UI state for cancellation
+            } catch (e: Exception) {
+                handleUnexpectedError(e)
+            }
+        }
+    }
+
+    private fun handlePanelLoadError(error: Throwable) {
+        Log.e(TAG, "Error loading panels: ${error.message}", error)
+        _uiState.update { it.copy(
+            isLoading = false,
+            error = error.message ?: "Unknown error occurred"
+        ) }
+    }
+
+    private fun handlePanelsLoaded(panels: List<Panel>) {
+        Log.d(TAG, "Panels loaded: ${panels.size}")
+        panels.forEach { panel ->
+            Log.d(TAG, "Panel ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.clientId}) relays: ${panel.relays}")
+        }
+        _uiState.update { it.copy(
+            isLoading = false,
+            panels = panels,
+            error = null
+        ) }
+        checkForAlerts(panels)
+    }
+
+    private fun handleNoAuthenticatedUser() {
+        Log.e(TAG, "No authenticated user found")
+        _uiState.update { it.copy(
+            isLoading = false,
+            error = "No se encontró usuario autenticado"
+        ) }
+    }
+
+    private fun handleUnexpectedError(e: Exception) {
+        Log.e(TAG, "Error: ${e.message}", e)
+        _uiState.update { it.copy(
+            isLoading = false,
+            error = e.message ?: "Error desconocido"
+        ) }
+    }
+
+    private fun checkForAlerts(panels: List<Panel>) {
+        val alerts = panels.flatMap { panel ->
+            panel.relays.filter { it.status != "OK" }.map { relay ->
+                "Panel ${panel.name}: ${relay.name} estado ${relay.status}"
+            }
+        }
+        Log.d(TAG, "Alerts found: ${alerts.size}")
+        _uiState.update { it.copy(alerts = alerts) }
+    }
+
+    private fun updatePanelState(panelName: String, relayName: String, relayStatus: String) {
+        val currentPanels = _uiState.value.panels.toMutableList()
+        val panelIndex = currentPanels.indexOfFirst { it.name == panelName }
+        if (panelIndex != -1) {
+            val panel = currentPanels[panelIndex]
+            val updatedRelays = panel.relays.map {
+                if (it.name == relayName) it.copy(status = relayStatus) else it
+            }
+            currentPanels[panelIndex] = panel.copy(relays = updatedRelays)
+            _uiState.update { it.copy(panels = currentPanels) }
+            checkForAlerts(currentPanels)
+        }
+    }
+
+    fun refreshPanels() {
+        Log.d(TAG, "Refreshing panels")
+        loadPanels()
+    }
+
+    fun cancelCurrentJob() {
+        Log.d(TAG, "Cancelling current job")
+        panelsJob?.cancel()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        Log.d(TAG, "ViewModel cleared")
+        panelsJob?.cancel()
+        context.unregisterReceiver(panelUpdateReceiver)
+    }
+
+    companion object {
+        private const val TAG = "DashboardViewModel"
+    }
+}
+
+data class DashboardUiState(
+    val isLoading: Boolean = false,
+    val panels: List<Panel> = emptyList(),
+    val error: String? = null,
+    val alerts: List<String> = emptyList()
+)
+
+==================================================
+
+### presentation\viewmodel\MainViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.firebase.messaging.FirebaseMessaging
+import com.pqsolutions.hdd_monitor.data.*
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import javax.inject.Inject
+
+@HiltViewModel
+class MainViewModel @Inject constructor(
+    private val authRepository: AuthRepository,
+    private val userRepository: UserRepository,
+    private val userPreferences: UserPreferences,
+    private val alertRepository: AlertRepository,
+    @ApplicationContext private val context: Context
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(MainUiState())
+    val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    private val _hasPendingNotifications = MutableStateFlow(false)
+    val hasPendingNotifications: StateFlow<Boolean> = _hasPendingNotifications.asStateFlow()
+
+    private val notificationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                "com.pqsolutions.hdd_monitor.NEW_ALERT",
+                "com.pqsolutions.hdd_monitor.NEW_MESSAGE",
+                "com.pqsolutions.hdd_monitor.PANEL_UPDATE" -> {
+                    checkPendingNotifications()
+                }
+            }
+        }
+    }
+
+    init {
+        initializeViewModel()
+    }
+
+    private fun initializeViewModel() {
+        viewModelScope.launch {
+            combineUserPreferences().collect { state ->
+                _uiState.value = state
+                Log.d(TAG, "UI State updated: $state")
+                if (state.isLoggedIn) {
+                    checkPendingNotifications()
+                }
+            }
+        }
+        checkAuthState()
+        registerNotificationReceiver()
+    }
+
+    private fun combineUserPreferences() = combine(
+        userPreferences.isFirstLaunchFlow,
+        userPreferences.userDataFlow,
+        userPreferences.themeFlow,
+        userPreferences.languageFlow,
+        userPreferences.notificationsEnabledFlow
+    ) { isFirstLaunch, userData, theme, language, notificationsEnabled ->
+        MainUiState(
+            isFirstLaunch = isFirstLaunch,
+            isLoggedIn = userData != null,
+            userData = userData,
+            theme = theme,
+            language = language,
+            notificationsEnabled = notificationsEnabled,
+            currentRoute = if (isFirstLaunch) "onboarding" else if (userData != null) "dashboard" else "login"
+        )
+    }
+
+    private fun registerNotificationReceiver() {
+        val filter = IntentFilter().apply {
+            addAction("com.pqsolutions.hdd_monitor.NEW_ALERT")
+            addAction("com.pqsolutions.hdd_monitor.NEW_MESSAGE")
+            addAction("com.pqsolutions.hdd_monitor.PANEL_UPDATE")
+        }
+        context.registerReceiver(notificationReceiver, filter)
+    }
+
+    private fun checkAuthState() {
+        viewModelScope.launch {
+            val currentUser = userRepository.getCurrentUser()
+            Log.d(TAG, "Current user: $currentUser")
+            if (currentUser != null) {
+                userPreferences.setUserData(currentUser)
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = true,
+                    userData = currentUser,
+                    error = null
+                )
+                checkPendingNotifications()
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = false,
+                    userData = null,
+                    error = null
+                )
+            }
+        }
+    }
+
+    private fun checkPendingNotifications() {
+        viewModelScope.launch {
+            val currentUser = userRepository.getCurrentUser()
+            Log.d(TAG, "Checking pending notifications for user: ${currentUser?.id}")
+            if (currentUser != null) {
+                alertRepository.getAlertsFlow(currentUser.clientId)
+                    .distinctUntilChanged()
+                    .collect { alerts ->
+                        val hasPending = alerts.any { it.status == "PROGRAMADO" }
+                        if (hasPending != _hasPendingNotifications.value) {
+                            _hasPendingNotifications.value = hasPending
+                            Log.d(TAG, "Pending notifications updated: $hasPending")
+                        }
+                    }
+            }
+        }
+    }
+
+    fun onEvent(event: MainUiEvent) {
+        when (event) {
+            is MainUiEvent.Login -> login(event.email, event.password)
+            is MainUiEvent.Logout -> logout()
+            is MainUiEvent.FinishOnboarding -> finishOnboarding()
+            is MainUiEvent.SetTheme -> setTheme(event.theme)
+            is MainUiEvent.SetLanguage -> setLanguage(event.language)
+            is MainUiEvent.SetNotificationsEnabled -> setNotificationsEnabled(event.enabled)
+        }
+    }
+
+    private fun login(email: String, password: String) {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Attempting login for email: $email")
+                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+                authRepository.login(email, password).fold(
+                    onSuccess = { user ->
+                        handleLoginSuccess(user)
+                    },
+                    onFailure = { e ->
+                        handleLoginFailure(e)
+                    }
+                )
+            } catch (e: Exception) {
+                handleNetworkError(e)
+            }
+        }
+    }
+
+    private suspend fun handleLoginSuccess(user: UserData) {
+        userPreferences.setUserData(user)
+        updateFCMToken()
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            isLoggedIn = true,
+            userData = user,
+            error = null
+        )
+        Log.d(TAG, "Login successful for user: ${user.name}")
+        checkPendingNotifications()
+    }
+
+    private fun handleLoginFailure(e: Throwable) {
+        Log.e(TAG, "Login failed: ${e.message}", e)
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            error = e.message ?: "Unknown error occurred"
+        )
+    }
+
+    private fun handleNetworkError(e: Exception) {
+        Log.e(TAG, "Network error during login: ${e.message}", e)
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            error = "Network error: ${e.message}"
+        )
+    }
+
+    private fun logout() {
+        viewModelScope.launch {
+            Log.d(TAG, "Attempting logout")
+            try {
+                authRepository.logout()
+                userPreferences.clearUserData()
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = false,
+                    userData = null,
+                    error = null
+                )
+                _hasPendingNotifications.value = false
+                Log.d(TAG, "Logout successful")
+            } catch (e: Exception) {
+                Log.e(TAG, "Logout failed: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
+            }
+        }
+    }
+
+    private fun finishOnboarding() {
+        viewModelScope.launch {
+            userPreferences.setFirstLaunch(false)
+        }
+    }
+
+    private fun setTheme(theme: String) {
+        viewModelScope.launch {
+            userPreferences.setTheme(theme)
+        }
+    }
+
+    private fun setLanguage(language: String) {
+        viewModelScope.launch {
+            userPreferences.setLanguage(language)
+        }
+    }
+
+    private fun setNotificationsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferences.setNotificationsEnabled(enabled)
+        }
+    }
+
+    private suspend fun updateFCMToken() {
+        try {
+            val token = FirebaseMessaging.getInstance().token.await()
+            val currentUser = userRepository.getCurrentUser()
+            if (currentUser != null) {
+                userRepository.updateUserToken(currentUser.id, token)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating FCM token: ${e.message}")
+        }
+    }
+
+    fun sendMessage(subject: String, content: String) {
+        viewModelScope.launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
+                    val timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                    val message = Message(currentUser.id, currentUser.clientId, content, subject, timestamp)
+                    userRepository.addMessage(message)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending message: ${e.message}")
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        context.unregisterReceiver(notificationReceiver)
+    }
+
+    companion object {
+        private const val TAG = "MainViewModel"
+    }
+}
+
+data class MainUiState(
+    val isLoading: Boolean = false,
+    val isLoggedIn: Boolean = false,
+    val isFirstLaunch: Boolean = true,
+    val userData: UserData? = null,
+    val error: String? = null,
+    val currentRoute: String = "login",
+    val theme: String = "system",
+    val language: String = "es",
+    val notificationsEnabled: Boolean = true
+)
+
+sealed class MainUiEvent {
+    data class Login(val email: String, val password: String) : MainUiEvent()
+    object Logout : MainUiEvent()
+    object FinishOnboarding : MainUiEvent()
+    data class SetTheme(val theme: String) : MainUiEvent()
+    data class SetLanguage(val language: String) : MainUiEvent()
+    data class SetNotificationsEnabled(val enabled: Boolean) : MainUiEvent()
 }
 
 ==================================================

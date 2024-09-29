@@ -34,15 +34,18 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
         private const val CHANNEL_ID = "hdd_monitor_alerts"
         private const val CHANNEL_NAME = "HDD Monitor Alerts"
         private const val CHANNEL_DESCRIPTION = "Notifications for HDD Monitor alerts"
+        private const val TAG = "HddFirebaseMessaging"
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
+        Log.d(TAG, "Message received: ${remoteMessage.data}")
         remoteMessage.data.let { data ->
             when (data["type"]) {
                 "ALERT" -> handleAlert(data)
                 "MESSAGE" -> handleMessage(data)
-                else -> Log.d("FirebaseMessagingService", "Unknown message type: ${data["type"]}")
+                "PANEL_UPDATE" -> handlePanelUpdate(data)
+                else -> Log.d(TAG, "Unknown message type: ${data["type"]}")
             }
         }
     }
@@ -57,12 +60,29 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
         )
         showNotification(alert.title, alert.text)
         saveAlert(alert)
+        sendBroadcast(Intent("com.pqsolutions.hdd_monitor.NEW_ALERT"))
     }
 
     private fun handleMessage(data: Map<String, String>) {
         val title = data["subject"] ?: "Nuevo mensaje"
         val content = data["content"] ?: ""
         showNotification(title, content)
+        sendBroadcast(Intent("com.pqsolutions.hdd_monitor.NEW_MESSAGE"))
+    }
+
+    private fun handlePanelUpdate(data: Map<String, String>) {
+        val panelName = data["panelName"] ?: "Panel desconocido"
+        val relayName = data["relayName"] ?: "Relay desconocido"
+        val relayStatus = data["relayStatus"] ?: "Estado desconocido"
+        val title = "Actualización de Panel"
+        val content = "Panel: $panelName, Relay: $relayName, Estado: $relayStatus"
+        showNotification(title, content)
+
+        val intent = Intent("com.pqsolutions.hdd_monitor.PANEL_UPDATE")
+        intent.putExtra("panelName", panelName)
+        intent.putExtra("relayName", relayName)
+        intent.putExtra("relayStatus", relayStatus)
+        sendBroadcast(intent)
     }
 
     private fun showNotification(title: String, content: String) {
@@ -72,7 +92,7 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
-        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
         val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -109,7 +129,7 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        Log.d("FirebaseMessagingService", "Refreshed token: $token")
+        Log.d(TAG, "Refreshed token: $token")
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val currentUser = userRepository.getCurrentUser()
@@ -117,7 +137,7 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
                     userRepository.updateUserToken(currentUser.id, token)
                 }
             } catch (e: Exception) {
-                Log.e("FirebaseMessagingService", "Error updating token: ${e.message}")
+                Log.e(TAG, "Error updating token: ${e.message}")
             }
         }
     }

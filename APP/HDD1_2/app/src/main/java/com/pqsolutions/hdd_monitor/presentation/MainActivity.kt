@@ -22,50 +22,62 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("MainActivity", "onCreate called")
+        Log.d(TAG, "onCreate called")
 
+        initializeFirebase()
+        setAppContent()
+
+        Log.d(TAG, "onCreate completed")
+    }
+
+    private fun initializeFirebase() {
         FirebaseApp.initializeApp(this)
-        Log.d("MainActivity", "FirebaseApp initialized")
+        Log.d(TAG, "FirebaseApp initialized")
+    }
 
+    private fun setAppContent() {
+        Log.d(TAG, "Setting content")
         setContent {
-            Log.d("MainActivity", "Setting content")
             HDD1_2Theme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val uiState by viewModel.uiState.collectAsState()
-                    Log.d("MainActivity", "Current UI State: $uiState")
+                    Log.d(TAG, "Current UI State: $uiState")
 
                     AppNavigation(viewModel)
                 }
             }
         }
-        Log.d("MainActivity", "onCreate completed")
     }
 
     override fun onStart() {
         super.onStart()
-        Log.d("MainActivity", "onStart called")
+        Log.d(TAG, "onStart called")
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d("MainActivity", "onResume called")
+        Log.d(TAG, "onResume called")
     }
 
     override fun onPause() {
         super.onPause()
-        Log.d("MainActivity", "onPause called")
+        Log.d(TAG, "onPause called")
     }
 
     override fun onStop() {
         super.onStop()
-        Log.d("MainActivity", "onStop called")
+        Log.d(TAG, "onStop called")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d("MainActivity", "onDestroy called")
+        Log.d(TAG, "onDestroy called")
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
     }
 }

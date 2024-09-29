@@ -16,33 +16,25 @@ class UserRepository @Inject constructor(
         try {
             val users = mutableListOf<UserData>()
 
+            // Obtener administradores
             val adminsQuery = firestore.collection("hdd-monitor/accounts/admins").get().await()
-            for (adminDoc in adminsQuery.documents) {
-                users.add(UserData(
-                    id = adminDoc.getString("ID") ?: "",
-                    email = adminDoc.getString("email") ?: "",
-                    name = adminDoc.getString("name") ?: "",
-                    role = UserRole.ADMIN,
-                    clientId = ""
-                ))
-            }
+            users.addAll(adminsQuery.documents.mapNotNull { adminDoc ->
+                adminDoc.toObject(UserData::class.java)?.copy(role = UserRole.ADMIN, clientId = "")
+            })
 
+            // Obtener usuarios de clientes
             val clientsQuery = firestore.collection("hdd-monitor/accounts/clients").get().await()
-            for (clientDoc in clientsQuery.documents) {
+            clientsQuery.documents.forEach { clientDoc ->
                 val usersQuery = clientDoc.reference.collection("users").get().await()
-                for (userDoc in usersQuery.documents) {
-                    users.add(UserData(
-                        id = userDoc.getString("ID") ?: "",
-                        email = userDoc.getString("email") ?: "",
-                        name = userDoc.getString("name") ?: "",
-                        role = UserRole.USER,
-                        clientId = clientDoc.id
-                    ))
-                }
+                users.addAll(usersQuery.documents.mapNotNull { userDoc ->
+                    userDoc.toObject(UserData::class.java)?.copy(role = UserRole.USER, clientId = clientDoc.id)
+                })
             }
 
+            Log.d(TAG, "Retrieved ${users.size} users")
             Result.success(users)
         } catch (e: Exception) {
+            Log.e(TAG, "Error getting users: ${e.message}")
             Result.failure(e)
         }
     }
@@ -55,8 +47,10 @@ class UserRepository @Inject constructor(
                 "hdd-monitor/accounts/clients/${user.clientId}/users"
             }
             firestore.collection(collectionPath).add(user).await()
+            Log.d(TAG, "User created successfully: ${user.email}")
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "Error creating user: ${e.message}")
             Result.failure(e)
         }
     }
@@ -72,11 +66,14 @@ class UserRepository @Inject constructor(
             if (!query.isEmpty) {
                 val documentId = query.documents.first().id
                 firestore.collection(collectionPath).document(documentId).set(user).await()
+                Log.d(TAG, "User updated successfully: ${user.email}")
                 Result.success(Unit)
             } else {
+                Log.w(TAG, "User not found for update: ${user.email}")
                 Result.failure(Exception("User not found"))
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Error updating user: ${e.message}")
             Result.failure(e)
         }
     }
@@ -92,11 +89,14 @@ class UserRepository @Inject constructor(
             if (!query.isEmpty) {
                 val documentId = query.documents.first().id
                 firestore.collection(collectionPath).document(documentId).delete().await()
+                Log.d(TAG, "User deleted successfully: $userId")
                 Result.success(Unit)
             } else {
+                Log.w(TAG, "User not found for deletion: $userId")
                 Result.failure(Exception("User not found"))
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Error deleting user: ${e.message}")
             Result.failure(e)
         }
     }
@@ -113,11 +113,14 @@ class UserRepository @Inject constructor(
             if (!query.isEmpty) {
                 val documentId = query.documents.first().id
                 firestore.collection(collectionPath).document(documentId).update("fcmToken", token).await()
+                Log.d(TAG, "User token updated successfully: $userId")
                 Result.success(Unit)
             } else {
+                Log.w(TAG, "User not found for token update: $userId")
                 Result.failure(Exception("User not found"))
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Error updating user token: ${e.message}")
             Result.failure(e)
         }
     }
@@ -125,57 +128,49 @@ class UserRepository @Inject constructor(
     suspend fun getCurrentUser(): UserData? = withContext(Dispatchers.IO) {
         val firebaseUser = auth.currentUser
         if (firebaseUser == null) {
-            Log.d("UserRepository", "No Firebase user found")
+            Log.d(TAG, "No Firebase user found")
             return@withContext null
         }
-        Log.d("UserRepository", "Firebase user: ${firebaseUser.uid}")
+        Log.d(TAG, "Firebase user: ${firebaseUser.uid}")
 
         try {
             // Buscar en la colección de admins
-            val adminQuery = firestore.collection("hdd-monitor/accounts/admins")
-                .whereEqualTo("email", firebaseUser.email)
-                .get()
-                .await()
-
-            if (!adminQuery.isEmpty) {
-                val adminDoc = adminQuery.documents.first()
-                Log.d("UserRepository", "User found in admin collection")
-                return@withContext UserData(
-                    id = adminDoc.getString("ID") ?: "",
-                    email = adminDoc.getString("email") ?: "",
-                    name = adminDoc.getString("name") ?: "",
-                    role = UserRole.ADMIN,
-                    clientId = ""
-                )
-            }
+            val adminUser = findUserInCollection("hdd-monitor/accounts/admins", firebaseUser.email, UserRole.ADMIN)
+            if (adminUser != null) return@withContext adminUser
 
             // Buscar en la colección de clientes
             val clientsQuery = firestore.collection("hdd-monitor/accounts/clients").get().await()
             for (clientDoc in clientsQuery.documents) {
-                val usersQuery = clientDoc.reference.collection("users")
-                    .whereEqualTo("email", firebaseUser.email)
-                    .get()
-                    .await()
-
-                if (!usersQuery.isEmpty) {
-                    val userDoc = usersQuery.documents.first()
-                    Log.d("UserRepository", "User found in client collection: ${clientDoc.id}")
-                    return@withContext UserData(
-                        id = userDoc.getString("ID") ?: "",
-                        email = userDoc.getString("email") ?: "",
-                        name = userDoc.getString("name") ?: "",
-                        role = UserRole.USER,
-                        clientId = clientDoc.id
-                    )
-                }
+                val user = findUserInCollection("hdd-monitor/accounts/clients/${clientDoc.id}/users", firebaseUser.email, UserRole.USER, clientDoc.id)
+                if (user != null) return@withContext user
             }
 
-            Log.e("UserRepository", "User not found in Firestore")
+            Log.e(TAG, "User not found in Firestore")
             null
         } catch (e: Exception) {
-            Log.e("UserRepository", "Error getting current user: ${e.message}")
+            Log.e(TAG, "Error getting current user: ${e.message}")
             null
         }
+    }
+
+    private suspend fun findUserInCollection(collectionPath: String, email: String?, role: UserRole, clientId: String = ""): UserData? {
+        val query = firestore.collection(collectionPath)
+            .whereEqualTo("email", email)
+            .get()
+            .await()
+
+        if (!query.isEmpty) {
+            val userDoc = query.documents.first()
+            Log.d(TAG, "User found in collection: $collectionPath")
+            return UserData(
+                id = userDoc.getString("ID") ?: "",
+                email = userDoc.getString("email") ?: "",
+                name = userDoc.getString("name") ?: "",
+                role = role,
+                clientId = clientId
+            )
+        }
+        return null
     }
 
     suspend fun addMessage(message: Message): Result<Unit> = withContext(Dispatchers.IO) {
@@ -183,8 +178,10 @@ class UserRepository @Inject constructor(
             firestore.collection("hdd-monitor/accounts/messages")
                 .add(message)
                 .await()
+            Log.d(TAG, "Message added successfully")
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "Error adding message: ${e.message}")
             Result.failure(e)
         }
     }
@@ -197,10 +194,16 @@ class UserRepository @Inject constructor(
                 .await()
                 .documents
                 .mapNotNull { it.toObject(Message::class.java) }
+            Log.d(TAG, "Retrieved ${messages.size} messages for user $userId")
             Result.success(messages)
         } catch (e: Exception) {
+            Log.e(TAG, "Error getting messages: ${e.message}")
             Result.failure(e)
         }
+    }
+
+    companion object {
+        private const val TAG = "UserRepository"
     }
 }
 

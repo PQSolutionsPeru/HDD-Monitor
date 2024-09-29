@@ -34,4 +34,8 @@
     <string name="login">Iniciar sesión</string>
     <string name="accept">Aceptar</string>
     <string name="contact_admin">Contactar al Administrador</string>
+
+    <!-- Nuevas cadenas agregadas -->
+    <string name="no_panels_found">No se encontraron paneles</string>
+    <string name="loading_relays">Cargando relays...</string>
 </resources>

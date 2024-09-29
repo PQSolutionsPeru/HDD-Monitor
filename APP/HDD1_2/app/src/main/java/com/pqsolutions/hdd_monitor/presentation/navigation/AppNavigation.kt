@@ -10,120 +10,77 @@ import com.pqsolutions.hdd_monitor.data.UserRole
 import com.pqsolutions.hdd_monitor.presentation.screens.*
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
-import com.pqsolutions.hdd_monitor.presentation.components.NotificationIcon
+
+private const val TAG = "AppNavigation"
 
 @Composable
 fun AppNavigation(viewModel: MainViewModel) {
-    Log.d("AppNavigation", "Starting AppNavigation composition")
+    Log.d(TAG, "Starting AppNavigation composition")
     val uiState by viewModel.uiState.collectAsState()
     val navController = rememberNavController()
     val hasPendingNotifications by viewModel.hasPendingNotifications.collectAsState()
 
     NavHost(
         navController = navController,
-        startDestination = if (uiState.isFirstLaunch) "onboarding" else if (uiState.isLoggedIn) "dashboard" else "login"
+        startDestination = getStartDestination(uiState.isFirstLaunch, uiState.isLoggedIn)
     ) {
         composable("onboarding") {
             OnboardingScreen(
                 onFinish = {
                     viewModel.onEvent(MainUiEvent.FinishOnboarding)
-                    navController.navigate("login") {
-                        popUpTo("onboarding") { inclusive = true }
-                    }
+                    navController.navigateToLogin()
                 }
             )
         }
         composable("login") {
-            Log.d("AppNavigation", "Navigating to Login Screen")
             LoginScreen(
                 onLoginClick = { email, password ->
-                    Log.d("AppNavigation", "Login attempt with email: $email")
+                    Log.d(TAG, "Login attempt with email: $email")
                     viewModel.onEvent(MainUiEvent.Login(email, password))
                 }
             )
         }
         composable("dashboard") {
-            Log.d("AppNavigation", "Navigating to Dashboard. User role: ${uiState.userData?.role}")
+            Log.d(TAG, "Navigating to Dashboard. User role: ${uiState.userData?.role}")
             when (uiState.userData?.role) {
                 UserRole.ADMIN -> AdminDashboardScreen(
-                    onLogoutClick = {
-                        Log.d("AppNavigation", "Admin logout clicked")
-                        viewModel.onEvent(MainUiEvent.Logout)
-                    },
-                    onManageUsersClick = {
-                        Log.d("AppNavigation", "Navigate to User Management")
-                        navController.navigate("user_management")
-                    },
-                    onViewAlertsClick = {
-                        Log.d("AppNavigation", "Navigate to Alerts")
-                        navController.navigate("alerts")
-                    },
-                    onViewEventHistoryClick = {
-                        Log.d("AppNavigation", "Navigate to Event History")
-                        navController.navigate("event_history")
-                    },
+                    onLogoutClick = { handleLogout(viewModel) },
+                    onManageUsersClick = { navController.navigate("user_management") },
+                    onViewAlertsClick = { navController.navigate("alerts") },
+                    onViewEventHistoryClick = { navController.navigate("event_history") },
                     hasPendingNotifications = hasPendingNotifications
                 )
                 UserRole.USER -> UserDashboardScreen(
-                    onLogoutClick = {
-                        Log.d("AppNavigation", "User logout clicked")
-                        viewModel.onEvent(MainUiEvent.Logout)
-                    },
-                    onViewEventHistoryClick = {
-                        Log.d("AppNavigation", "Navigate to Event History")
-                        navController.navigate("event_history")
-                    },
-                    onViewAlertsClick = {
-                        Log.d("AppNavigation", "Navigate to Alerts")
-                        navController.navigate("alerts")
-                    },
+                    onLogoutClick = { handleLogout(viewModel) },
+                    onViewEventHistoryClick = { navController.navigate("event_history") },
+                    onViewAlertsClick = { navController.navigate("alerts") },
                     hasPendingNotifications = hasPendingNotifications
                 )
                 else -> {
-                    Log.d("AppNavigation", "Invalid user role, navigating to Login")
+                    Log.d(TAG, "Invalid user role, navigating to Login")
                     LaunchedEffect(Unit) {
-                        navController.navigate("login") {
-                            popUpTo("dashboard") { inclusive = true }
-                        }
+                        navController.navigateToLogin()
                     }
                 }
             }
         }
         composable("user_management") {
-            Log.d("AppNavigation", "Navigating to User Management Screen")
             UserManagementScreen(
-                onBackClick = {
-                    Log.d("AppNavigation", "Navigating back from User Management")
-                    navController.popBackStack()
-                },
+                onBackClick = { navController.popBackStack() },
                 hasPendingNotifications = hasPendingNotifications,
-                onNotificationClick = {
-                    Log.d("AppNavigation", "Navigate to Alerts from User Management")
-                    navController.navigate("alerts")
-                }
+                onNotificationClick = { navController.navigate("alerts") }
             )
         }
         composable("event_history") {
-            Log.d("AppNavigation", "Navigating to Event History Screen")
             EventHistoryScreen(
-                onBackClick = {
-                    Log.d("AppNavigation", "Navigating back from Event History")
-                    navController.popBackStack()
-                },
+                onBackClick = { navController.popBackStack() },
                 hasPendingNotifications = hasPendingNotifications,
-                onNotificationClick = {
-                    Log.d("AppNavigation", "Navigate to Alerts from Event History")
-                    navController.navigate("alerts")
-                }
+                onNotificationClick = { navController.navigate("alerts") }
             )
         }
         composable("alerts") {
-            Log.d("AppNavigation", "Navigating to Alerts Screen")
             AlertScreen(
-                onBackClick = {
-                    Log.d("AppNavigation", "Navigating back from Alerts")
-                    navController.popBackStack()
-                },
+                onBackClick = { navController.popBackStack() },
                 isAdmin = uiState.userData?.role == UserRole.ADMIN,
                 hasPendingNotifications = hasPendingNotifications
             )
@@ -131,7 +88,7 @@ fun AppNavigation(viewModel: MainViewModel) {
     }
 
     LaunchedEffect(uiState.currentRoute) {
-        Log.d("AppNavigation", "LaunchedEffect: Current route changed to ${uiState.currentRoute}")
+        Log.d(TAG, "LaunchedEffect: Current route changed to ${uiState.currentRoute}")
         if (uiState.currentRoute != navController.currentDestination?.route) {
             navController.navigate(uiState.currentRoute) {
                 popUpTo(navController.graph.startDestinationId) { inclusive = true }
@@ -139,5 +96,24 @@ fun AppNavigation(viewModel: MainViewModel) {
         }
     }
 
-    Log.d("AppNavigation", "AppNavigation composition completed")
+    Log.d(TAG, "AppNavigation composition completed")
+}
+
+private fun getStartDestination(isFirstLaunch: Boolean, isLoggedIn: Boolean): String {
+    return when {
+        isFirstLaunch -> "onboarding"
+        isLoggedIn -> "dashboard"
+        else -> "login"
+    }
+}
+
+private fun handleLogout(viewModel: MainViewModel) {
+    Log.d(TAG, "Logout clicked")
+    viewModel.onEvent(MainUiEvent.Logout)
+}
+
+private fun NavHostController.navigateToLogin() {
+    navigate("login") {
+        popUpTo(graph.startDestinationId) { inclusive = true }
+    }
 }

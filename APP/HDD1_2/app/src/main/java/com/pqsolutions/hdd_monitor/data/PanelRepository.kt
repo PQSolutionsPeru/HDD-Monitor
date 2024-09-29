@@ -8,9 +8,11 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.firebase.firestore.*
 import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,50 +24,17 @@ class PanelRepository @Inject constructor(
     private val firebaseMessaging: FirebaseMessaging,
     private val context: Context
 ) {
-    private var lastNotifiedStates = mutableMapOf<String, String>()
+    private val lastNotifiedStates = mutableMapOf<String, String>()
+    private val firebaseFunctions: FirebaseFunctions = FirebaseFunctions.getInstance()
 
     fun getPanelsFlow(clientId: String?): Flow<List<Panel>> = callbackFlow {
         val panelList = mutableListOf<Panel>()
         val listeners = mutableListOf<ListenerRegistration>()
 
         val clientsListener: ListenerRegistration = if (clientId != null) {
-            val clientDocRef = firestore.collection("hdd-monitor/accounts/clients").document(clientId)
-            clientDocRef.addSnapshotListener { snapshot: DocumentSnapshot?, error: FirebaseFirestoreException? ->
-                if (error != null) {
-                    Log.e("PanelRepository", "Error listening to client: ${error.message}")
-                    return@addSnapshotListener
-                }
-
-                snapshot?.let { clientDoc ->
-                    handleClientDocument(clientDoc, panelList, listeners) {
-                        trySend(panelList.toList())
-                    }
-                }
-            }
+            listenToSingleClient(clientId, panelList, listeners) { trySend(panelList.toList()) }
         } else {
-            firestore.collection("hdd-monitor/accounts/clients")
-                .addSnapshotListener { snapshot: QuerySnapshot?, error: FirebaseFirestoreException? ->
-                    if (error != null) {
-                        Log.e("PanelRepository", "Error listening to clients: ${error.message}")
-                        return@addSnapshotListener
-                    }
-
-                    snapshot?.documentChanges?.forEach { change: DocumentChange ->
-                        val clientDoc = change.document
-                        when (change.type) {
-                            DocumentChange.Type.ADDED,
-                            DocumentChange.Type.MODIFIED -> {
-                                handleClientDocument(clientDoc, panelList, listeners) {
-                                    trySend(panelList.toList())
-                                }
-                            }
-                            DocumentChange.Type.REMOVED -> {
-                                panelList.removeAll { it.clientId == clientDoc.id }
-                                trySend(panelList.toList())
-                            }
-                        }
-                    }
-                }
+            listenToAllClients(panelList, listeners) { trySend(panelList.toList()) }
         }
 
         listeners.add(clientsListener)
@@ -73,6 +42,53 @@ class PanelRepository @Inject constructor(
         awaitClose {
             listeners.forEach { it.remove() }
         }
+    }.flowOn(Dispatchers.IO)
+
+    private fun listenToSingleClient(
+        clientId: String,
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ): ListenerRegistration {
+        val clientDocRef = firestore.collection("hdd-monitor/accounts/clients").document(clientId)
+        return clientDocRef.addSnapshotListener { snapshot: DocumentSnapshot?, error: FirebaseFirestoreException? ->
+            if (error != null) {
+                Log.e(TAG, "Error listening to client: ${error.message}")
+                return@addSnapshotListener
+            }
+
+            snapshot?.let { clientDoc ->
+                handleClientDocument(clientDoc, panelList, listeners, onUpdate)
+            }
+        }
+    }
+
+    private fun listenToAllClients(
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ): ListenerRegistration {
+        return firestore.collection("hdd-monitor/accounts/clients")
+            .addSnapshotListener { snapshot: QuerySnapshot?, error: FirebaseFirestoreException? ->
+                if (error != null) {
+                    Log.e(TAG, "Error listening to clients: ${error.message}")
+                    return@addSnapshotListener
+                }
+
+                snapshot?.documentChanges?.forEach { change: DocumentChange ->
+                    val clientDoc = change.document
+                    when (change.type) {
+                        DocumentChange.Type.ADDED,
+                        DocumentChange.Type.MODIFIED -> {
+                            handleClientDocument(clientDoc, panelList, listeners, onUpdate)
+                        }
+                        DocumentChange.Type.REMOVED -> {
+                            panelList.removeAll { it.clientId == clientDoc.id }
+                            onUpdate()
+                        }
+                    }
+                }
+            }
     }
 
     private fun handleClientDocument(
@@ -85,58 +101,79 @@ class PanelRepository @Inject constructor(
         val panelsListener = clientDoc.reference.collection("panels")
             .addSnapshotListener { panelsSnapshot: QuerySnapshot?, panelsError: FirebaseFirestoreException? ->
                 if (panelsError != null) {
-                    Log.e("PanelRepository", "Error listening to panels: ${panelsError.message}")
+                    Log.e(TAG, "Error listening to panels: ${panelsError.message}")
                     return@addSnapshotListener
                 }
 
                 panelsSnapshot?.documentChanges?.forEach { panelChange: DocumentChange ->
-                    val panelDoc = panelChange.document
-                    val panel = panelDoc.toObject(Panel::class.java)?.copy(
-                        ID = panelDoc.id,
-                        clientId = clientId
-                    ) ?: return@forEach
-
-                    when (panelChange.type) {
-                        DocumentChange.Type.ADDED -> {
-                            panelList.add(panel)
-                        }
-                        DocumentChange.Type.MODIFIED -> {
-                            val index = panelList.indexOfFirst { it.ID == panel.ID }
-                            if (index != -1) {
-                                panelList[index] = panel
-                            } else {
-                                panelList.add(panel)
-                            }
-                        }
-                        DocumentChange.Type.REMOVED -> {
-                            panelList.removeAll { it.ID == panel.ID }
-                        }
-                    }
-
-                    val relaysListener = panelDoc.reference.collection("relays")
-                        .addSnapshotListener { relaysSnapshot: QuerySnapshot?, relaysError: FirebaseFirestoreException? ->
-                            if (relaysError != null) {
-                                Log.e("PanelRepository", "Error listening to relays: ${relaysError.message}")
-                                return@addSnapshotListener
-                            }
-
-                            val relayList = relaysSnapshot?.documents?.mapNotNull { relayDoc ->
-                                relayDoc.toObject(Relay::class.java)?.copy(name = relayDoc.id)
-                            } ?: emptyList()
-
-                            val updatedPanel = panelList.find { it.ID == panel.ID }
-                            updatedPanel?.let {
-                                it.relays = relayList
-                                checkForChangesAndNotify(it)
-                            }
-
-                            onUpdate()
-                        }
-                    listeners.add(relaysListener)
+                    handlePanelChange(panelChange, clientId, panelList, listeners, onUpdate)
                 }
                 onUpdate()
             }
         listeners.add(panelsListener)
+    }
+
+    private fun handlePanelChange(
+        panelChange: DocumentChange,
+        clientId: String,
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ) {
+        val panelDoc = panelChange.document
+        val panel = panelDoc.toObject(Panel::class.java)?.copy(
+            ID = panelDoc.id,
+            clientId = clientId
+        ) ?: return
+
+        when (panelChange.type) {
+            DocumentChange.Type.ADDED -> {
+                panelList.add(panel)
+                addRelaysListener(panelDoc, panel, panelList, listeners, onUpdate)
+            }
+            DocumentChange.Type.MODIFIED -> {
+                val index = panelList.indexOfFirst { it.ID == panel.ID }
+                if (index != -1) {
+                    panelList[index] = panel.copy(relays = panelList[index].relays)
+                } else {
+                    panelList.add(panel)
+                }
+                addRelaysListener(panelDoc, panel, panelList, listeners, onUpdate)
+            }
+            DocumentChange.Type.REMOVED -> {
+                panelList.removeAll { it.ID == panel.ID }
+            }
+        }
+    }
+
+    private fun addRelaysListener(
+        panelDoc: DocumentSnapshot,
+        panel: Panel,
+        panelList: MutableList<Panel>,
+        listeners: MutableList<ListenerRegistration>,
+        onUpdate: () -> Unit
+    ) {
+        val relaysListener = panelDoc.reference.collection("relays")
+            .addSnapshotListener { relaysSnapshot: QuerySnapshot?, relaysError: FirebaseFirestoreException? ->
+                if (relaysError != null) {
+                    Log.e(TAG, "Error listening to relays: ${relaysError.message}")
+                    return@addSnapshotListener
+                }
+
+                val relayList = relaysSnapshot?.documents?.mapNotNull { relayDoc ->
+                    relayDoc.toObject(Relay::class.java)?.copy(name = relayDoc.id)
+                } ?: emptyList()
+
+                val panelIndex = panelList.indexOfFirst { it.ID == panel.ID }
+                if (panelIndex != -1) {
+                    panelList[panelIndex] = panelList[panelIndex].copy(relays = relayList)
+                    checkForChangesAndNotify(panelList[panelIndex])
+                }
+
+                Log.d(TAG, "Relays updated for panel ${panel.name}: ${relayList.size} relays")
+                onUpdate()
+            }
+        listeners.add(relaysListener)
     }
 
     private fun checkForChangesAndNotify(panel: Panel) {
@@ -145,51 +182,83 @@ class PanelRepository @Inject constructor(
             val lastStatus = lastNotifiedStates[relayKey]
             if (lastStatus != null && lastStatus != relay.status) {
                 if (relay.status != "OK" || (lastStatus != "OK" && relay.status == "OK")) {
-                    showNotification(panel, relay)
+                    sendCloudFunctionNotification(panel, relay)
                 }
                 lastNotifiedStates[relayKey] = relay.status
             } else if (lastStatus == null) {
                 lastNotifiedStates[relayKey] = relay.status
                 if (relay.status != "OK") {
-                    showNotification(panel, relay)
+                    sendCloudFunctionNotification(panel, relay)
                 }
             }
         }
     }
 
-    private fun showNotification(panel: Panel, relay: Relay) {
-        val channelId = "panel_updates"
-        val notificationId = "${panel.ID}_${relay.name}".hashCode()
+    private fun sendCloudFunctionNotification(panel: Panel, relay: Relay) {
+        val data = hashMapOf(
+            "panelId" to panel.ID,
+            "panelName" to panel.name,
+            "relayName" to relay.name,
+            "relayStatus" to relay.status,
+            "clientId" to panel.clientId
+        )
 
-        val notificationBuilder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Actualización en ${panel.name}")
-            .setContentText("${relay.name} estado: ${relay.status}")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
+        Log.d(TAG, "Attempting to call Cloud Function")
 
+        firebaseFunctions
+            .getHttpsCallable("sendPanelNotification")
+            .call(data)
+            .addOnSuccessListener { result ->
+                Log.d(TAG, "Notification sent successfully")
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Error sending notification: ${e.message}", e)
+                sendLocalNotification(panel, relay)
+            }
+    }
+
+    private fun sendLocalNotification(panel: Panel, relay: Relay) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "panel_updates"
+        val channelName = "Panel Updates"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Actualizaciones de Panel",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notificaciones de cambios en los paneles"
-            }
+            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
             notificationManager.createNotificationChannel(channel)
         }
 
-        notificationManager.notify(notificationId, notificationBuilder.build())
+        val notificationBuilder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Estado del Panel Actualizado")
+            .setContentText("Panel: ${panel.name}, Relay: ${relay.name}, Estado: ${relay.status}")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+
+        notificationManager.notify(panel.ID.hashCode(), notificationBuilder.build())
     }
 
     suspend fun subscribeToClientTopic(clientId: String) = withContext(Dispatchers.IO) {
-        firebaseMessaging.subscribeToTopic("client_$clientId").await()
+        try {
+            firebaseMessaging.subscribeToTopic("client_$clientId").await()
+            Log.d(TAG, "Subscribed to topic: client_$clientId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error subscribing to topic: client_$clientId", e)
+            throw e
+        }
     }
 
     suspend fun unsubscribeFromClientTopic(clientId: String) = withContext(Dispatchers.IO) {
-        firebaseMessaging.unsubscribeFromTopic("client_$clientId").await()
+        try {
+            firebaseMessaging.unsubscribeFromTopic("client_$clientId").await()
+            Log.d(TAG, "Unsubscribed from topic: client_$clientId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unsubscribing from topic: client_$clientId", e)
+            throw e
+        }
+    }
+
+    companion object {
+        private const val TAG = "PanelRepository"
     }
 }
 
