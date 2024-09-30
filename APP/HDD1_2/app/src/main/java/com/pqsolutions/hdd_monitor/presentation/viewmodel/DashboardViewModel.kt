@@ -11,18 +11,21 @@ import com.pqsolutions.hdd_monitor.data.Panel
 import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
 import com.pqsolutions.hdd_monitor.data.UserRole
+import com.pqsolutions.hdd_monitor.domain.GetPanelsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val panelRepository: PanelRepository,
     private val userRepository: UserRepository,
+    private val getPanelsUseCase: GetPanelsUseCase,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -34,18 +37,19 @@ class DashboardViewModel @Inject constructor(
     private val panelUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.pqsolutions.hdd_monitor.PANEL_UPDATE") {
-                val panelName = intent.getStringExtra("panelName") ?: return
+                val panelId = intent.getStringExtra("panelId") ?: return
                 val relayName = intent.getStringExtra("relayName") ?: return
                 val relayStatus = intent.getStringExtra("relayStatus") ?: return
-                updatePanelState(panelName, relayName, relayStatus)
+                updatePanelState(panelId, relayName, relayStatus)
             }
         }
     }
 
     init {
-        Log.d(TAG, "ViewModel initialized")
+        Log.d(TAG, "ViewModel inicializado")
         registerPanelUpdateReceiver()
-        startPanelMonitoring()
+        loadPanels()
+        startPeriodicRefresh()
     }
 
     private fun registerPanelUpdateReceiver() {
@@ -55,33 +59,27 @@ class DashboardViewModel @Inject constructor(
         )
     }
 
-    private fun startPanelMonitoring() {
+    private fun startPeriodicRefresh() {
         viewModelScope.launch {
-            userRepository.getCurrentUser()?.let { user ->
-                val clientId = if (user.role == UserRole.ADMIN) null else user.clientId
-                panelRepository.getPanelsFlow(clientId)
-                    .catch { error ->
-                        handlePanelLoadError(error)
-                    }
-                    .collect { panels ->
-                        handlePanelsLoaded(panels)
-                    }
-            } ?: handleNoAuthenticatedUser()
+            while (true) {
+                delay(60000) // 1 minute
+                loadPanels()
+            }
         }
     }
 
     fun loadPanels() {
-        Log.d(TAG, "Loading panels")
+        Log.d(TAG, "Cargando paneles")
         panelsJob?.cancel()
         panelsJob = viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
-                Log.d(TAG, "Current user: $currentUser")
+                Log.d(TAG, "Usuario actual: $currentUser")
                 if (currentUser != null) {
                     val clientId = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientId
-                    Log.d(TAG, "Fetching panels for clientId: $clientId")
-                    panelRepository.getPanelsFlow(clientId)
+                    Log.d(TAG, "Obteniendo paneles para ${if (clientId == null) "todos los clientes" else "clientId: $clientId"}")
+                    getPanelsUseCase(GetPanelsUseCase.Params(clientId))
                         .catch { error ->
                             handlePanelLoadError(error)
                         }
@@ -92,8 +90,7 @@ class DashboardViewModel @Inject constructor(
                     handleNoAuthenticatedUser()
                 }
             } catch (e: CancellationException) {
-                Log.d(TAG, "Panel loading was cancelled")
-                // No need to update UI state for cancellation
+                Log.d(TAG, "La carga de paneles fue cancelada")
             } catch (e: Exception) {
                 handleUnexpectedError(e)
             }
@@ -101,15 +98,15 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun handlePanelLoadError(error: Throwable) {
-        Log.e(TAG, "Error loading panels: ${error.message}", error)
+        Log.e(TAG, "Error al cargar paneles: ${error.message}", error)
         _uiState.update { it.copy(
             isLoading = false,
-            error = error.message ?: "Unknown error occurred"
+            error = error.message ?: "Ocurrió un error desconocido"
         ) }
     }
 
     private fun handlePanelsLoaded(panels: List<Panel>) {
-        Log.d(TAG, "Panels loaded: ${panels.size}")
+        Log.d(TAG, "Paneles cargados: ${panels.size}")
         panels.forEach { panel ->
             Log.d(TAG, "Panel ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.clientId}) relays: ${panel.relays}")
         }
@@ -122,7 +119,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun handleNoAuthenticatedUser() {
-        Log.e(TAG, "No authenticated user found")
+        Log.e(TAG, "No se encontró usuario autenticado")
         _uiState.update { it.copy(
             isLoading = false,
             error = "No se encontró usuario autenticado"
@@ -140,16 +137,16 @@ class DashboardViewModel @Inject constructor(
     private fun checkForAlerts(panels: List<Panel>) {
         val alerts = panels.flatMap { panel ->
             panel.relays.filter { it.status != "OK" }.map { relay ->
-                "Panel ${panel.name}: ${relay.name} estado ${relay.status}"
+                "Panel ${panel.name} (Cliente: ${panel.clientId}): ${relay.name} estado ${relay.status}"
             }
         }
-        Log.d(TAG, "Alerts found: ${alerts.size}")
+        Log.d(TAG, "Alertas encontradas: ${alerts.size}")
         _uiState.update { it.copy(alerts = alerts) }
     }
 
-    private fun updatePanelState(panelName: String, relayName: String, relayStatus: String) {
+    private fun updatePanelState(panelId: String, relayName: String, relayStatus: String) {
         val currentPanels = _uiState.value.panels.toMutableList()
-        val panelIndex = currentPanels.indexOfFirst { it.name == panelName }
+        val panelIndex = currentPanels.indexOfFirst { it.ID == panelId }
         if (panelIndex != -1) {
             val panel = currentPanels[panelIndex]
             val updatedRelays = panel.relays.map {
@@ -162,18 +159,27 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refreshPanels() {
-        Log.d(TAG, "Refreshing panels")
+        Log.d(TAG, "Actualizando paneles")
         loadPanels()
     }
 
+    fun selectPanel(panelId: String) {
+        val selectedPanel = _uiState.value.panels.find { it.ID == panelId }
+        _uiState.update { it.copy(selectedPanel = selectedPanel) }
+    }
+
+    fun deselectPanel() {
+        _uiState.update { it.copy(selectedPanel = null) }
+    }
+
     fun cancelCurrentJob() {
-        Log.d(TAG, "Cancelling current job")
+        Log.d(TAG, "Cancelando trabajo actual")
         panelsJob?.cancel()
     }
 
     override fun onCleared() {
         super.onCleared()
-        Log.d(TAG, "ViewModel cleared")
+        Log.d(TAG, "ViewModel limpiado")
         panelsJob?.cancel()
         context.unregisterReceiver(panelUpdateReceiver)
     }
@@ -186,6 +192,7 @@ class DashboardViewModel @Inject constructor(
 data class DashboardUiState(
     val isLoading: Boolean = false,
     val panels: List<Panel> = emptyList(),
+    val selectedPanel: Panel? = null,
     val error: String? = null,
     val alerts: List<String> = emptyList()
 )

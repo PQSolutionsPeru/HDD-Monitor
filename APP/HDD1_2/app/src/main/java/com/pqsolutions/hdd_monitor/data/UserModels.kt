@@ -4,10 +4,10 @@ enum class UserRole {
     ADMIN, USER
 }
 
-data class UserData(
-    val id: String,
-    val email: String,
-    val name: String,
-    val role: UserRole,
-    val clientId: String
+data class UserData @JvmOverloads constructor(
+    val id: String = "",
+    val email: String = "",
+    val name: String = "",
+    val role: UserRole = UserRole.USER,
+    val clientId: String = ""
 )

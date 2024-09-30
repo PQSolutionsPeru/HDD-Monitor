@@ -56,6 +56,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.room.ktx)
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -82,12 +83,14 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.6")
     implementation("androidx.paging:paging-compose:3.2.1")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.6.4")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
+    implementation("com.google.android.gms:play-services-base:18.2.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito:mockito-core:3.12.4")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.4")
+    testImplementation("org.mockito:mockito-core:5.7.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

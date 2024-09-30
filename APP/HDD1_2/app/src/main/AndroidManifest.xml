@@ -4,7 +4,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
@@ -18,6 +17,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.HDD1_2"
         tools:targetApi="31">
+
+        <meta-data
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version" />
 
         <activity
             android:name=".presentation.MainActivity"

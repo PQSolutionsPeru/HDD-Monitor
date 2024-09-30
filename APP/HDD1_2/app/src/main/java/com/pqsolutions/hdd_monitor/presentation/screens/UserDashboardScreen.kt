@@ -25,9 +25,11 @@ import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.components.DashboardButton
 import com.pqsolutions.hdd_monitor.presentation.components.PanelsList
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
+import com.pqsolutions.hdd_monitor.presentation.components.LogoutButton
 
 private const val TAG = "UserDashboardScreen"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UserDashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
@@ -45,27 +47,46 @@ fun UserDashboardScreen(
 
         HandleLifecycleEvents(viewModel)
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(scrollState)
-                .padding(24.dp)
-        ) {
-            DashboardHeader(
-                hasPendingNotifications = hasPendingNotifications,
-                onViewAlertsClick = onViewAlertsClick
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            DashboardActions(
-                onViewEventHistoryClick = onViewEventHistoryClick,
-                onViewAlertsClick = onViewAlertsClick,
-                context = context
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            PanelsList(uiState)
-            Spacer(modifier = Modifier.height(32.dp))
-            LogoutButton(onLogoutClick, context)
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.user_dashboard_title)) },
+                    actions = {
+                        AnimatedNotificationBell(
+                            hasNewNotifications = hasPendingNotifications,
+                            onClick = {
+                                Log.d(TAG, "Notification bell clicked")
+                                onViewAlertsClick()
+                            },
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                )
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(paddingValues)
+                    .verticalScroll(scrollState)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp)
+                ) {
+                    DashboardActions(
+                        onViewEventHistoryClick = onViewEventHistoryClick,
+                        onViewAlertsClick = onViewAlertsClick,
+                        context = context
+                    )
+                    Spacer(modifier = Modifier.height(32.dp))
+                    PanelsList(uiState)
+                    Spacer(modifier = Modifier.height(32.dp))
+                    LogoutButton(onLogoutClick, context)
+                }
+            }
         }
     }
 
@@ -93,35 +114,6 @@ private fun HandleLifecycleEvents(viewModel: DashboardViewModel) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
-    }
-}
-
-@Composable
-private fun DashboardHeader(
-    hasPendingNotifications: Boolean,
-    onViewAlertsClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = stringResource(R.string.user_dashboard_title),
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f)
-        )
-        AnimatedNotificationBell(
-            hasNewNotifications = hasPendingNotifications,
-            onClick = {
-                Log.d(TAG, "Notification bell clicked")
-                onViewAlertsClick()
-            },
-            modifier = Modifier.size(48.dp)
-        )
     }
 }
 
@@ -156,19 +148,4 @@ private fun DashboardActions(
             )
         }
     }
-}
-
-@Composable
-private fun LogoutButton(onLogoutClick: () -> Unit, context: android.content.Context) {
-    DashboardButton(
-        onClick = {
-            performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
-            onLogoutClick()
-        },
-        text = stringResource(R.string.logout),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.secondary
-        )
-    )
 }
