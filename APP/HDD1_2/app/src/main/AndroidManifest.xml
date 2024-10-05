@@ -3,8 +3,12 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="com.google.android.providers.gsf.permission.READ_GSERVICES" />
 
     <application
         android:name=".HddApplication"
@@ -16,7 +20,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.HDD1_2"
-        tools:targetApi="31">
+        android:usesCleartextTraffic="false"
+        android:enableOnBackInvokedCallback="true"
+        tools:targetApi="tiramisu">
 
         <meta-data
             android:name="com.google.android.gms.version"
@@ -25,7 +31,8 @@
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.HDD1_2">
+            android:theme="@style/Theme.HDD1_2"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -39,6 +46,17 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Agregar el receiver para manejar las acciones de notificación -->
+        <receiver
+            android:name=".presentation.NotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.pqsolutions.hdd_monitor.NEW_ALERT" />
+                <action android:name="com.pqsolutions.hdd_monitor.NEW_MESSAGE" />
+                <action android:name="com.pqsolutions.hdd_monitor.PANEL_UPDATE" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor
 
 import android.app.Application
 import android.util.Log
+import androidx.multidex.MultiDexApplication
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.common.ConnectionResult
 import com.google.firebase.FirebaseApp
@@ -14,7 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
-class HddApplication : Application() {
+class HddApplication : MultiDexApplication() {
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var firestore: FirebaseFirestore
@@ -25,36 +26,41 @@ class HddApplication : Application() {
     }
 
     private fun initializeApp() {
-        initializeGooglePlayServices()
-        initializeFirebase()
-        initializeFirestore()
-        // Aquí puedes inicializar otros componentes de la app
+        applicationScope.launch {
+            initializeGooglePlayServices()
+            initializeFirebase()
+            initializeFirestore()
+        }
     }
 
     private fun initializeGooglePlayServices() {
-        val availability = GoogleApiAvailability.getInstance()
-        val resultCode = availability.isGooglePlayServicesAvailable(this)
-        if (resultCode != ConnectionResult.SUCCESS) {
-            if (availability.isUserResolvableError(resultCode)) {
-                Log.w(TAG, "Google Play Services está disponible pero necesita actualización: ${availability.getErrorString(resultCode)}")
-                // Aquí podrías mostrar un diálogo al usuario para que actualice Google Play Services
-            } else {
-                Log.e(TAG, "Este dispositivo no es compatible con Google Play Services: ${availability.getErrorString(resultCode)}")
-                // Aquí podrías mostrar un mensaje al usuario o tomar alguna acción alternativa
+        try {
+            val availability = GoogleApiAvailability.getInstance()
+            val resultCode = availability.isGooglePlayServicesAvailable(this)
+            when (resultCode) {
+                ConnectionResult.SUCCESS -> Log.d(TAG, "Google Play Services está disponible y actualizado")
+                else -> {
+                    if (availability.isUserResolvableError(resultCode)) {
+                        Log.w(TAG, "Google Play Services necesita actualización: ${availability.getErrorString(resultCode)}")
+                        // Considera mostrar un diálogo al usuario para actualizar
+                    } else {
+                        Log.e(TAG, "Este dispositivo no es compatible con Google Play Services: ${availability.getErrorString(resultCode)}")
+                        // Considera mostrar un mensaje al usuario o tomar una acción alternativa
+                    }
+                }
             }
-        } else {
-            Log.d(TAG, "Google Play Services está disponible y actualizado")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al inicializar Google Play Services", e)
         }
     }
 
     private fun initializeFirebase() {
         try {
-            if (FirebaseApp.getApps(this).isEmpty()) {
-                FirebaseApp.initializeApp(this)
-            }
-            Log.d(TAG, "Firebase inicializado con éxito")
+            FirebaseApp.initializeApp(this)?.let {
+                Log.d(TAG, "Firebase initialized successfully in Application: ${it.name}")
+            } ?: throw Exception("FirebaseApp.initializeApp returned null")
         } catch (e: Exception) {
-            Log.e(TAG, "Error al inicializar Firebase", e)
+            Log.e(TAG, "Error initializing Firebase in Application", e)
         }
     }
 

@@ -5,9 +5,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.pqsolutions.hdd_monitor.R
@@ -35,6 +38,11 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
         private const val CHANNEL_NAME = "HDD Monitor Alerts"
         private const val CHANNEL_DESCRIPTION = "Notifications for HDD Monitor alerts"
         private const val TAG = "HddFirebaseMessaging"
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -71,6 +79,7 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun handlePanelUpdate(data: Map<String, String>) {
+        val panelId = data["panelId"] ?: ""
         val panelName = data["panelName"] ?: "Panel desconocido"
         val relayName = data["relayName"] ?: "Relay desconocido"
         val relayStatus = data["relayStatus"] ?: "Estado desconocido"
@@ -78,17 +87,16 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
         val content = "Panel: $panelName, Relay: $relayName, Estado: $relayStatus"
         showNotification(title, content)
 
-        val intent = Intent("com.pqsolutions.hdd_monitor.PANEL_UPDATE")
-        intent.putExtra("panelName", panelName)
-        intent.putExtra("relayName", relayName)
-        intent.putExtra("relayStatus", relayStatus)
+        val intent = Intent("com.pqsolutions.hdd_monitor.PANEL_UPDATE").apply {
+            putExtra("panelId", panelId)
+            putExtra("panelName", panelName)
+            putExtra("relayName", relayName)
+            putExtra("relayStatus", relayStatus)
+        }
         sendBroadcast(intent)
     }
 
     private fun showNotification(title: String, content: String) {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        createNotificationChannel(notificationManager)
-
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -103,10 +111,21 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
             .setAutoCancel(true)
 
         val notificationId = System.currentTimeMillis().toInt()
-        notificationManager.notify(notificationId, notificationBuilder.build())
+
+        with(NotificationManagerCompat.from(this)) {
+            if (ActivityCompat.checkSelfPermission(
+                    this@HddFirebaseMessagingService,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                notify(notificationId, notificationBuilder.build())
+            } else {
+                Log.w(TAG, "Notification permission not granted")
+            }
+        }
     }
 
-    private fun createNotificationChannel(notificationManager: NotificationManager) {
+    private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -117,13 +136,18 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
                 enableVibration(true)
                 enableLights(true)
             }
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
     }
 
     private fun saveAlert(alert: Alert) {
         CoroutineScope(Dispatchers.IO).launch {
-            alertRepository.createAlert(listOf(alert.ID_CLIENT), alert)
+            try {
+                alertRepository.createAlert(listOf(alert.ID_CLIENT), alert)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving alert: ${e.message}")
+            }
         }
     }
 

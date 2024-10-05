@@ -8,21 +8,23 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import android.util.Log
+import androidx.compose.runtime.rememberCoroutineScope
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-
-private const val TAG = "SharedComponents"
+import kotlinx.coroutines.launch
 
 @Composable
 fun LogoutButton(onLogoutClick: () -> Unit, context: android.content.Context) {
+    val coroutineScope = rememberCoroutineScope()
+
     Button(
         onClick = {
-            Log.d(TAG, "Logout button clicked")
-            performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
-            onLogoutClick()
+            coroutineScope.launch {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onLogoutClick()
+            }
         },
         modifier = Modifier.fillMaxWidth(),
         colors = ButtonDefaults.buttonColors(

@@ -5,6 +5,8 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,7 +23,7 @@ import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardUiState
 import com.pqsolutions.hdd_monitor.presentation.theme.*
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val TAG = "DashboardComponents"
 
@@ -31,15 +33,17 @@ fun DashboardButton(
     text: String,
     colors: ButtonColors = ButtonDefaults.buttonColors()
 ) {
-    Log.d(TAG, "Composing DashboardButton: $text")
+    val coroutineScope = rememberCoroutineScope()
     var isPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (isPressed) 0.95f else 1f)
 
     Button(
         onClick = {
-            Log.d(TAG, "DashboardButton clicked: $text")
-            isPressed = true
-            onClick()
+            coroutineScope.launch {
+                isPressed = true
+                onClick()
+                isPressed = false
+            }
         },
         modifier = Modifier
             .fillMaxWidth()
@@ -54,18 +58,10 @@ fun DashboardButton(
             color = MaterialTheme.colorScheme.onPrimary
         )
     }
-
-    LaunchedEffect(isPressed) {
-        if (isPressed) {
-            delay(100)
-            isPressed = false
-        }
-    }
 }
 
 @Composable
 fun PanelsList(uiState: DashboardUiState) {
-    Log.d(TAG, "Composing PanelsList")
     when {
         uiState.isLoading -> LoadingIndicator()
         uiState.error != null -> ErrorMessage(uiState.error)
@@ -76,7 +72,6 @@ fun PanelsList(uiState: DashboardUiState) {
 
 @Composable
 private fun LoadingIndicator() {
-    Log.d(TAG, "PanelsList: Loading")
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.fillMaxWidth().height(200.dp)
@@ -90,7 +85,6 @@ private fun LoadingIndicator() {
 
 @Composable
 private fun ErrorMessage(error: String) {
-    Log.d(TAG, "PanelsList: Error - $error")
     Text(
         text = stringResource(R.string.error_message, error),
         color = MaterialTheme.colorScheme.error,
@@ -100,7 +94,6 @@ private fun ErrorMessage(error: String) {
 
 @Composable
 private fun EmptyPanelsMessage() {
-    Log.d(TAG, "PanelsList: No panels")
     Text(
         text = stringResource(R.string.no_panels_found),
         style = MaterialTheme.typography.bodyLarge,
@@ -110,19 +103,22 @@ private fun EmptyPanelsMessage() {
 
 @Composable
 private fun PanelsContent(uiState: DashboardUiState) {
-    Log.d(TAG, "PanelsList: Displaying ${uiState.panels.size} panels")
-    Column {
-        Text(
-            text = stringResource(R.string.fire_panels),
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        if (uiState.alerts.isNotEmpty()) {
-            AlertsList(uiState.alerts)
+    LazyColumn {
+        item {
+            Text(
+                text = stringResource(R.string.fire_panels),
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
             Spacer(modifier = Modifier.height(24.dp))
         }
-        uiState.panels.forEach { panel ->
+        if (uiState.alerts.isNotEmpty()) {
+            item {
+                AlertsList(uiState.alerts)
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+        items(uiState.panels) { panel ->
             PanelItem(panel)
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -131,7 +127,6 @@ private fun PanelsContent(uiState: DashboardUiState) {
 
 @Composable
 fun AlertsList(alerts: List<String>) {
-    Log.d(TAG, "Composing AlertsList: ${alerts.size} alerts")
     Column {
         Text(
             text = stringResource(R.string.active_alerts),
@@ -158,16 +153,18 @@ fun AlertsList(alerts: List<String>) {
 
 @Composable
 fun PanelItem(panel: Panel) {
-    Log.d(TAG, "Composing PanelItem: ${panel.name}, Relays: ${panel.relays.size}")
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable {
-                Log.d(TAG, "PanelItem clicked: ${panel.name}")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                // Implementar acción al hacer clic en el panel
+                coroutineScope.launch {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    // Implementar acción al hacer clic en el panel
+                }
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -205,7 +202,6 @@ fun PanelItem(panel: Panel) {
 
 @Composable
 fun RelayStatusItem(relay: Relay) {
-    Log.d(TAG, "Composing RelayStatusItem: ${relay.name}")
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -224,7 +220,6 @@ fun RelayStatusItem(relay: Relay) {
 
 @Composable
 fun StatusChip(status: String) {
-    Log.d(TAG, "Composing StatusChip: $status")
     val (backgroundColor, textColor) = when (status) {
         "OK" -> HddGreen to HddWhite
         "WARNING" -> HddYellow to HddBlack

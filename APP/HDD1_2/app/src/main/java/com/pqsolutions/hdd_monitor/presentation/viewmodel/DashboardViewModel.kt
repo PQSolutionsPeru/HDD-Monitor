@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,8 +18,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import javax.inject.Inject
 
 @HiltViewModel
@@ -32,7 +35,9 @@ class DashboardViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
-    private var panelsJob: Job? = null
+    private val _panelsFlow = MutableStateFlow<Flow<List<Panel>>?>(null)
+
+    private var refreshJob: Job? = null
 
     private val panelUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -48,30 +53,45 @@ class DashboardViewModel @Inject constructor(
     init {
         Log.d(TAG, "ViewModel inicializado")
         registerPanelUpdateReceiver()
-        loadPanels()
         startPeriodicRefresh()
+        observePanels()
     }
 
     private fun registerPanelUpdateReceiver() {
-        context.registerReceiver(
-            panelUpdateReceiver,
-            IntentFilter("com.pqsolutions.hdd_monitor.PANEL_UPDATE")
-        )
+        val filter = IntentFilter("com.pqsolutions.hdd_monitor.PANEL_UPDATE")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(
+                panelUpdateReceiver,
+                filter,
+                Context.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            context.registerReceiver(panelUpdateReceiver, filter)
+        }
     }
 
     private fun startPeriodicRefresh() {
-        viewModelScope.launch {
-            while (true) {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            while (isActive) {
                 delay(60000) // 1 minute
                 loadPanels()
             }
         }
     }
 
+    private fun observePanels() {
+        viewModelScope.launch {
+            _panelsFlow
+                .flatMapLatest { it ?: emptyFlow() }
+                .collect { panels ->
+                    handlePanelsLoaded(panels)
+                }
+        }
+    }
+
     fun loadPanels() {
-        Log.d(TAG, "Cargando paneles")
-        panelsJob?.cancel()
-        panelsJob = viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 _uiState.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
@@ -79,18 +99,15 @@ class DashboardViewModel @Inject constructor(
                 if (currentUser != null) {
                     val clientId = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientId
                     Log.d(TAG, "Obteniendo paneles para ${if (clientId == null) "todos los clientes" else "clientId: $clientId"}")
-                    getPanelsUseCase(GetPanelsUseCase.Params(clientId))
+                    _panelsFlow.value = getPanelsUseCase(GetPanelsUseCase.Params(clientId))
                         .catch { error ->
                             handlePanelLoadError(error)
-                        }
-                        .collect { panels ->
-                            handlePanelsLoaded(panels)
                         }
                 } else {
                     handleNoAuthenticatedUser()
                 }
             } catch (e: CancellationException) {
-                Log.d(TAG, "La carga de paneles fue cancelada")
+                Log.d(TAG, "Coroutine cancelled: ${e.message}")
             } catch (e: Exception) {
                 handleUnexpectedError(e)
             }
@@ -145,17 +162,17 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun updatePanelState(panelId: String, relayName: String, relayStatus: String) {
-        val currentPanels = _uiState.value.panels.toMutableList()
-        val panelIndex = currentPanels.indexOfFirst { it.ID == panelId }
-        if (panelIndex != -1) {
-            val panel = currentPanels[panelIndex]
-            val updatedRelays = panel.relays.map {
-                if (it.name == relayName) it.copy(status = relayStatus) else it
+        _uiState.update { currentState ->
+            val updatedPanels = currentState.panels.map { panel ->
+                if (panel.ID == panelId) {
+                    panel.copy(relays = panel.relays.map { relay ->
+                        if (relay.name == relayName) relay.copy(status = relayStatus) else relay
+                    })
+                } else panel
             }
-            currentPanels[panelIndex] = panel.copy(relays = updatedRelays)
-            _uiState.update { it.copy(panels = currentPanels) }
-            checkForAlerts(currentPanels)
+            currentState.copy(panels = updatedPanels)
         }
+        checkForAlerts(_uiState.value.panels)
     }
 
     fun refreshPanels() {
@@ -164,24 +181,27 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun selectPanel(panelId: String) {
-        val selectedPanel = _uiState.value.panels.find { it.ID == panelId }
-        _uiState.update { it.copy(selectedPanel = selectedPanel) }
+        _uiState.update { currentState ->
+            currentState.copy(selectedPanel = currentState.panels.find { it.ID == panelId })
+        }
     }
 
     fun deselectPanel() {
         _uiState.update { it.copy(selectedPanel = null) }
     }
 
-    fun cancelCurrentJob() {
-        Log.d(TAG, "Cancelando trabajo actual")
-        panelsJob?.cancel()
-    }
-
     override fun onCleared() {
         super.onCleared()
-        Log.d(TAG, "ViewModel limpiado")
-        panelsJob?.cancel()
-        context.unregisterReceiver(panelUpdateReceiver)
+        cleanup()
+    }
+
+    fun cleanup() {
+        refreshJob?.cancel()
+        try {
+            context.unregisterReceiver(panelUpdateReceiver)
+        } catch (e: IllegalArgumentException) {
+            Log.e(TAG, "Error al desregistrar el receptor: ${e.message}")
+        }
     }
 
     companion object {

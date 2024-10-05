@@ -1,14 +1,13 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,13 +38,16 @@ fun AdminDashboardScreen(
     onManageUsersClick: () -> Unit,
     onViewAlertsClick: () -> Unit,
     onViewEventHistoryClick: () -> Unit,
-    hasPendingNotifications: Boolean
+    hasPendingNotifications: Boolean,
+    onBackPressed: () -> Unit
 ) {
     Log.d(TAG, "Starting composition with hasPendingNotifications: $hasPendingNotifications")
+
+    BackHandler(onBack = onBackPressed)
+
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
         val context = LocalContext.current
-        val scrollState = rememberScrollState()
 
         LaunchedEffect(Unit) {
             Log.d(TAG, "LaunchedEffect: Loading panels")
@@ -69,18 +71,13 @@ fun AdminDashboardScreen(
                 )
             }
         ) { paddingValues ->
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
                     .padding(paddingValues)
-                    .verticalScroll(scrollState)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                ) {
+                item {
                     ActionButtons(
                         onManageUsersClick = onManageUsersClick,
                         onViewAlertsClick = onViewAlertsClick,
@@ -88,7 +85,13 @@ fun AdminDashboardScreen(
                         context = context
                     )
                     Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                item {
                     PanelsList(uiState.panels, viewModel::selectPanel)
+                }
+
+                item {
                     Spacer(modifier = Modifier.height(16.dp))
                     LogoutButton(onLogoutClick, context)
                 }

@@ -33,8 +33,8 @@ dependencyResolutionManagement {
             library("androidx-lifecycle-runtime-ktx", "androidx.lifecycle", "lifecycle-runtime-ktx").version("2.6.2")
             library("androidx-activity-compose", "androidx.activity", "activity-compose").version("1.8.2")
 
-            library("hilt-android", "com.google.dagger", "hilt-android").version("2.48")
-            library("hilt-android-compiler", "com.google.dagger", "hilt-android-compiler").version("2.48")
+            library("hilt-android", "com.google.dagger", "hilt-android").version("2.50")
+            library("hilt-android-compiler", "com.google.dagger", "hilt-android-compiler").version("2.50")
             library("androidx-hilt-navigation-compose", "androidx.hilt", "hilt-navigation-compose").version("1.1.0")
 
             library("androidx-test-ext-junit", "androidx.test.ext", "junit").version("1.1.5")

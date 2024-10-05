@@ -5,30 +5,50 @@ import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.Alert
 import com.pqsolutions.hdd_monitor.data.AlertRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.data.UserPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class NotificationViewModel @Inject constructor(
     private val alertRepository: AlertRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val userPreferences: UserPreferences
 ) : ViewModel() {
-    private val _hasNewNotifications = MutableStateFlow(false)
-    val hasNewNotifications: StateFlow<Boolean> = _hasNewNotifications
-
-    private val _notifications = MutableStateFlow<List<Notification>>(emptyList())
-    val notifications: StateFlow<List<Notification>> = _notifications
+    private val _uiState = MutableStateFlow(NotificationUiState())
+    val uiState: StateFlow<NotificationUiState> = _uiState.asStateFlow()
 
     init {
+        loadNotifications()
+        observeNotificationChanges()
+    }
+
+    private fun loadNotifications() {
         viewModelScope.launch {
-            val currentUser = userRepository.getCurrentUser()
-            if (currentUser != null) {
+            userRepository.getCurrentUser()?.let { currentUser ->
                 alertRepository.getAlertsFlow(currentUser.clientId).collect { alerts ->
-                    _notifications.value = alerts.map { it.toNotification() }
-                    _hasNewNotifications.value = _notifications.value.any { !it.isRead }
+                    val notifications = alerts.map { it.toNotification() }
+                    _uiState.update { currentState ->
+                        currentState.copy(
+                            notifications = notifications,
+                            hasNewNotifications = notifications.any { !it.isRead }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observeNotificationChanges() {
+        viewModelScope.launch {
+            userPreferences.notificationsEnabledFlow.collect { enabled ->
+                if (enabled) {
+                    loadNotifications()
                 }
             }
         }
@@ -36,30 +56,42 @@ class NotificationViewModel @Inject constructor(
 
     fun markAllAsRead() {
         viewModelScope.launch {
-            val currentUser = userRepository.getCurrentUser()
-            if (currentUser != null) {
-                _notifications.value.forEach { notification ->
+            userRepository.getCurrentUser()?.let { currentUser ->
+                _uiState.value.notifications.forEach { notification ->
                     alertRepository.updateAlertStatus(currentUser.clientId, notification.id, "LEIDO")
                 }
-                _notifications.value = _notifications.value.map { it.copy(isRead = true) }
-                _hasNewNotifications.value = false
+                _uiState.update { currentState ->
+                    currentState.copy(
+                        notifications = currentState.notifications.map { it.copy(isRead = true) },
+                        hasNewNotifications = false
+                    )
+                }
             }
         }
     }
 
     fun markAsRead(notificationId: String) {
         viewModelScope.launch {
-            val currentUser = userRepository.getCurrentUser()
-            if (currentUser != null) {
+            userRepository.getCurrentUser()?.let { currentUser ->
                 alertRepository.updateAlertStatus(currentUser.clientId, notificationId, "LEIDO")
-                _notifications.value = _notifications.value.map {
-                    if (it.id == notificationId) it.copy(isRead = true) else it
+                _uiState.update { currentState ->
+                    val updatedNotifications = currentState.notifications.map {
+                        if (it.id == notificationId) it.copy(isRead = true) else it
+                    }
+                    currentState.copy(
+                        notifications = updatedNotifications,
+                        hasNewNotifications = updatedNotifications.any { !it.isRead }
+                    )
                 }
-                _hasNewNotifications.value = _notifications.value.any { !it.isRead }
             }
         }
     }
 }
+
+data class NotificationUiState(
+    val notifications: List<Notification> = emptyList(),
+    val hasNewNotifications: Boolean = false
+)
 
 data class Notification(
     val id: String,
@@ -73,6 +105,6 @@ private fun Alert.toNotification() = Notification(
     id = this.ID,
     title = this.title,
     message = this.text,
-    timestamp = this.status, // Usando status como timestamp ya que Alert no tiene un campo específico para fecha
+    timestamp = this.status,
     isRead = this.status != "PROGRAMADO"
 )

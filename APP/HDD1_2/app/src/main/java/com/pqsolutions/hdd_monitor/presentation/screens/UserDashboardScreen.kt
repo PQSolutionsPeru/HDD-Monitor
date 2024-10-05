@@ -1,14 +1,12 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.util.Log
-import androidx.compose.animation.*
-import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -20,12 +18,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.components.DashboardButton
-import com.pqsolutions.hdd_monitor.presentation.components.PanelsList
+import com.pqsolutions.hdd_monitor.presentation.components.PanelItem
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 import com.pqsolutions.hdd_monitor.presentation.components.LogoutButton
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 
 private const val TAG = "UserDashboardScreen"
 
@@ -36,14 +34,16 @@ fun UserDashboardScreen(
     onLogoutClick: () -> Unit,
     onViewEventHistoryClick: () -> Unit,
     onViewAlertsClick: () -> Unit,
-    hasPendingNotifications: Boolean
+    hasPendingNotifications: Boolean,
+    onBackPressed: () -> Unit
 ) {
     Log.d(TAG, "Composing UserDashboardScreen, hasPendingNotifications: $hasPendingNotifications")
+
+    BackHandler(onBack = onBackPressed)
 
     HDD1_2Theme {
         val uiState by viewModel.uiState.collectAsState()
         val context = LocalContext.current
-        val scrollState = rememberScrollState()
 
         HandleLifecycleEvents(viewModel)
 
@@ -64,25 +64,56 @@ fun UserDashboardScreen(
                 )
             }
         ) { paddingValues ->
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
                     .padding(paddingValues)
-                    .verticalScroll(scrollState)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp)
-                ) {
+                item {
                     DashboardActions(
                         onViewEventHistoryClick = onViewEventHistoryClick,
                         onViewAlertsClick = onViewAlertsClick,
                         context = context
                     )
                     Spacer(modifier = Modifier.height(32.dp))
-                    PanelsList(uiState)
+                }
+
+                when {
+                    uiState.isLoading -> {
+                        item {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentSize()
+                            )
+                        }
+                    }
+                    uiState.error != null -> {
+                        item {
+                            Text(
+                                text = uiState.error ?: stringResource(R.string.unknown_error),
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+                    uiState.panels.isEmpty() -> {
+                        item {
+                            Text(
+                                text = stringResource(R.string.no_panels_found),
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+                    else -> {
+                        items(uiState.panels) { panel ->
+                            PanelItem(panel)
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    }
+                }
+
+                item {
                     Spacer(modifier = Modifier.height(32.dp))
                     LogoutButton(onLogoutClick, context)
                 }
@@ -103,10 +134,6 @@ private fun HandleLifecycleEvents(viewModel: DashboardViewModel) {
                     Log.d(TAG, "ON_RESUME: Refreshing panels")
                     viewModel.refreshPanels()
                 }
-                Lifecycle.Event.ON_PAUSE -> {
-                    Log.d(TAG, "ON_PAUSE: Cancelling current job")
-                    viewModel.cancelCurrentJob()
-                }
                 else -> {} // Do nothing for other events
             }
         }
@@ -123,29 +150,25 @@ private fun DashboardActions(
     onViewAlertsClick: () -> Unit,
     context: android.content.Context
 ) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically()
+    Column(
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        Column {
-            DashboardButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onViewEventHistoryClick()
-                },
-                text = stringResource(R.string.view_event_history)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            DashboardButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onViewAlertsClick()
-                },
-                text = stringResource(R.string.view_alerts)
-            )
-        }
+        DashboardButton(
+            onClick = {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onViewEventHistoryClick()
+            },
+            text = stringResource(R.string.view_event_history)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        DashboardButton(
+            onClick = {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onViewAlertsClick()
+            },
+            text = stringResource(R.string.view_alerts)
+        )
     }
 }
