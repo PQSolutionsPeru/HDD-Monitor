@@ -1,145 +1,51 @@
 package com.pqsolutions.hdd_monitor.presentation
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
-import com.google.android.gms.common.ConnectionResult
-import com.google.android.gms.common.GoogleApiAvailability
 import com.google.firebase.FirebaseApp
-import com.google.firebase.firestore.FirebaseFirestore
 import com.pqsolutions.hdd_monitor.presentation.navigation.AppNavigation
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.LoginViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private val mainViewModel: MainViewModel by viewModels()
-    private val loginViewModel: LoginViewModel by viewModels()
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            Log.d(TAG, "Notification permission granted")
-        } else {
-            Log.w(TAG, "Notification permission denied")
-        }
-    }
+    private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "onCreate called")
 
-        if (!checkGooglePlayServices()) {
-            Log.e(TAG, "Google Play Services not available.")
-            finish()
-            return
-        }
-
         initializeFirebase()
-        requestNotificationPermission()
+        handleNotificationIntent(intent)
         setAppContent()
-        observeUiState()
-        setupBackPressHandler()
 
         Log.d(TAG, "onCreate completed")
     }
 
-    private fun setupBackPressHandler() {
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                Log.d(TAG, "Back pressed")
-                if (shouldExitApp()) {
-                    finish()
-                } else {
-                    // Permitir que la navegación maneje el retroceso
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
-                }
-            }
-        })
-    }
-
-    private fun shouldExitApp(): Boolean {
-        // Verifica si estamos en la pantalla principal (dashboard)
-        return mainViewModel.uiState.value.isLoggedIn &&
-                !mainViewModel.uiState.value.isFirstLaunch
-    }
-
-    private fun checkGooglePlayServices(): Boolean {
-        val googleApiAvailability = GoogleApiAvailability.getInstance()
-        val resultCode = googleApiAvailability.isGooglePlayServicesAvailable(this)
-        if (resultCode != ConnectionResult.SUCCESS) {
-            if (googleApiAvailability.isUserResolvableError(resultCode)) {
-                googleApiAvailability.getErrorDialog(this, resultCode, PLAY_SERVICES_RESOLUTION_REQUEST)?.show()
-            } else {
-                Log.e(TAG, "This device is not supported.")
-            }
-            return false
-        }
-        return true
-    }
-
     private fun initializeFirebase() {
-        try {
-            if (FirebaseApp.getApps(this).isEmpty()) {
-                FirebaseApp.initializeApp(this)?.let {
-                    Log.d(TAG, "Firebase initialized successfully: ${it.name}")
-                } ?: throw Exception("FirebaseApp.initializeApp returned null")
-            } else {
-                Log.d(TAG, "Firebase was already initialized")
-            }
-
-            FirebaseFirestore.setLoggingEnabled(true)
-            Log.d(TAG, "Firestore logging enabled")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initializing Firebase", e)
-        }
+        FirebaseApp.initializeApp(this)
+        Log.d(TAG, "FirebaseApp initialized")
     }
 
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            when {
-                ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED -> {
-                    Log.d(TAG, "Notification permission already granted")
-                }
-                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> {
-                    Log.d(TAG, "Should show permission rationale")
-                    showNotificationPermissionRationale()
-                }
-                else -> {
-                    requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
-            }
-        }
-    }
+    private fun handleNotificationIntent(intent: Intent?) {
+        val notificationType = intent?.getStringExtra("notificationType")
+        val panelId = intent?.getStringExtra("panelId")
+        val relayName = intent?.getStringExtra("relayName")
 
-    private fun showNotificationPermissionRationale() {
-        // Implementa aquí un diálogo o UI para explicar por qué necesitas el permiso
-        // Por ejemplo, puedes usar AlertDialog o un SnackBar
+        if (notificationType != null) {
+            viewModel.handleNotificationNavigation(notificationType, panelId, relayName)
+        }
     }
 
     private fun setAppContent() {
@@ -150,25 +56,18 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val uiState by mainViewModel.uiState.collectAsState()
+                    val uiState by viewModel.uiState.collectAsState()
                     Log.d(TAG, "Current UI State: $uiState")
 
-                    AppNavigation(mainViewModel, loginViewModel)
+                    AppNavigation(viewModel)
                 }
             }
         }
     }
 
-    private fun observeUiState() {
-        lifecycleScope.launch {
-            mainViewModel.uiState.collectLatest { state ->
-                state.error?.let { error ->
-                    Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
-                    // Limpiar el error después de mostrarlo
-                    mainViewModel.clearError()
-                }
-            }
-        }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleNotificationIntent(intent)
     }
 
     override fun onStart() {
@@ -198,6 +97,5 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val PLAY_SERVICES_RESOLUTION_REQUEST = 9000
     }
 }

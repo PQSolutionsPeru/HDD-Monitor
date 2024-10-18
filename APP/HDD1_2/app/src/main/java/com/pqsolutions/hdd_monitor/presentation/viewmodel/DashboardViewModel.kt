@@ -1,142 +1,109 @@
 package com.pqsolutions.hdd_monitor.presentation.viewmodel
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.Build
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.firestore.FirebaseFirestore
 import com.pqsolutions.hdd_monitor.data.Panel
 import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
 import com.pqsolutions.hdd_monitor.data.UserRole
-import com.pqsolutions.hdd_monitor.domain.GetPanelsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val panelRepository: PanelRepository,
     private val userRepository: UserRepository,
-    private val getPanelsUseCase: GetPanelsUseCase,
-    @ApplicationContext private val context: Context
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
-    private val _panelsFlow = MutableStateFlow<Flow<List<Panel>>?>(null)
-
-    private var refreshJob: Job? = null
-
-    private val panelUpdateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == "com.pqsolutions.hdd_monitor.PANEL_UPDATE") {
-                val panelId = intent.getStringExtra("panelId") ?: return
-                val relayName = intent.getStringExtra("relayName") ?: return
-                val relayStatus = intent.getStringExtra("relayStatus") ?: return
-                updatePanelState(panelId, relayName, relayStatus)
-            }
-        }
-    }
+    private var panelsJob: Job? = null
 
     init {
-        Log.d(TAG, "ViewModel inicializado")
-        registerPanelUpdateReceiver()
-        startPeriodicRefresh()
-        observePanels()
-    }
-
-    private fun registerPanelUpdateReceiver() {
-        val filter = IntentFilter("com.pqsolutions.hdd_monitor.PANEL_UPDATE")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(
-                panelUpdateReceiver,
-                filter,
-                Context.RECEIVER_NOT_EXPORTED
-            )
-        } else {
-            context.registerReceiver(panelUpdateReceiver, filter)
-        }
-    }
-
-    private fun startPeriodicRefresh() {
-        refreshJob?.cancel()
-        refreshJob = viewModelScope.launch {
-            while (isActive) {
-                delay(60000) // 1 minute
-                loadPanels()
-            }
-        }
-    }
-
-    private fun observePanels() {
-        viewModelScope.launch {
-            _panelsFlow
-                .flatMapLatest { it ?: emptyFlow() }
-                .collect { panels ->
-                    handlePanelsLoaded(panels)
-                }
-        }
+        Log.d(TAG, "DashboardViewModel initialized")
+        loadPanels()
     }
 
     fun loadPanels() {
-        viewModelScope.launch(Dispatchers.IO) {
+        Log.d(TAG, "loadPanels() called")
+        panelsJob?.cancel()
+        panelsJob = viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
-                Log.d(TAG, "Usuario actual: $currentUser")
+                Log.d(TAG, "Current user: $currentUser")
                 if (currentUser != null) {
                     val clientId = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientId
-                    Log.d(TAG, "Obteniendo paneles para ${if (clientId == null) "todos los clientes" else "clientId: $clientId"}")
-                    _panelsFlow.value = getPanelsUseCase(GetPanelsUseCase.Params(clientId))
-                        .catch { error ->
-                            handlePanelLoadError(error)
+                    Log.d(TAG, "Fetching panels for clientId: $clientId")
+                    panelRepository.getPanels(clientId).collect { panels ->
+                        Log.d(TAG, "Received ${panels.size} panels")
+                        panels.forEach { panel ->
+                            Log.d(TAG, "Panel: ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.ID_CLIENT})")
+                            Log.d(TAG, "Relays: ${panel.relays}")
                         }
+                        updatePanels(panels)
+                    }
                 } else {
+                    Log.e(TAG, "No authenticated user found")
                     handleNoAuthenticatedUser()
                 }
-            } catch (e: CancellationException) {
-                Log.d(TAG, "Coroutine cancelled: ${e.message}")
             } catch (e: Exception) {
+                Log.e(TAG, "Error loading panels", e)
                 handleUnexpectedError(e)
             }
         }
     }
 
-    private fun handlePanelLoadError(error: Throwable) {
-        Log.e(TAG, "Error al cargar paneles: ${error.message}", error)
-        _uiState.update { it.copy(
-            isLoading = false,
-            error = error.message ?: "Ocurrió un error desconocido"
-        ) }
+    private fun updatePanels(panels: List<Panel>) {
+        Log.d(TAG, "updatePanels called with ${panels.size} panels")
+        _uiState.update { currentState ->
+            Log.d(TAG, "Current state before update: $currentState")
+            val groupedPanels = panels.groupBy { it.ID_CLIENT }
+            Log.d(TAG, "Grouped panels: ${groupedPanels.keys}")
+
+            val updatedPanels = panels.map { panel ->
+                val newStatus = determineOverallPanelStatus(panel)
+                Log.d(TAG, "Panel ${panel.name} new status: $newStatus")
+                panel.copy(overallStatus = newStatus)
+            }
+
+            Log.d(TAG, "Updated panels: ${updatedPanels.map { it.name to it.overallStatus }}")
+
+            val newState = currentState.copy(
+                isLoading = false,
+                panels = updatedPanels,
+                groupedPanels = groupedPanels,
+                error = null
+            )
+            Log.d(TAG, "New state: $newState")
+            newState
+        }
+        logPanelState("After updatePanels")
     }
 
-    private fun handlePanelsLoaded(panels: List<Panel>) {
-        Log.d(TAG, "Paneles cargados: ${panels.size}")
-        panels.forEach { panel ->
-            Log.d(TAG, "Panel ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.clientId}) relays: ${panel.relays}")
+    private fun determineOverallPanelStatus(panel: Panel): String {
+        Log.d(TAG, "Determining overall status for panel: ${panel.name}")
+        val discRelays = panel.relays.filter { it.status == "DISC" }
+        val status = when {
+            discRelays.isNotEmpty() -> discRelays.joinToString(", ") { it.name }
+            else -> "OK"
         }
-        _uiState.update { it.copy(
-            isLoading = false,
-            panels = panels,
-            error = null
-        ) }
-        checkForAlerts(panels)
+        Log.d(TAG, "Overall status for panel ${panel.name}: $status")
+        return status
     }
 
     private fun handleNoAuthenticatedUser() {
-        Log.e(TAG, "No se encontró usuario autenticado")
+        Log.e(TAG, "No authenticated user found")
         _uiState.update { it.copy(
             isLoading = false,
             error = "No se encontró usuario autenticado"
@@ -144,75 +111,52 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun handleUnexpectedError(e: Exception) {
-        Log.e(TAG, "Error: ${e.message}", e)
+        Log.e(TAG, "Unexpected error: ${e.message}", e)
         _uiState.update { it.copy(
             isLoading = false,
             error = e.message ?: "Error desconocido"
         ) }
     }
 
-    private fun checkForAlerts(panels: List<Panel>) {
-        val alerts = panels.flatMap { panel ->
-            panel.relays.filter { it.status != "OK" }.map { relay ->
-                "Panel ${panel.name} (Cliente: ${panel.clientId}): ${relay.name} estado ${relay.status}"
+    private fun logPanelState(context: String) {
+        Log.d(TAG, "$context - Panels state:")
+        _uiState.value.panels.forEach { panel ->
+            Log.d(TAG, "Panel ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.ID_CLIENT}) relays:")
+            panel.relays.forEach { relay ->
+                Log.d(TAG, "  Relay: ${relay.name}, Status: ${relay.status}, DateTime: ${relay.date_time}")
             }
         }
-        Log.d(TAG, "Alertas encontradas: ${alerts.size}")
-        _uiState.update { it.copy(alerts = alerts) }
-    }
-
-    private fun updatePanelState(panelId: String, relayName: String, relayStatus: String) {
-        _uiState.update { currentState ->
-            val updatedPanels = currentState.panels.map { panel ->
-                if (panel.ID == panelId) {
-                    panel.copy(relays = panel.relays.map { relay ->
-                        if (relay.name == relayName) relay.copy(status = relayStatus) else relay
-                    })
-                } else panel
-            }
-            currentState.copy(panels = updatedPanels)
-        }
-        checkForAlerts(_uiState.value.panels)
     }
 
     fun refreshPanels() {
-        Log.d(TAG, "Actualizando paneles")
+        Log.d(TAG, "refreshPanels() called")
         loadPanels()
     }
 
-    fun selectPanel(panelId: String) {
-        _uiState.update { currentState ->
-            currentState.copy(selectedPanel = currentState.panels.find { it.ID == panelId })
-        }
-    }
-
-    fun deselectPanel() {
-        _uiState.update { it.copy(selectedPanel = null) }
+    fun cancelCurrentJob() {
+        Log.d(TAG, "cancelCurrentJob() called")
+        panelsJob?.cancel()
+        panelsJob = null
     }
 
     override fun onCleared() {
         super.onCleared()
-        cleanup()
-    }
-
-    fun cleanup() {
-        refreshJob?.cancel()
-        try {
-            context.unregisterReceiver(panelUpdateReceiver)
-        } catch (e: IllegalArgumentException) {
-            Log.e(TAG, "Error al desregistrar el receptor: ${e.message}")
-        }
+        cancelCurrentJob()
+        Log.d(TAG, "ViewModel cleared")
     }
 
     companion object {
         private const val TAG = "DashboardViewModel"
     }
-}
 
-data class DashboardUiState(
-    val isLoading: Boolean = false,
-    val panels: List<Panel> = emptyList(),
-    val selectedPanel: Panel? = null,
-    val error: String? = null,
-    val alerts: List<String> = emptyList()
-)
+    data class DashboardUiState(
+        val isLoading: Boolean = true,
+        val panels: List<Panel> = emptyList(),
+        val groupedPanels: Map<String, List<Panel>> = emptyMap(),
+        val error: String? = null
+    ) {
+        override fun toString(): String {
+            return "DashboardUiState(isLoading=$isLoading, panels=${panels.size}, groupedPanels=${groupedPanels.keys}, error=$error)"
+        }
+    }
+}

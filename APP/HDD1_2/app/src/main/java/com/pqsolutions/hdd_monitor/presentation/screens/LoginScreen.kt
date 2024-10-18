@@ -5,96 +5,66 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.LoginState
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.LoginViewModel
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.presentation.components.HddButton
+import com.pqsolutions.hdd_monitor.presentation.components.HddOutlinedTextField
+import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+import androidx.compose.animation.ExperimentalAnimationApi
+
+@OptIn(ExperimentalAnimationApi::class)
 
 @Composable
-fun LoginScreen(
-    viewModel: LoginViewModel,
-    onLoginSuccess: () -> Unit
-) {
+fun LoginScreen(onLoginClick: (String, String) -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    val loginState by viewModel.loginState.collectAsState()
-
-    // Efecto para manejar el éxito del login
-    LaunchedEffect(loginState) {
-        if (loginState is LoginState.Success) {
-            onLoginSuccess()
-        }
-    }
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(Dimensions.paddingLarge),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "HDD Monitor",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
+            text = stringResource(R.string.app_name),
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { contentDescription = "App title" }
         )
-        Spacer(modifier = Modifier.height(32.dp))
-        OutlinedTextField(
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        HddOutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth()
+            label = stringResource(R.string.email),
+            modifier = Modifier.semantics { contentDescription = "Email input field" }
         )
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(
+        Spacer(modifier = Modifier.height(Dimensions.spacingMedium))
+        HddOutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("Contraseña") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
+            label = stringResource(R.string.password),
+            isPassword = true,
+            modifier = Modifier.semantics { contentDescription = "Password input field" }
         )
-        Spacer(modifier = Modifier.height(32.dp))
-        Button(
+        Spacer(modifier = Modifier.height(Dimensions.spacingLarge))
+        HddButton(
             onClick = {
-                viewModel.login(email, password)
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onLoginClick(email, password)
             },
+            text = stringResource(R.string.login),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
-            enabled = !loginState.isLoading // Deshabilitar el botón durante la carga
-        ) {
-            if (loginState.isLoading) {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(24.dp)
-                )
-            } else {
-                Text("Iniciar sesión")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Mostrar mensajes de error
-        loginState.errorMessage?.let { error ->
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+                .height(Dimensions.buttonHeight)
+                .semantics { contentDescription = "Login button" }
+        )
     }
 }
-
-// Extensión para simplificar la comprobación del estado de carga
-private val LoginState.isLoading: Boolean
-    get() = this is LoginState.Loading
-
-// Extensión para obtener el mensaje de error
-private val LoginState.errorMessage: String?
-    get() = when (this) {
-        is LoginState.Error -> message
-        else -> null
-    }

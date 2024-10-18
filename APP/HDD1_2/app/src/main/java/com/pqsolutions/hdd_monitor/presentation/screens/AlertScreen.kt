@@ -3,12 +3,9 @@ package com.pqsolutions.hdd_monitor.presentation.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -118,11 +115,6 @@ fun AlertScreen(
                                     performHapticFeedback(context)
                                     playSoundEffect(context, R.raw.button_click)
                                     viewModel.updateAlertStatus(alert.ID_CLIENT, alert.ID, "ACEPTADO")
-                                },
-                                onRejectClick = {
-                                    performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
-                                    viewModel.updateAlertStatus(alert.ID_CLIENT, alert.ID, "RECHAZADO")
                                 }
                             )
                         }
@@ -184,8 +176,7 @@ fun AlertItem(
     isAdmin: Boolean,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onConfirmClick: () -> Unit,
-    onRejectClick: () -> Unit
+    onConfirmClick: () -> Unit
 ) {
     val context = LocalContext.current
     Card(

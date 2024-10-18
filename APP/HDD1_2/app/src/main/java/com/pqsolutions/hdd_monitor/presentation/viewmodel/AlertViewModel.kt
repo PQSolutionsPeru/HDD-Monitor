@@ -28,153 +28,179 @@ class AlertViewModel @Inject constructor(
 
     fun loadAlerts() {
         viewModelScope.launch {
-            userPreferences.userDataFlow
-                .filterNotNull()
-                .flatMapLatest { userData ->
-                    when (userData.role) {
-                        UserRole.ADMIN -> alertRepository.getAllAlertsFlow()
-                        UserRole.USER -> {
-                            if (userData.clientId.isNotEmpty()) {
-                                alertRepository.getAlertsFlow(userData.clientId)
-                            } else {
-                                flow { emit(emptyList()) }
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            userPreferences.userDataFlow.collect { userData ->
+                when (userData?.role) {
+                    UserRole.ADMIN -> {
+                        alertRepository.getAllAlertsFlow()
+                            .catch { e ->
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    error = e.message ?: "Error al cargar las alertas"
+                                )
                             }
+                            .collect { alerts ->
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    alerts = alerts,
+                                    error = null
+                                )
+                            }
+                    }
+                    UserRole.USER -> {
+                        val clientId = userData.clientId
+                        if (clientId.isNotEmpty()) {
+                            alertRepository.getAlertsFlow(clientId)
+                                .catch { e ->
+                                    _uiState.value = _uiState.value.copy(
+                                        isLoading = false,
+                                        error = e.message ?: "Error al cargar las alertas"
+                                    )
+                                }
+                                .collect { alerts ->
+                                    _uiState.value = _uiState.value.copy(
+                                        isLoading = false,
+                                        alerts = alerts,
+                                        error = null
+                                    )
+                                }
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                alerts = emptyList(),
+                                error = "ID de cliente no válido"
+                            )
                         }
-                        else -> flow { emit(emptyList()) }
                     }
-                }
-                .onStart { _uiState.update { it.copy(isLoading = true) } }
-                .catch { e ->
-                    _uiState.update {
-                        it.copy(
+                    null -> {
+                        _uiState.value = _uiState.value.copy(
                             isLoading = false,
-                            error = e.message ?: "Error al cargar las alertas"
+                            alerts = emptyList(),
+                            error = "No se encontraron datos de usuario"
                         )
                     }
                 }
-                .collect { alerts ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            alerts = alerts,
-                            error = null
-                        )
-                    }
-                }
+            }
         }
     }
 
     fun createAlert(alert: Alert, selectedClients: List<String>) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            userPreferences.userDataFlow.filterNotNull().first().let { userData ->
-                try {
-                    when (userData.role) {
-                        UserRole.ADMIN -> alertRepository.createAlert(selectedClients, alert)
-                        UserRole.USER -> {
-                            if (userData.clientId.isNotEmpty()) {
-                                alertRepository.createAlert(listOf(userData.clientId), alert)
-                            } else {
-                                throw Exception("ID de cliente no válido")
-                            }
-                        }
-                        else -> throw Exception("Rol de usuario no válido")
-                    }
-                    loadAlerts()
-                } catch (e: Exception) {
-                    _uiState.update {
-                        it.copy(
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            userPreferences.userDataFlow.firstOrNull()?.let { userData ->
+                when (userData.role) {
+                    UserRole.ADMIN -> {
+                        val result = alertRepository.createAlert(selectedClients, alert)
+                        _uiState.value = _uiState.value.copy(
                             isLoading = false,
-                            error = e.message ?: "Error al crear la alerta"
+                            error = result.exceptionOrNull()?.message
                         )
+                        loadAlerts()
+                    }
+                    UserRole.USER -> {
+                        val clientId = userData.clientId
+                        if (clientId.isNotEmpty()) {
+                            val result = alertRepository.createAlert(listOf(clientId), alert)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = result.exceptionOrNull()?.message
+                            )
+                            loadAlerts()
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "ID de cliente no válido"
+                            )
+                        }
                     }
                 }
+            } ?: run {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "No se encontraron datos de usuario"
+                )
             }
         }
     }
 
     fun updateAlert(alert: Alert) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            userPreferences.userDataFlow.filterNotNull().first().let { userData ->
-                try {
-                    when (userData.role) {
-                        UserRole.ADMIN -> alertRepository.updateAlert(alert.ID_CLIENT, alert)
-                        UserRole.USER -> {
-                            if (userData.clientId.isNotEmpty()) {
-                                alertRepository.updateAlert(userData.clientId, alert)
-                            } else {
-                                throw Exception("ID de cliente no válido")
-                            }
-                        }
-                        else -> throw Exception("Rol de usuario no válido")
-                    }
-                    loadAlerts()
-                } catch (e: Exception) {
-                    _uiState.update {
-                        it.copy(
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            userPreferences.userDataFlow.firstOrNull()?.let { userData ->
+                when (userData.role) {
+                    UserRole.ADMIN -> {
+                        val result = alertRepository.updateAlert(alert.ID_CLIENT, alert)
+                        _uiState.value = _uiState.value.copy(
                             isLoading = false,
-                            error = e.message ?: "Error al actualizar la alerta"
+                            error = result.exceptionOrNull()?.message
                         )
+                        loadAlerts()
+                    }
+                    UserRole.USER -> {
+                        val clientId = userData.clientId
+                        if (clientId.isNotEmpty()) {
+                            val result = alertRepository.updateAlert(clientId, alert)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = result.exceptionOrNull()?.message
+                            )
+                            loadAlerts()
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "ID de cliente no válido"
+                            )
+                        }
                     }
                 }
+            } ?: run {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "No se encontraron datos de usuario"
+                )
             }
         }
     }
 
     fun deleteAlert(clientId: String, alertId: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            try {
-                alertRepository.deleteAlert(clientId, alertId)
-                loadAlerts()
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Error al eliminar la alerta"
-                    )
-                }
-            }
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            val result = alertRepository.deleteAlert(clientId, alertId)
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                error = result.exceptionOrNull()?.message
+            )
+            loadAlerts()
         }
     }
 
     fun updateAlertStatus(clientId: String, alertId: String, newStatus: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            try {
-                alertRepository.updateAlertStatus(clientId, alertId, newStatus)
-                loadAlerts()
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Error al actualizar el estado de la alerta"
-                    )
-                }
-            }
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            val result = alertRepository.updateAlertStatus(clientId, alertId, newStatus)
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                error = result.exceptionOrNull()?.message
+            )
+            loadAlerts()
         }
     }
 
     fun loadClients() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.value = _uiState.value.copy(isLoading = true)
             try {
                 val clients = alertRepository.getClients()
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        clients = clients,
-                        error = null
-                    )
-                }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    clients = clients,
+                    error = null
+                )
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Error al cargar los clientes"
-                    )
-                }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error al cargar los clientes"
+                )
             }
         }
     }

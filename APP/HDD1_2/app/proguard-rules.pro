@@ -26,6 +26,11 @@
 -keep class com.google.android.gms.** { *; }
 -dontwarn com.google.android.gms.**
 
+# Keep Constructor without arguments in UserRepository.kt
+-keepclassmembers class com.pqsolutions.hdd_monitor.data.UserData {
+    <init>();
+}
+
 # Keep Retrofit and OkHttp
 -keepattributes Signature, InnerClasses, EnclosingMethod
 -keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations

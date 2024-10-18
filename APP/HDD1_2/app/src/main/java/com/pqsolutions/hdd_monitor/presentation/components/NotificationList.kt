@@ -16,11 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 
 @Composable
 fun NotificationList(
@@ -51,8 +46,7 @@ fun NotificationList(
                         isAdmin = false,
                         onEditClick = { },
                         onDeleteClick = { },
-                        onConfirmClick = { onConfirmClick(notification) },
-                        onRejectClick = { onRejectClick(notification) }
+                        onConfirmClick = { onConfirmClick(notification) }
                     )
                 }
             }
@@ -90,28 +84,26 @@ fun HddOutlinedTextField(
     errorMessage: String? = null,
     isPassword: Boolean = false
 ) {
-    Column {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            label = { Text(label) },
-            modifier = modifier.fillMaxWidth(),
-            isError = isError,
-            visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            ),
-            textStyle = MaterialTheme.typography.bodyLarge
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier.fillMaxWidth(),
+        isError = isError,
+        visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+        ),
+        textStyle = MaterialTheme.typography.bodyLarge
+    )
+    if (isError && errorMessage != null) {
+        Text(
+            text = errorMessage,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp)
         )
-        if (isError && errorMessage != null) {
-            Text(
-                text = errorMessage,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(start = 16.dp, top = 4.dp)
-            )
-        }
     }
 }
 

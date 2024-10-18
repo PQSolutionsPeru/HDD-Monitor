@@ -92,53 +92,61 @@ dependencies {
     kapt(libs.hilt.android.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
 
-    implementation(platform("com.google.firebase:firebase-bom:33.4.0"))
-    implementation("com.google.firebase:firebase-analytics-ktx")
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.google.firebase:firebase-functions-ktx")
+    // Firebase
+    implementation(platform(libs.firebase.bom.v3280))
+    implementation(libs.google.firebase.analytics.ktx)
+    implementation(libs.com.google.firebase.firebase.auth.ktx)
+    implementation(libs.com.google.firebase.firebase.firestore.ktx)
+    implementation(libs.com.google.firebase.firebase.messaging.ktx)
+    implementation(libs.google.firebase.functions.ktx)
+    implementation(libs.firebase.crashlytics.ktx)
 
-    implementation("androidx.navigation:navigation-compose:2.8.1")
-    implementation("androidx.paging:paging-compose:3.3.2")
+    // Navegación y paginación
+    implementation(libs.androidx.navigation.compose.v281)
+    implementation(libs.androidx.paging.compose)
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    // Corrutinas
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
 
+    // Google Play Services
     implementation(libs.play.services.base)
     implementation(libs.play.services.auth)
 
-
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito:mockito-core:5.7.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    // Testing
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
-    implementation("androidx.datastore:datastore-preferences-core:1.0.0")
+    // DataStore
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.datastore.preferences.core)
 
-    implementation("androidx.multidex:multidex:2.0.1")
+    // Multidex
+    implementation(libs.androidx.multidex)
 
-    // Import the BoM for the Firebase platform
-    implementation(platform("com.google.firebase:firebase-bom:32.8.0"))
+    // WorkManager con Hilt
+    implementation(libs.androidx.hilt.work)
+    kapt(libs.androidx.hilt.compiler)
+    implementation(libs.androidx.work.runtime.ktx)
 
-    // Add the dependencies for the Crashlytics and Analytics libraries
-    // When using the BoM, you don't specify versions in Firebase library dependencies
-    implementation("com.google.firebase:firebase-crashlytics")
-    implementation("com.google.firebase:firebase-analytics")
+    // Lifecycle
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx.v286)
+    implementation(libs.androidx.activity.ktx)
 
-    implementation("androidx.hilt:hilt-work:1.2.0")
-    kapt("androidx.hilt:hilt-compiler:1.2.0")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Retrofit para llamadas a API (útil para la renovación de tokens)
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
 
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.activity:activity-ktx:1.9.2")
-
+    // OkHttp para interceptores (útil para agregar tokens a las solicitudes)
+    implementation(libs.okhttp)
+    implementation(libs.logging.interceptor)
 }
 
 kotlin {

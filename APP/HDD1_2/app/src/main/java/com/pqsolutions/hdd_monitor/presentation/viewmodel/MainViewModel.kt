@@ -4,16 +4,26 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessaging
-import com.pqsolutions.hdd_monitor.data.*
+import com.pqsolutions.hdd_monitor.data.AlertRepository
+import com.pqsolutions.hdd_monitor.data.AuthRepository
+import com.pqsolutions.hdd_monitor.data.Message
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserData
+import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.service.HddFirebaseMessagingService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDateTime
@@ -26,6 +36,7 @@ class MainViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val userPreferences: UserPreferences,
     private val alertRepository: AlertRepository,
+    private val panelRepository: PanelRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -35,16 +46,17 @@ class MainViewModel @Inject constructor(
     private val _hasPendingNotifications = MutableStateFlow(false)
     val hasPendingNotifications: StateFlow<Boolean> = _hasPendingNotifications.asStateFlow()
 
-    private var logoutJob: Job? = null
-    private var checkNotificationsJob: Job? = null
-
-    private val notificationReceiver = object : BroadcastReceiver() {
+    private val panelUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                "com.pqsolutions.hdd_monitor.NEW_ALERT",
-                "com.pqsolutions.hdd_monitor.NEW_MESSAGE",
-                "com.pqsolutions.hdd_monitor.PANEL_UPDATE" -> {
-                    checkPendingNotifications()
+                HddFirebaseMessagingService.PANEL_UPDATE_ACTION -> {
+                    val clientId = intent.getStringExtra("clientId")
+                    val panelId = intent.getStringExtra("panelId")
+                    val relayName = intent.getStringExtra("relayName")
+                    val relayStatus = intent.getStringExtra("relayStatus")
+                    if (clientId != null && panelId != null && relayName != null && relayStatus != null) {
+                        updateRelay(clientId, panelId, relayName, relayStatus)
+                    }
                 }
             }
         }
@@ -56,87 +68,102 @@ class MainViewModel @Inject constructor(
 
     private fun initializeViewModel() {
         viewModelScope.launch {
-            userPreferences.isFirstLaunchFlow.collect { isFirstLaunch ->
-                _uiState.update { it.copy(isFirstLaunch = isFirstLaunch) }
-            }
-        }
-        viewModelScope.launch {
-            userPreferences.userDataFlow.collect { userData ->
-                updateUiState(userData)
+            combineUserPreferences().collect { state ->
+                _uiState.value = state
+                Log.d(TAG, "UI State updated: $state")
+                if (state.isLoggedIn) {
+                    checkPendingNotifications()
+                }
             }
         }
         checkAuthState()
-        registerNotificationReceiver()
+        registerPanelUpdateReceiver()
+        subscribeToTopic()
     }
 
-    private fun updateUiState(userData: UserData?) {
-        _uiState.update { currentState ->
-            currentState.copy(
-                isLoggedIn = userData != null,
-                userData = userData,
-                currentRoute = when {
-                    currentState.isFirstLaunch -> "onboarding"
-                    userData != null -> "dashboard"
-                    else -> "login"
-                }
-            )
-        }
-        if (userData != null) {
-            checkPendingNotifications()
-        }
+    private fun combineUserPreferences() = combine(
+        userPreferences.isFirstLaunchFlow,
+        userPreferences.userDataFlow,
+        userPreferences.themeFlow,
+        userPreferences.languageFlow,
+        userPreferences.notificationsEnabledFlow
+    ) { isFirstLaunch, userData, theme, language, notificationsEnabled ->
+        MainUiState(
+            isFirstLaunch = isFirstLaunch,
+            isLoggedIn = userData != null,
+            userData = userData,
+            theme = theme,
+            language = language,
+            notificationsEnabled = notificationsEnabled,
+            currentRoute = if (isFirstLaunch) "onboarding" else if (userData != null) "dashboard" else "login"
+        )
     }
 
-    private fun registerNotificationReceiver() {
-        val filter = IntentFilter().apply {
-            addAction("com.pqsolutions.hdd_monitor.NEW_ALERT")
-            addAction("com.pqsolutions.hdd_monitor.NEW_MESSAGE")
-            addAction("com.pqsolutions.hdd_monitor.PANEL_UPDATE")
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(notificationReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(notificationReceiver, filter)
-        }
+    private fun registerPanelUpdateReceiver() {
+        LocalBroadcastManager.getInstance(context).registerReceiver(
+            panelUpdateReceiver,
+            IntentFilter(HddFirebaseMessagingService.PANEL_UPDATE_ACTION)
+        )
     }
 
-    fun checkAuthState() {
+    private fun subscribeToTopic() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            try {
+                FirebaseMessaging.getInstance().subscribeToTopic("relay-status").await()
+                Log.d(TAG, "Subscribed to relay-status topic")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to subscribe to relay-status topic", e)
+            }
+        }
+    }
+
+    private fun checkAuthState() {
+        viewModelScope.launch {
             val currentUser = userRepository.getCurrentUser()
             Log.d(TAG, "Current user: $currentUser")
             if (currentUser != null) {
                 userPreferences.setUserData(currentUser)
-                val isFirstLaunch = userPreferences.isFirstLaunchFlow.first()
-                _uiState.update { it.copy(
+                _uiState.value = _uiState.value.copy(
                     isLoggedIn = true,
                     userData = currentUser,
-                    isFirstLaunch = isFirstLaunch,
-                    currentRoute = if (isFirstLaunch) "onboarding" else "dashboard"
-                ) }
+                    error = null
+                )
+                checkPendingNotifications()
             } else {
-                userPreferences.clearUserData()
-                _uiState.update { it.copy(
+                _uiState.value = _uiState.value.copy(
                     isLoggedIn = false,
                     userData = null,
-                    currentRoute = "login"
-                ) }
+                    error = null
+                )
             }
-            _uiState.update { it.copy(isLoading = false) }
         }
     }
 
     private fun checkPendingNotifications() {
-        checkNotificationsJob?.cancel()
-        checkNotificationsJob = viewModelScope.launch {
-            userRepository.getCurrentUser()?.let { currentUser ->
-                Log.d(TAG, "Checking pending notifications for user: ${currentUser.id}")
+        viewModelScope.launch {
+            val currentUser = userRepository.getCurrentUser()
+            Log.d(TAG, "Checking pending notifications for user: ${currentUser?.id}")
+            if (currentUser != null) {
                 alertRepository.getAlertsFlow(currentUser.clientId)
                     .distinctUntilChanged()
                     .collect { alerts ->
                         val hasPending = alerts.any { it.status == "PROGRAMADO" }
-                        _hasPendingNotifications.value = hasPending
-                        Log.d(TAG, "Pending notifications updated: $hasPending")
+                        if (hasPending != _hasPendingNotifications.value) {
+                            _hasPendingNotifications.value = hasPending
+                            Log.d(TAG, "Pending notifications updated: $hasPending")
+                        }
                     }
+            }
+        }
+    }
+
+    fun updateRelay(clientId: String, panelId: String, relayName: String, relayStatus: String) {
+        viewModelScope.launch {
+            try {
+                panelRepository.updateRelayStatus(clientId, panelId, relayName, relayStatus)
+                Log.d(TAG, "Relay updated successfully: Panel=$panelId, Relay=$relayName, Status=$relayStatus")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating relay: ${e.message}", e)
             }
         }
     }
@@ -153,14 +180,10 @@ class MainViewModel @Inject constructor(
     }
 
     private fun login(email: String, password: String) {
-        if (email.isBlank() || password.isBlank()) {
-            _uiState.update { it.copy(error = "Email and password cannot be empty") }
-            return
-        }
         viewModelScope.launch {
             try {
                 Log.d(TAG, "Attempting login for email: $email")
-                _uiState.update { it.copy(isLoading = true, error = null) }
+                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
                 authRepository.login(email, password).fold(
                     onSuccess = { user ->
                         handleLoginSuccess(user)
@@ -178,56 +201,48 @@ class MainViewModel @Inject constructor(
     private suspend fun handleLoginSuccess(user: UserData) {
         userPreferences.setUserData(user)
         updateFCMToken()
-        val isFirstLaunch = userPreferences.isFirstLaunchFlow.first()
-        _uiState.update { it.copy(
+        _uiState.value = _uiState.value.copy(
             isLoading = false,
             isLoggedIn = true,
             userData = user,
-            error = null,
-            isFirstLaunch = isFirstLaunch,
-            currentRoute = if (isFirstLaunch) "onboarding" else "dashboard"
-        ) }
+            error = null
+        )
         Log.d(TAG, "Login successful for user: ${user.name}")
         checkPendingNotifications()
     }
 
     private fun handleLoginFailure(e: Throwable) {
         Log.e(TAG, "Login failed: ${e.message}", e)
-        _uiState.update { it.copy(
+        _uiState.value = _uiState.value.copy(
             isLoading = false,
             error = e.message ?: "Unknown error occurred"
-        ) }
+        )
     }
 
     private fun handleNetworkError(e: Exception) {
         Log.e(TAG, "Network error during login: ${e.message}", e)
-        _uiState.update { it.copy(
+        _uiState.value = _uiState.value.copy(
             isLoading = false,
             error = "Network error: ${e.message}"
-        ) }
+        )
     }
 
     private fun logout() {
-        logoutJob?.cancel()
-        logoutJob = viewModelScope.launch {
+        viewModelScope.launch {
             Log.d(TAG, "Attempting logout")
             try {
-                _uiState.update { it.copy(isLoading = true, isLoggingOut = true) }
                 authRepository.logout()
                 userPreferences.clearUserData()
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = false,
+                    userData = null,
+                    error = null
+                )
                 _hasPendingNotifications.value = false
                 Log.d(TAG, "Logout successful")
             } catch (e: Exception) {
                 Log.e(TAG, "Logout failed: ${e.message}", e)
-                _uiState.update { it.copy(error = e.message ?: "Logout failed") }
-            } finally {
-                _uiState.update { it.copy(
-                    isLoading = false,
-                    isLoggedIn = false,
-                    userData = null,
-                    isLoggingOut = false,
-                    currentRoute = "login"
-                ) }
+                _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
             }
         }
     }
@@ -235,10 +250,6 @@ class MainViewModel @Inject constructor(
     private fun finishOnboarding() {
         viewModelScope.launch {
             userPreferences.setFirstLaunch(false)
-            _uiState.update { it.copy(
-                isFirstLaunch = false,
-                currentRoute = "dashboard"
-            ) }
         }
     }
 
@@ -263,7 +274,8 @@ class MainViewModel @Inject constructor(
     private suspend fun updateFCMToken() {
         try {
             val token = FirebaseMessaging.getInstance().token.await()
-            userRepository.getCurrentUser()?.let { currentUser ->
+            val currentUser = userRepository.getCurrentUser()
+            if (currentUser != null) {
                 userRepository.updateUserToken(currentUser.id, token)
             }
         } catch (e: Exception) {
@@ -274,7 +286,8 @@ class MainViewModel @Inject constructor(
     fun sendMessage(subject: String, content: String) {
         viewModelScope.launch {
             try {
-                userRepository.getCurrentUser()?.let { currentUser ->
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
                     val timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                     val message = Message(currentUser.id, currentUser.clientId, content, subject, timestamp)
                     userRepository.addMessage(message)
@@ -285,19 +298,22 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun clearError() {
-        _uiState.update { it.copy(error = null) }
+    fun handleNotificationNavigation(notificationType: String?, panelId: String?, relayName: String?) {
+        when (notificationType) {
+            "relay_update" -> {
+                // Navegar a la pantalla principal
+                _uiState.value = _uiState.value.copy(currentRoute = "dashboard")
+            }
+            "alert" -> {
+                // Navegar a la pantalla de alertas
+                _uiState.value = _uiState.value.copy(currentRoute = "alerts")
+            }
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
-        logoutJob?.cancel()
-        checkNotificationsJob?.cancel()
-        try {
-            context.unregisterReceiver(notificationReceiver)
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "Receiver was not registered: ${e.message}")
-        }
+        LocalBroadcastManager.getInstance(context).unregisterReceiver(panelUpdateReceiver)
     }
 
     companion object {
@@ -314,8 +330,7 @@ data class MainUiState(
     val currentRoute: String = "login",
     val theme: String = "system",
     val language: String = "es",
-    val notificationsEnabled: Boolean = true,
-    val isLoggingOut: Boolean = false
+    val notificationsEnabled: Boolean = true
 )
 
 sealed class MainUiEvent {

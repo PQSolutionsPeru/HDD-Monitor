@@ -41,6 +41,7 @@ class EventViewModel @Inject constructor(
 
     fun loadEvents() {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
             userPreferences.userDataFlow
                 .filterNotNull()
                 .flatMapLatest { userData ->
@@ -50,45 +51,38 @@ class EventViewModel @Inject constructor(
                         else -> flow { emit(emptyList()) }
                     }
                 }
-                .onStart { _uiState.update { it.copy(isLoading = true) } }
                 .catch { e ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            events = emptyList(),
-                            error = e.message ?: "Error loading events"
-                        )
-                    }
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        events = emptyList(),
+                        error = e.message ?: "Error loading events"
+                    )
                 }
                 .collect { events ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            events = events,
-                            error = if (events.isEmpty()) "No hay eventos registrados" else null
-                        )
-                    }
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        events = events,
+                        error = if (events.isEmpty()) "No hay eventos registrados" else null
+                    )
                 }
         }
     }
 
     fun createEvent(event: Event, panelId: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.value = _uiState.value.copy(isLoading = true)
             userPreferences.userDataFlow
                 .filterNotNull()
                 .first { it.clientId.isNotEmpty() }
                 .let { userData ->
                     try {
                         eventRepository.createEvent(userData.clientId, panelId, event)
-                        loadEvents()
+                        loadEvents() // Reload events after creating a new one
                     } catch (e: Exception) {
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                error = e.message ?: "Error creating event"
-                            )
-                        }
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = e.message ?: "Error creating event"
+                        )
                     }
                 }
         }
@@ -96,43 +90,30 @@ class EventViewModel @Inject constructor(
 
     fun updateEvent(eventWithMetadata: EventWithMetadata) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.value = _uiState.value.copy(isLoading = true)
             try {
-                eventRepository.updateEvent(
-                    eventWithMetadata.clientId,
-                    eventWithMetadata.panelId,
-                    eventWithMetadata.eventId,
-                    eventWithMetadata.event
-                )
-                loadEvents()
+                eventRepository.updateEvent(eventWithMetadata.clientId, eventWithMetadata.panelId, eventWithMetadata.eventId, eventWithMetadata.event)
+                loadEvents() // Reload events after updating
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Error updating event"
-                    )
-                }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error updating event"
+                )
             }
         }
     }
 
     fun deleteEvent(eventWithMetadata: EventWithMetadata) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.value = _uiState.value.copy(isLoading = true)
             try {
-                eventRepository.deleteEvent(
-                    eventWithMetadata.clientId,
-                    eventWithMetadata.panelId,
-                    eventWithMetadata.eventId
-                )
-                loadEvents()
+                eventRepository.deleteEvent(eventWithMetadata.clientId, eventWithMetadata.panelId, eventWithMetadata.eventId)
+                loadEvents() // Reload events after deleting
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Error deleting event"
-                    )
-                }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error deleting event"
+                )
             }
         }
     }

@@ -1,85 +1,83 @@
 package com.pqsolutions.hdd_monitor.presentation.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.activity.ComponentActivity
+import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.pqsolutions.hdd_monitor.data.UserRole
-import com.pqsolutions.hdd_monitor.presentation.screens.*
+import com.pqsolutions.hdd_monitor.presentation.screens.AdminDashboardScreen
+import com.pqsolutions.hdd_monitor.presentation.screens.AlertScreen
+import com.pqsolutions.hdd_monitor.presentation.screens.EventHistoryScreen
+import com.pqsolutions.hdd_monitor.presentation.screens.LoginScreen
+import com.pqsolutions.hdd_monitor.presentation.screens.OnboardingScreen
+import com.pqsolutions.hdd_monitor.presentation.screens.UserDashboardScreen
+import com.pqsolutions.hdd_monitor.presentation.screens.UserManagementScreen
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.LoginViewModel
+
+private const val TAG = "AppNavigation"
 
 @Composable
-fun AppNavigation(mainViewModel: MainViewModel, loginViewModel: LoginViewModel) {
-    val uiState by mainViewModel.uiState.collectAsState()
+fun AppNavigation(viewModel: MainViewModel) {
+    Log.d(TAG, "Starting AppNavigation composition")
+    val uiState by viewModel.uiState.collectAsState()
     val navController = rememberNavController()
-    val hasPendingNotifications by mainViewModel.hasPendingNotifications.collectAsState()
-
-    LaunchedEffect(uiState.isLoggedIn, uiState.isFirstLaunch) {
-        when {
-            uiState.isFirstLaunch && uiState.isLoggedIn -> navController.navigateSingleTopTo("onboarding")
-            uiState.isLoggedIn -> navController.navigateSingleTopTo("dashboard")
-            else -> navController.navigateSingleTopTo("login")
-        }
-    }
+    val hasPendingNotifications by viewModel.hasPendingNotifications.collectAsState()
 
     NavHost(
         navController = navController,
-        startDestination = "splash"
+        startDestination = getStartDestination(uiState.isFirstLaunch, uiState.isLoggedIn)
     ) {
-        composable("splash") {
-            SplashScreen()
-        }
         composable("onboarding") {
             OnboardingScreen(
                 onFinish = {
-                    mainViewModel.onEvent(MainUiEvent.FinishOnboarding)
-                    navController.navigateSingleTopTo("dashboard")
+                    viewModel.onEvent(MainUiEvent.FinishOnboarding)
+                    navController.navigateToLogin()
                 }
             )
         }
         composable("login") {
             LoginScreen(
-                viewModel = loginViewModel,
-                onLoginSuccess = {
-                    mainViewModel.checkAuthState()
+                onLoginClick = { email, password ->
+                    Log.d(TAG, "Login attempt with email: $email")
+                    viewModel.onEvent(MainUiEvent.Login(email, password))
                 }
             )
         }
         composable("dashboard") {
-            val activity = LocalContext.current as? ComponentActivity
-            if (uiState.isLoading) {
-                LoadingScreen()
-            } else {
-                when (uiState.userData?.role) {
-                    UserRole.ADMIN -> AdminDashboardScreen(
-                        onLogoutClick = { handleLogout(mainViewModel, navController) },
-                        onManageUsersClick = { navController.navigate("user_management") },
-                        onViewAlertsClick = { navController.navigate("alerts") },
-                        onViewEventHistoryClick = { navController.navigate("event_history") },
-                        hasPendingNotifications = hasPendingNotifications,
-                        onBackPressed = { activity?.finish() }
-                    )
-                    UserRole.USER -> UserDashboardScreen(
-                        onLogoutClick = { handleLogout(mainViewModel, navController) },
-                        onViewEventHistoryClick = { navController.navigate("event_history") },
-                        onViewAlertsClick = { navController.navigate("alerts") },
-                        hasPendingNotifications = hasPendingNotifications,
-                        onBackPressed = { activity?.finish() }
-                    )
-                    null -> {
-                        LaunchedEffect(Unit) {
-                            navController.navigateSingleTopTo("login")
-                        }
+            LaunchedEffect(Unit) {
+                val notificationType = navController.currentBackStackEntry
+                    ?.arguments?.getString("notificationType")
+                val panelId = navController.currentBackStackEntry
+                    ?.arguments?.getString("panelId")
+                val relayName = navController.currentBackStackEntry
+                    ?.arguments?.getString("relayName")
+                viewModel.handleNotificationNavigation(notificationType, panelId, relayName)
+            }
+            Log.d(TAG, "Navigating to Dashboard. User role: ${uiState.userData?.role}")
+            when (uiState.userData?.role) {
+                UserRole.ADMIN -> AdminDashboardScreen(
+                    onLogoutClick = { handleLogout(viewModel) },
+                    onManageUsersClick = { navController.navigate("user_management") },
+                    onViewAlertsClick = { navController.navigate("alerts") },
+                    onViewEventHistoryClick = { navController.navigate("event_history") },
+                    hasPendingNotifications = hasPendingNotifications
+                )
+                UserRole.USER -> UserDashboardScreen(
+                    onLogoutClick = { handleLogout(viewModel) },
+                    onViewEventHistoryClick = { navController.navigate("event_history") },
+                    onViewAlertsClick = { navController.navigate("alerts") },
+                    hasPendingNotifications = hasPendingNotifications
+                )
+                else -> {
+                    Log.d(TAG, "Invalid user role, navigating to Login")
+                    LaunchedEffect(Unit) {
+                        navController.navigateToLogin()
                     }
                 }
             }
@@ -106,33 +104,34 @@ fun AppNavigation(mainViewModel: MainViewModel, loginViewModel: LoginViewModel) 
             )
         }
     }
+
+    LaunchedEffect(uiState.currentRoute) {
+        Log.d(TAG, "LaunchedEffect: Current route changed to ${uiState.currentRoute}")
+        if (uiState.currentRoute != navController.currentDestination?.route) {
+            navController.navigate(uiState.currentRoute) {
+                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            }
+        }
+    }
+
+    Log.d(TAG, "AppNavigation composition completed")
 }
 
-@Composable
-fun LoadingScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator()
+private fun getStartDestination(isFirstLaunch: Boolean, isLoggedIn: Boolean): String {
+    return when {
+        isFirstLaunch -> "onboarding"
+        isLoggedIn -> "dashboard"
+        else -> "login"
     }
 }
 
-@Composable
-fun SplashScreen() {
-    // Implementa tu pantalla de splash aquí
-}
-
-private fun handleLogout(viewModel: MainViewModel, navController: NavHostController) {
+private fun handleLogout(viewModel: MainViewModel) {
+    Log.d(TAG, "Logout clicked")
     viewModel.onEvent(MainUiEvent.Logout)
 }
 
-fun NavHostController.navigateSingleTopTo(route: String) {
-    this.navigate(route) {
-        popUpTo(this@navigateSingleTopTo.graph.startDestinationId) {
-            saveState = true
-        }
-        launchSingleTop = true
-        restoreState = true
+private fun NavHostController.navigateToLogin() {
+    navigate("login") {
+        popUpTo(graph.startDestinationId) { inclusive = true }
     }
 }
