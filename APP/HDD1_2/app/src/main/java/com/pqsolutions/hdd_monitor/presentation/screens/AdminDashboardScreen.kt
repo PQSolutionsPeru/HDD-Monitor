@@ -43,21 +43,24 @@ import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
 
 private const val TAG = "AdminDashboardScreen"
 
 @Composable
 fun AdminDashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
+    notificationViewModel: NotificationViewModel = hiltViewModel(),
     onLogoutClick: () -> Unit,
     onManageUsersClick: () -> Unit,
-    onViewAlertsClick: () -> Unit,
-    onViewEventHistoryClick: () -> Unit,
+    onViewEventsClick: () -> Unit,
+    onViewNotificationHistoryClick: () -> Unit,
     hasPendingNotifications: Boolean
 ) {
     Log.d(TAG, "AdminDashboardScreen composition started")
 
     val uiState by viewModel.uiState.collectAsState()
+    val notificationUiState by notificationViewModel.uiState.collectAsState()
     val context = LocalContext.current
 
     HDD1_2Theme {
@@ -72,24 +75,36 @@ fun AdminDashboardScreen(
                     .padding(horizontal = 16.dp)
             ) {
                 item {
-                    DashboardHeader(hasPendingNotifications, onViewAlertsClick)
+                    DashboardHeader(
+                        hasNewNotifications = hasPendingNotifications,
+                        pendingCount = notificationUiState.pendingCount,
+                        onViewEventsClick = onViewEventsClick
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
-                    DashboardActions(onManageUsersClick, onViewAlertsClick, onViewEventHistoryClick, context)
+                    DashboardActions(
+                        onManageUsersClick = onManageUsersClick,
+                        onViewEventsClick = onViewEventsClick,
+                        onViewNotificationHistoryClick = onViewNotificationHistoryClick,
+                        context = context
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                uiState.groupedPanels.forEach { (clientId, clientPanels) ->
+                uiState.groupedPanels.forEach { (clientDocName, clientPanels) ->
                     item {
                         Text(
-                            text = "Cliente: $clientId",
+                            text = "Cliente: $clientDocName",
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
-                        Log.d(TAG, "Displaying panels for client: $clientId")
+                        Log.d(TAG, "Displaying panels for client: $clientDocName")
                     }
 
-                    items(clientPanels) { panel ->
-                        PanelItem(panel)
+                    items(
+                        items = clientPanels,
+                        key = { panel -> "${panel.clientDocName}_${panel.documentName}" }
+                    ) { panel ->
+                        AdminPanelItem(panel)
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
@@ -114,7 +129,11 @@ fun AdminDashboardScreen(
 }
 
 @Composable
-private fun DashboardHeader(hasPendingNotifications: Boolean, onViewAlertsClick: () -> Unit) {
+private fun DashboardHeader(
+    hasNewNotifications: Boolean,
+    pendingCount: Int,
+    onViewEventsClick: () -> Unit
+) {
     Log.d(TAG, "Rendering DashboardHeader")
     Row(
         modifier = Modifier
@@ -130,10 +149,11 @@ private fun DashboardHeader(hasPendingNotifications: Boolean, onViewAlertsClick:
             modifier = Modifier.weight(1f)
         )
         AnimatedNotificationBell(
-            hasNewNotifications = hasPendingNotifications,
+            hasNewNotifications = hasNewNotifications,
+            notificationCount = pendingCount,
             onClick = {
                 Log.d(TAG, "Notification bell clicked")
-                onViewAlertsClick()
+                onViewEventsClick()
             },
             modifier = Modifier.size(48.dp)
         )
@@ -144,8 +164,8 @@ private fun DashboardHeader(hasPendingNotifications: Boolean, onViewAlertsClick:
 @Composable
 private fun DashboardActions(
     onManageUsersClick: () -> Unit,
-    onViewAlertsClick: () -> Unit,
-    onViewEventHistoryClick: () -> Unit,
+    onViewEventsClick: () -> Unit,
+    onViewNotificationHistoryClick: () -> Unit,
     context: android.content.Context
 ) {
     Log.d(TAG, "Rendering DashboardActions")
@@ -162,29 +182,32 @@ private fun DashboardActions(
         Spacer(modifier = Modifier.height(8.dp))
         DashboardButton(
             onClick = {
-                Log.d(TAG, "View Alerts button clicked")
+                Log.d(TAG, "View Events button clicked")
                 performHapticFeedback(context)
                 playSoundEffect(context, R.raw.button_click)
-                onViewAlertsClick()
+                onViewEventsClick()
             },
-            text = stringResource(R.string.view_alerts)
+            text = stringResource(R.string.view_events)
         )
         Spacer(modifier = Modifier.height(8.dp))
         DashboardButton(
             onClick = {
-                Log.d(TAG, "View Event History button clicked")
+                Log.d(TAG, "View Notification History button clicked")
                 performHapticFeedback(context)
                 playSoundEffect(context, R.raw.button_click)
-                onViewEventHistoryClick()
+                onViewNotificationHistoryClick()
             },
-            text = stringResource(R.string.view_event_history)
+            text = stringResource(R.string.view_notification_history)
         )
     }
     Log.d(TAG, "DashboardActions rendered")
 }
 
 @Composable
-private fun DashboardButton(onClick: () -> Unit, text: String) {
+private fun DashboardButton(
+    onClick: () -> Unit,
+    text: String
+) {
     Button(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth()
@@ -194,11 +217,11 @@ private fun DashboardButton(onClick: () -> Unit, text: String) {
 }
 
 @Composable
-fun PanelItem(panel: Panel) {
-    Log.d(TAG, "Renderizando PanelItem: ${panel.name}, Estado: ${panel.overallStatus}")
+fun AdminPanelItem(panel: Panel) {
+    Log.d(TAG, "Renderizando AdminPanelItem: ${panel.name}, Estado: ${panel.overallStatus}")
     var expanded by remember { mutableStateOf(false) }
-    val hasAlerts = panel.overallStatus != "OK"
-    val statusColor = if (hasAlerts) Color.Red else Color.Green
+    val hasIssues = panel.overallStatus != "OK"
+    val statusColor = if (hasIssues) Color.Red else Color.Green
     val overallStatus = panel.overallStatus
 
     Card(
@@ -207,21 +230,25 @@ fun PanelItem(panel: Panel) {
             .animateContentSize()
             .clickable { expanded = !expanded },
         colors = CardDefaults.cardColors(
-            containerColor = if (hasAlerts) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
+            containerColor = if (hasIssues) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
             Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
             Text(text = "IP: ${panel.ESP32_IP}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "Cliente: ${panel.ID_CLIENT}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "Estado: $overallStatus", color = statusColor, style = MaterialTheme.typography.bodyMedium)
+            Text(text = "Cliente: ${panel.clientDocName}", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = "Estado: $overallStatus",
+                color = statusColor,
+                style = MaterialTheme.typography.bodyMedium
+            )
 
             if (expanded) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Detalles de relays:", style = MaterialTheme.typography.bodyMedium)
                 panel.relays.forEach { relay ->
-                    RelayStatus(relay)
+                    AdminRelayStatus(relay)
                 }
             }
         }
@@ -229,8 +256,8 @@ fun PanelItem(panel: Panel) {
 }
 
 @Composable
-fun RelayStatus(relay: Relay) {
-    Log.d(TAG, "Rendering RelayStatus: ${relay.name}, Status: ${relay.status}")
+fun AdminRelayStatus(relay: Relay) {
+    Log.d(TAG, "Rendering AdminRelayStatus: ${relay.name}, Status: ${relay.status}")
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
@@ -249,7 +276,10 @@ fun RelayStatus(relay: Relay) {
 }
 
 @Composable
-private fun LogoutButton(onLogoutClick: () -> Unit, context: android.content.Context) {
+private fun LogoutButton(
+    onLogoutClick: () -> Unit,
+    context: android.content.Context
+) {
     Log.d(TAG, "Rendering LogoutButton")
     Button(
         onClick = {

@@ -1,106 +1,124 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.util.Log
-import androidx.compose.animation.*
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.Relay
+import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import com.pqsolutions.hdd_monitor.presentation.components.DashboardButton
-import com.pqsolutions.hdd_monitor.presentation.components.PanelsList
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
 
 private const val TAG = "UserDashboardScreen"
 
 @Composable
 fun UserDashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
+    notificationViewModel: NotificationViewModel = hiltViewModel(),
     onLogoutClick: () -> Unit,
-    onViewEventHistoryClick: () -> Unit,
-    onViewAlertsClick: () -> Unit,
+    onViewEventsClick: () -> Unit,
+    onViewNotificationHistoryClick: () -> Unit,
     hasPendingNotifications: Boolean
 ) {
-    Log.d(TAG, "Composing UserDashboardScreen, hasPendingNotifications: $hasPendingNotifications")
+    Log.d(TAG, "UserDashboardScreen composition started")
+
+    val uiState by viewModel.uiState.collectAsState()
+    val notificationUiState by notificationViewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     HDD1_2Theme {
-        val uiState by viewModel.uiState.collectAsState()
-        val context = LocalContext.current
-        val scrollState = rememberScrollState()
-
-        HandleLifecycleEvents(viewModel)
-
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(scrollState)
-                .padding(24.dp)
         ) {
-            DashboardHeader(
-                hasPendingNotifications = hasPendingNotifications,
-                onViewAlertsClick = onViewAlertsClick
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            DashboardActions(
-                onViewEventHistoryClick = onViewEventHistoryClick,
-                onViewAlertsClick = onViewAlertsClick,
-                context = context
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            PanelsList(uiState)
-            Spacer(modifier = Modifier.height(32.dp))
-            LogoutButton(onLogoutClick, context)
-        }
-    }
-
-    Log.d(TAG, "UserDashboardScreen composition completed")
-}
-
-@Composable
-private fun HandleLifecycleEvents(viewModel: DashboardViewModel) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> {
-                    Log.d(TAG, "ON_RESUME: Refreshing panels")
-                    viewModel.refreshPanels()
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                item {
+                    DashboardHeader(
+                        hasNewNotifications = hasPendingNotifications,
+                        pendingCount = notificationUiState.pendingCount,
+                        onViewEventsClick = onViewEventsClick
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    DashboardActions(
+                        onViewEventsClick = onViewEventsClick,
+                        onViewNotificationHistoryClick = onViewNotificationHistoryClick,
+                        context = context
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-                Lifecycle.Event.ON_PAUSE -> {
-                    Log.d(TAG, "ON_PAUSE: Cancelling current job")
-                    viewModel.cancelCurrentJob()
+
+                items(uiState.panels) { panel ->
+                    UserPanelItem(panel)
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-                else -> {} // Do nothing for other events
+
+                item {
+                    Spacer(modifier = Modifier.height(80.dp))
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                LogoutButton(onLogoutClick, context)
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
     }
+
+    Log.d(TAG, "UserDashboardScreen composition finished")
 }
 
 @Composable
 private fun DashboardHeader(
-    hasPendingNotifications: Boolean,
-    onViewAlertsClick: () -> Unit
+    hasNewNotifications: Boolean,
+    pendingCount: Int,
+    onViewEventsClick: () -> Unit
 ) {
+    Log.d(TAG, "Rendering DashboardHeader")
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -110,65 +128,140 @@ private fun DashboardHeader(
     ) {
         Text(
             text = stringResource(R.string.user_dashboard_title),
-            style = MaterialTheme.typography.headlineLarge,
+            style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.weight(1f)
         )
         AnimatedNotificationBell(
-            hasNewNotifications = hasPendingNotifications,
+            hasNewNotifications = hasNewNotifications,
+            notificationCount = pendingCount,
             onClick = {
                 Log.d(TAG, "Notification bell clicked")
-                onViewAlertsClick()
+                onViewEventsClick()
             },
             modifier = Modifier.size(48.dp)
         )
     }
+    Log.d(TAG, "DashboardHeader rendered")
 }
 
 @Composable
 private fun DashboardActions(
-    onViewEventHistoryClick: () -> Unit,
-    onViewAlertsClick: () -> Unit,
+    onViewEventsClick: () -> Unit,
+    onViewNotificationHistoryClick: () -> Unit,
     context: android.content.Context
 ) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically()
+    Log.d(TAG, "Rendering DashboardActions")
+    Column {
+        DashboardButton(
+            onClick = {
+                Log.d(TAG, "View Events button clicked")
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onViewEventsClick()
+            },
+            text = stringResource(R.string.view_events)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        DashboardButton(
+            onClick = {
+                Log.d(TAG, "View Notification History button clicked")
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onViewNotificationHistoryClick()
+            },
+            text = stringResource(R.string.view_notification_history)
+        )
+    }
+    Log.d(TAG, "DashboardActions rendered")
+}
+
+@Composable
+private fun DashboardButton(onClick: () -> Unit, text: String) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column {
-            DashboardButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onViewEventHistoryClick()
-                },
-                text = stringResource(R.string.view_event_history)
+        Text(text)
+    }
+}
+
+@Composable
+fun UserPanelItem(panel: Panel) {
+    Log.d(TAG, "Renderizando UserPanelItem: ${panel.name}, Estado: ${panel.overallStatus}")
+    var expanded by remember { mutableStateOf(false) }
+    val hasIssues = panel.overallStatus != "OK"
+    val statusColor = if (hasIssues) Color.Red else Color.Green
+    val overallStatus = panel.overallStatus
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .clickable { expanded = !expanded },
+        colors = CardDefaults.cardColors(
+            containerColor = if (hasIssues) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
+            Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = "Estado: $overallStatus",
+                color = statusColor,
+                style = MaterialTheme.typography.bodyMedium
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            DashboardButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onViewAlertsClick()
-                },
-                text = stringResource(R.string.view_alerts)
-            )
+
+            if (expanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Detalles de relays:", style = MaterialTheme.typography.bodyMedium)
+                panel.relays.forEach { relay ->
+                    UserRelayStatus(relay)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun LogoutButton(onLogoutClick: () -> Unit, context: android.content.Context) {
-    DashboardButton(
+fun UserRelayStatus(relay: Relay) {
+    Log.d(TAG, "Rendering UserRelayStatus: ${relay.name}, Status: ${relay.status}")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = relay.name, style = MaterialTheme.typography.bodySmall)
+        Text(
+            text = relay.status,
+            color = when (relay.status) {
+                "OK" -> Color.Green
+                "DISC" -> Color.Red
+                else -> Color.Yellow
+            },
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@Composable
+private fun LogoutButton(
+    onLogoutClick: () -> Unit,
+    context: android.content.Context
+) {
+    Log.d(TAG, "Rendering LogoutButton")
+    Button(
         onClick = {
+            Log.d(TAG, "Logout button clicked")
             performHapticFeedback(context)
             playSoundEffect(context, R.raw.button_click)
             onLogoutClick()
         },
-        text = stringResource(R.string.logout),
+        modifier = Modifier.fillMaxWidth(),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.secondary
         )
-    )
+    ) {
+        Text(stringResource(R.string.logout))
+    }
+    Log.d(TAG, "LogoutButton rendered")
 }

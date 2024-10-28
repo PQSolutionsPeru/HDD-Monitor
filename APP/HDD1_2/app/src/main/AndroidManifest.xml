@@ -2,24 +2,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Permisos necesarios para la aplicación -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="com.google.android.providers.gsf.permission.READ_GSERVICES" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".HddApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.HDD1_2"
@@ -27,21 +22,35 @@
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="tiramisu">
 
+        <!-- Metadatos para Google Play Services -->
         <meta-data
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
 
+        <!-- Configuración del canal de notificación predeterminado para Firebase -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="@string/default_notification_channel_id" />
+
+        <!-- Configuración del ícono para la notificación como le gusta a mi esposa Quixy ♥ -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+
+        <!-- Actividad principal de la aplicación -->
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.HDD1_2"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- Servicio para manejar mensajes de Firebase Cloud Messaging -->
         <service
             android:name=".service.HddFirebaseMessagingService"
             android:exported="false">
@@ -49,30 +58,6 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
-
-        <service
-            android:name=".MonitoringService"
-            android:enabled="true"
-            android:exported="false" />
-
-        <receiver
-            android:name=".presentation.NotificationReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.pqsolutions.hdd_monitor.NEW_ALERT" />
-                <action android:name="com.pqsolutions.hdd_monitor.NEW_MESSAGE" />
-                <action android:name="com.pqsolutions.hdd_monitor.PANEL_UPDATE" />
-            </intent-filter>
-        </receiver>
-
-        <receiver
-            android:name=".BootReceiver"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
 
     </application>
 

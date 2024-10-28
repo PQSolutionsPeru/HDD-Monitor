@@ -46,6 +46,10 @@ import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import kotlinx.coroutines.delay
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 
 private const val TAG = "DashboardComponents"
 
@@ -244,6 +248,59 @@ fun StatusChip(status: String) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelLarge,
             color = textColor
+        )
+    }
+}
+
+@Composable
+fun HddButton(
+    onClick: () -> Unit,
+    text: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().height(56.dp),
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        )
+    ) {
+        Text(text = text, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+fun HddOutlinedTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false,
+    errorMessage: String? = null,
+    isPassword: Boolean = false
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier.fillMaxWidth(),
+        isError = isError,
+        visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+        ),
+        textStyle = MaterialTheme.typography.bodyLarge
+    )
+    if (isError && errorMessage != null) {
+        Text(
+            text = errorMessage,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp)
         )
     }
 }

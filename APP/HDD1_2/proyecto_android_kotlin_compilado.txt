@@ -1,484 +1,605 @@
-### data\PanelRepository.kt ###
+### data\NotificationRepository.kt ###
 
 package com.pqsolutions.hdd_monitor.data
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.content.Context
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.messaging.FirebaseMessaging
-import com.pqsolutions.hdd_monitor.R
-import kotlinx.coroutines.Dispatchers
+import com.google.firebase.firestore.Query
+import com.pqsolutions.hdd_monitor.data.util.IdManager
+import com.pqsolutions.hdd_monitor.util.Constants
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.tasks.await
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import javax.inject.Inject
+import javax.inject.Singleton
 
-class PanelRepository @Inject constructor(
+@Singleton
+class NotificationRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val firebaseMessaging: FirebaseMessaging,
-    private val context: Context
+    private val userRepository: UserRepository
 ) {
-    private val lastNotifiedStates = mutableMapOf<String, String>()
-
     companion object {
-        private const val TAG = "PanelRepository"
+        private const val TAG = "NotificationRepository"
+        private const val BASE_PATH = "hdd-monitor/accounts/clients"
     }
 
-    fun getPanels(clientId: String?): Flow<List<Panel>> = callbackFlow {
-        Log.d(TAG, "getPanels called with clientId: $clientId")
+    // Flow principal de notificaciones para un cliente específico
+    fun getNotificationsFlow(clientDocName: String): Flow<List<Notification>> = callbackFlow {
+        val notificationsRef = firestore.collection("$BASE_PATH/$clientDocName/notifications")
+            .orderBy("date_time", Query.Direction.DESCENDING)
 
-        val panelListeners = mutableMapOf<String, ListenerRegistration>()
-        val currentPanels = mutableMapOf<String, Panel>()
-
-        val clientsRef = firestore.collection("hdd-monitor/accounts/clients")
-
-        val clientListener = clientsRef.addSnapshotListener { clientSnapshot, clientError ->
-            if (clientError != null) {
-                Log.e(TAG, "Error listening to clients", clientError)
-                close(clientError)
+        val listenerRegistration = notificationsRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.e(TAG, "Error getting notifications", error)
+                close(error)
                 return@addSnapshotListener
             }
 
-            if (clientSnapshot != null) {
-                for (clientDoc in clientSnapshot.documents) {
-                    val currentClientId = clientDoc.id
-                    Log.d(TAG, "Processing client: $currentClientId")
-                    if (clientId == null || currentClientId == clientId) {
-                        val panelsRef = clientDoc.reference.collection("panels")
-                        val panelListener = panelsRef.addSnapshotListener { panelSnapshot, panelError ->
-                            if (panelError != null) {
-                                Log.e(TAG, "Error listening to panels for client $currentClientId", panelError)
-                                return@addSnapshotListener
-                            }
-                            if (panelSnapshot != null) {
-                                for (panelDoc in panelSnapshot.documents) {
-                                    val panel = panelDoc.toObject(Panel::class.java)?.copy(
-                                        ID = panelDoc.id,
-                                        clientId = currentClientId
-                                    )
-                                    if (panel != null) {
-                                        Log.d(TAG, "Panel added/updated: ${panel.ID} for client $currentClientId")
-                                        currentPanels["${currentClientId}_${panel.ID}"] = panel
-                                        fetchRelaysForPanel(panel) { updatedPanel ->
-                                            currentPanels["${currentClientId}_${updatedPanel.ID}"] = updatedPanel
-                                            trySend(currentPanels.values.toList())
-                                        }
-                                    }
-                                }
-                                trySend(currentPanels.values.toList())
-                            }
+            snapshot?.let { querySnapshot ->
+                val notifications = querySnapshot.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(Notification::class.java)?.copy(
+                            documentName = doc.id,
+                            clientDocName = clientDocName
+                        ).also { notification ->
+                            Log.d(TAG, "Loaded notification: ${notification?.toLogString()}")
                         }
-                        panelListeners["client_$currentClientId"] = panelListener
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error converting notification document", e)
+                        null
                     }
                 }
+                trySend(notifications)
             }
         }
 
-        awaitClose {
-            Log.d(TAG, "Closing panel listeners")
-            clientListener.remove()
-            panelListeners.values.forEach { it.remove() }
-        }
-    }.flowOn(Dispatchers.IO)
+        awaitClose { listenerRegistration.remove() }
+    }
 
-    private fun fetchRelaysForPanel(panel: Panel, onUpdate: (Panel) -> Unit) {
-        Log.d(TAG, "Fetching relays for panel ${panel.ID} of client ${panel.clientId}")
-        firestore.collection("hdd-monitor/accounts/clients/${panel.clientId}/panels/${panel.ID}/relays")
+    // Flow para todas las notificaciones (para administradores)
+    fun getNotificationsFlow(): Flow<List<Notification>> = callbackFlow {
+        val listenerRegistration = firestore.collectionGroup("notifications")
+            .orderBy("date_time", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Error fetching relays for panel ${panel.ID}", error)
+                    Log.e(TAG, "Error getting all notifications", error)
+                    close(error)
                     return@addSnapshotListener
                 }
 
-                if (snapshot != null) {
-                    val relays = snapshot.documents.mapNotNull { relayDoc ->
-                        relayDoc.toObject(Relay::class.java)?.copy(name = relayDoc.id).also { relay ->
-                            Log.d(TAG, "Relay update from Firestore: ${relay?.name}, status: ${relay?.status}")
+                snapshot?.let { querySnapshot ->
+                    val notifications = querySnapshot.documents.mapNotNull { doc ->
+                        try {
+                            // Extraer clientDocName del path
+                            val clientDocName = doc.reference.path
+                                .split("/")
+                                .find { it.startsWith(Constants.DocumentPrefixes.CLIENT) }
+
+                            clientDocName?.let { clientDoc ->
+                                doc.toObject(Notification::class.java)?.copy(
+                                    documentName = doc.id,
+                                    clientDocName = clientDoc
+                                ).also { notification ->
+                                    Log.d(TAG, "Loaded notification: ${notification?.toLogString()}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error converting notification document", e)
+                            null
                         }
                     }
-                    Log.d(TAG, "Fetched ${relays.size} relays for panel ${panel.ID} of client ${panel.clientId}")
-                    val updatedPanel = checkForChangesAndNotify(panel.copy(relays = relays))
-                    onUpdate(updatedPanel)
-                } else {
-                    Log.d(TAG, "No relays found for panel ${panel.ID} of client ${panel.clientId}")
-                    onUpdate(panel.copy(relays = emptyList()))
+                    trySend(notifications)
                 }
             }
+
+        awaitClose { listenerRegistration.remove() }
     }
 
-    private fun checkForChangesAndNotify(panel: Panel): Panel {
-        Log.d(TAG, "Verificando cambios y notificaciones para el panel: ${panel.ID}")
-        val updatedRelays = panel.relays.map { relay ->
-            val relayKey = "${panel.ID}_${relay.name}"
-            val lastStatus = lastNotifiedStates[relayKey]
-            if (lastStatus != relay.status) {
-                Log.d(TAG, "Se detectó cambio de estado para el relay ${relay.name}: $lastStatus -> ${relay.status}")
-                sendNotification(panel, relay)
-                lastNotifiedStates[relayKey] = relay.status
-            }
-            relay
-        }
-        val updatedPanel = panel.copy(relays = updatedRelays)
-        updatedPanel.overallStatus = determineOverallPanelStatus(updatedPanel)
-        return updatedPanel
-    }
+    // Crear nueva notificación
+    suspend fun createNotification(
+        clientDocName: String,
+        panelDocName: String,
+        relayName: String,
+        message: String
+    ): Result<Unit> = runCatching {
+        val notificationDocName = IdManager.generateNotificationDocumentName(clientDocName)
 
-    private fun determineOverallPanelStatus(panel: Panel): String {
-        val discRelays = panel.relays.filter { it.status == "DISC" }
-        return when {
-            discRelays.isNotEmpty() -> discRelays.joinToString(", ") { it.name }
-            else -> "OK"
-        }
-    }
-
-    private fun sendNotification(panel: Panel, relay: Relay) {
-        Log.d(TAG, "Sending notification for panel: ${panel.ID}, relay: ${relay.name}")
-        val notification = hashMapOf(
-            "panelId" to panel.ID,
-            "panelName" to panel.name,
-            "relayName" to relay.name,
-            "relayStatus" to relay.status,
-            "clientId" to panel.clientId,
-            "timestamp" to FieldValue.serverTimestamp()
+        val notificationData = hashMapOf(
+            "panelDocName" to panelDocName,
+            "relayName" to relayName,
+            "message" to message,
+            "date_time" to java.time.LocalDateTime.now().format(
+                java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
+            ),
+            "isRead" to false
         )
 
-        firestore.collection("notifications")
-            .add(notification)
-            .addOnSuccessListener {
-                Log.d(TAG, "Notification sent successfully to Firestore")
-            }
-            .addOnFailureListener { e ->
-                Log.e(TAG, "Error sending notification to Firestore: ${e.message}", e)
-                sendLocalNotification(panel, relay)
-            }
+        firestore.collection("$BASE_PATH/$clientDocName/notifications")
+            .document(notificationDocName)
+            .set(notificationData)
+            .await()
+
+        Log.d(TAG, "Notification created: $notificationDocName")
     }
 
-    private fun sendLocalNotification(panel: Panel, relay: Relay) {
-        Log.d(TAG, "Sending local notification for panel: ${panel.ID}, relay: ${relay.name}")
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "panel_updates"
-        val channelName = "Panel Updates"
+    // Marcar notificación como leída
+    suspend fun markNotificationAsRead(
+        clientDocName: String,
+        notificationDocName: String
+    ): Result<Unit> = runCatching {
+        val notificationRef = firestore
+            .document("$BASE_PATH/$clientDocName/notifications/$notificationDocName")
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
-            notificationManager.createNotificationChannel(channel)
+        val snapshot = notificationRef.get().await()
+        if (!snapshot.exists()) {
+            throw IllegalStateException("Notification not found: $notificationDocName")
         }
 
-        val notificationBuilder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Estado del Panel Actualizado")
-            .setContentText("Panel: ${panel.name}, Relay: ${relay.name}, Estado: ${relay.status}")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-
-        notificationManager.notify(panel.ID.hashCode(), notificationBuilder.build())
+        notificationRef.update("isRead", true).await()
+        Log.d(TAG, "Notification marked as read: $notificationDocName")
     }
 
-    suspend fun updateRelayStatus(clientId: String, panelId: String, relayName: String, relayStatus: String) {
-        try {
-            Log.d(TAG, "Updating relay status: clientId=$clientId, panelId=$panelId, relayName=$relayName, status=$relayStatus")
-            firestore.document("hdd-monitor/accounts/clients/$clientId/panels/$panelId/relays/$relayName")
-                .update("status", relayStatus)
-                .await()
-            Log.d(TAG, "Relay status updated successfully: Panel=$panelId, Relay=$relayName, Status=$relayStatus")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating relay status: ${e.message}", e)
-            throw e
+    // Obtener flujo de notificaciones no leídas
+    fun getUnreadNotificationsFlow(clientDocName: String): Flow<List<Notification>> = callbackFlow {
+        val notificationsRef = firestore.collection("$BASE_PATH/$clientDocName/notifications")
+            .whereEqualTo("isRead", false)
+            .orderBy("date_time", Query.Direction.DESCENDING)
+
+        val listenerRegistration = notificationsRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.e(TAG, "Error getting unread notifications", error)
+                close(error)
+                return@addSnapshotListener
+            }
+
+            snapshot?.let { querySnapshot ->
+                val notifications = querySnapshot.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(Notification::class.java)?.copy(
+                            documentName = doc.id,
+                            clientDocName = clientDocName
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error converting notification document", e)
+                        null
+                    }
+                }
+                trySend(notifications)
+            }
         }
+
+        awaitClose { listenerRegistration.remove() }
+    }
+
+    // Obtener conteo de notificaciones no leídas
+    fun getUnreadNotificationCount(clientDocName: String): Flow<Int> = callbackFlow {
+        val notificationsRef = firestore.collection("$BASE_PATH/$clientDocName/notifications")
+            .whereEqualTo("isRead", false)
+
+        val listenerRegistration = notificationsRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.e(TAG, "Error getting unread notification count", error)
+                close(error)
+                return@addSnapshotListener
+            }
+
+            snapshot?.let { querySnapshot ->
+                trySend(querySnapshot.size())
+            }
+        }
+
+        awaitClose { listenerRegistration.remove() }
+    }
+
+    // Actualizar token FCM
+    suspend fun updateFcmToken(userDocName: String, newToken: String): Result<Unit> = runCatching {
+        val user = userRepository.getCurrentUser()
+        if (user == null) {
+            throw IllegalStateException("Usuario no encontrado")
+        }
+
+        // Determinar la colección correcta basada en el rol del usuario
+        val collectionPath = if (user.role == UserRole.ADMIN) {
+            "hdd-monitor/accounts/admins"
+        } else {
+            "$BASE_PATH/${user.ID_CLIENT}/users"
+        }
+
+        firestore.collection(collectionPath)
+            .document(userDocName)
+            .update("fcmToken", newToken)
+            .await()
+
+        Log.d(TAG, "FCM token actualizado exitosamente para el usuario: $userDocName")
+    }
+
+    // Eliminar notificación
+    suspend fun deleteNotification(
+        clientDocName: String,
+        notificationDocName: String
+    ): Result<Unit> = runCatching {
+        firestore.document("$BASE_PATH/$clientDocName/notifications/$notificationDocName")
+            .delete()
+            .await()
+
+        Log.d(TAG, "Notification deleted: $notificationDocName")
+    }
+
+    // Eliminar notificaciones antiguas
+    suspend fun deleteOldNotifications(clientDocName: String, olderThanDays: Int = 30): Result<Unit> = runCatching {
+        val cutoffDate = java.time.LocalDateTime.now().minusDays(olderThanDays.toLong())
+        val cutoffDateString = cutoffDate.format(
+            java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
+        )
+
+        val oldNotifications = firestore.collection("$BASE_PATH/$clientDocName/notifications")
+            .whereLessThan("date_time", cutoffDateString)
+            .get()
+            .await()
+
+        val batch = firestore.batch()
+        oldNotifications.documents.forEach { doc ->
+            batch.delete(doc.reference)
+        }
+        batch.commit().await()
+
+        Log.d(TAG, "Deleted ${oldNotifications.size()} old notifications")
     }
 }
 
-data class Panel(
-    val ID: String = "",
-    val name: String = "",
-    val location: String = "",
-    val SSID: String = "",
-    val SSID_CON: String = "",
-    val SSID_PW: String = "",
-    val ESP32_IP: String = "",
-    val ID_CLIENT: String = "",
-    val relays: List<Relay> = emptyList(),
-    val clientId: String = "",
-    var overallStatus: String = "OK"
-)
+==================================================
 
-data class Relay(
+### data\UserData.kt ###
+
+package com.pqsolutions.hdd_monitor.data
+
+import com.google.firebase.firestore.PropertyName
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
+
+data class UserData(
+    val documentName: String = "",
+    @get:PropertyName("ID")
+    val ID: String = "",  // Añadido para compatibilidad
+    val email: String = "",
     val name: String = "",
-    val status: String = "",
-    val date_time: String = ""
-)
+    @get:PropertyName("role")
+    @set:PropertyName("role")
+    private var roleString: String = "user",
+    @get:PropertyName("ID_CLIENT")
+    val ID_CLIENT: String = "", // Añadido para compatibilidad
+    val clientDocName: String = "",
+    val fcmToken: String? = null
+) {
+    var role: UserRole
+        get() = UserRole.fromString(roleString)
+        set(value) { roleString = UserRole.toFirestoreValue(value) }
+
+    fun isValid(): Boolean {
+        return email.isNotBlank() &&
+                name.isNotBlank() &&
+                when (role) {
+                    UserRole.ADMIN -> isValidAdminDocument()
+                    UserRole.USER -> isValidUserDocument() && isValidClientDocument()
+                }
+    }
+
+    fun isValidToken(): Boolean =
+        (ID.startsWith("USR") || ID.startsWith("CLU")) && ID.length >= 12
+
+    private fun isValidAdminDocument(): Boolean {
+        return documentName.startsWith(DocumentPrefixes.ADMIN)
+    }
+
+    private fun isValidUserDocument(): Boolean {
+        return documentName.startsWith(DocumentPrefixes.USER)
+    }
+
+    private fun isValidClientDocument(): Boolean {
+        return clientDocName.startsWith(DocumentPrefixes.CLIENT)
+    }
+
+    fun toMap(): Map<String, Any?> {
+        return mapOf(
+            "documentName" to documentName,
+            "ID" to ID,
+            "email" to email,
+            "name" to name,
+            "role" to roleString,
+            "ID_CLIENT" to ID_CLIENT,
+            "clientDocName" to clientDocName,
+            "fcmToken" to fcmToken
+        )
+    }
+
+    companion object {
+        fun createAdmin(
+            email: String,
+            name: String,
+            fcmToken: String? = null
+        ): UserData = UserData(
+            email = email,
+            name = name,
+            roleString = "admin",
+            fcmToken = fcmToken
+        )
+
+        fun createClientUser(
+            email: String,
+            name: String,
+            clientDocName: String,
+            fcmToken: String? = null
+        ): UserData = UserData(
+            email = email,
+            name = name,
+            roleString = "user",
+            clientDocName = clientDocName,
+            fcmToken = fcmToken
+        )
+
+        fun fromMap(map: Map<String, Any?>): UserData {
+            return UserData(
+                documentName = map["documentName"] as? String ?: "",
+                ID = map["ID"] as? String ?: "",
+                email = map["email"] as? String ?: "",
+                name = map["name"] as? String ?: "",
+                roleString = map["role"] as? String ?: "user",
+                ID_CLIENT = map["ID_CLIENT"] as? String ?: "",
+                clientDocName = map["clientDocName"] as? String ?: "",
+                fcmToken = map["fcmToken"] as? String
+            )
+        }
+    }
+
+    override fun toString(): String {
+        return "UserData(documentName='$documentName', " +
+                "ID='$ID', " +
+                "email='$email', " +
+                "name='$name', " +
+                "role=${role.name}, " +
+                "ID_CLIENT='$ID_CLIENT', " +
+                "clientDocName='$clientDocName', " +
+                "fcmToken=${fcmToken?.take(10)}...)"
+    }
+}
 
 ==================================================
 
-### presentation\screens\AdminDashboardScreen.kt ###
+### di\AppModule.kt ###
 
-package com.pqsolutions.hdd_monitor.presentation.screens
+package com.pqsolutions.hdd_monitor.di
 
-import android.util.Log
+import android.content.Context
+import android.content.SharedPreferences
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.messaging.FirebaseMessaging
+import com.pqsolutions.hdd_monitor.data.EventRepository
+import com.pqsolutions.hdd_monitor.data.NotificationRepository
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Named
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideApplicationContext(@ApplicationContext context: Context): Context {
+        return context
+    }
+
+    @Provides
+    @Singleton
+    fun providePanelRepository(
+        firestore: FirebaseFirestore,
+        firebaseMessaging: FirebaseMessaging,
+        @ApplicationContext context: Context,
+        @Named("HddMonitorPrefs") sharedPreferences: SharedPreferences
+    ): PanelRepository = PanelRepository(firestore, firebaseMessaging, context, sharedPreferences)
+
+    @Provides
+    @Singleton
+    fun provideUserPreferences(@ApplicationContext context: Context): UserPreferences {
+        return UserPreferences(context)
+    }
+
+    @Provides
+    @Singleton
+    @Named("HddMonitorPrefs")
+    fun provideSharedPreferences(@ApplicationContext context: Context): SharedPreferences {
+        return context.getSharedPreferences("HddMonitorPrefs", Context.MODE_PRIVATE)
+    }
+
+    @Provides
+    @Singleton
+    fun provideEventRepository(firestore: FirebaseFirestore): EventRepository {
+        return EventRepository(firestore)
+    }
+
+    @Provides
+    @Singleton
+    fun provideFirebaseAuth(): FirebaseAuth {
+        return FirebaseAuth.getInstance()
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserRepository(
+        firestore: FirebaseFirestore,
+        auth: FirebaseAuth
+    ): UserRepository {
+        return UserRepository(firestore, auth)
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationRepository(
+        firestore: FirebaseFirestore,
+        userRepository: UserRepository
+    ): NotificationRepository {
+        return NotificationRepository(firestore, userRepository)
+    }
+}
+
+
+==================================================
+
+### domain\NotificationUseCase.kt ###
+
+package com.pqsolutions.hdd_monitor.domain
+
+import com.pqsolutions.hdd_monitor.data.NotificationRepository
+import kotlinx.coroutines.flow.Flow
+import com.pqsolutions.hdd_monitor.data.Notification
+import javax.inject.Inject
+
+class NotificationUseCase @Inject constructor(
+    private val notificationRepository: NotificationRepository
+) {
+    fun getNotificationsFlow(clientDocName: String): Flow<List<Notification>> =
+        notificationRepository.getNotificationsFlow(clientDocName)
+
+    suspend fun markNotificationAsRead(
+        clientDocName: String,
+        notificationDocName: String
+    ): Result<Unit> =
+        notificationRepository.markNotificationAsRead(clientDocName, notificationDocName)
+
+    // Método para obtener notificaciones no leídas
+    fun getUnreadNotificationsFlow(clientDocName: String): Flow<List<Notification>> =
+        notificationRepository.getUnreadNotificationsFlow(clientDocName)
+
+    // Método para obtener el conteo de notificaciones no leídas
+    fun getUnreadNotificationCount(clientDocName: String): Flow<Int> =
+        notificationRepository.getUnreadNotificationCount(clientDocName)
+
+    // Método para actualizar el token FCM
+    suspend fun updateFcmToken(userDocName: String, newToken: String): Result<Unit> =
+        notificationRepository.updateFcmToken(userDocName, newToken)
+}
+
+==================================================
+
+### presentation\components\UserComponents.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.components
+
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.Relay
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.data.UserData
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
-
-private const val TAG = "AdminDashboardScreen"
 
 @Composable
-fun AdminDashboardScreen(
-    viewModel: DashboardViewModel = hiltViewModel(),
-    onLogoutClick: () -> Unit,
-    onManageUsersClick: () -> Unit,
-    onViewAlertsClick: () -> Unit,
-    onViewEventHistoryClick: () -> Unit,
-    hasPendingNotifications: Boolean
+fun UserCard(
+    user: UserData,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Log.d(TAG, "AdminDashboardScreen composition started")
-
-    val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
-        Log.d(TAG, "LaunchedEffect: Loading panels")
-        Log.d(TAG, "UI State actualizado - Total de alertas: ${uiState.totalAlerts}")
-        Log.d(TAG, "Alertas por panel: ${uiState.alertsByPanel}")
-        viewModel.loadPanels()
-    }
-
-    HDD1_2Theme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
-            ) {
-                item {
-                    DashboardHeader(hasPendingNotifications, onViewAlertsClick)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    DashboardActions(onManageUsersClick, onViewAlertsClick, onViewEventHistoryClick, context)
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                item {
-                    if (uiState.totalAlerts > 0) {
-                        Text(
-                            "Alertas activas: ${uiState.totalAlerts}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.Red
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        uiState.alertsByPanel.forEach { (_, alerts) ->
-                            alerts.forEach { alert ->
-                                Text(
-                                    alert,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.Red
-                                )
-                            }
-                        }
-                    } else {
-                        Text(
-                            "No hay alertas activas",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                uiState.groupedPanels.forEach { (clientId, clientPanels) ->
-                    item {
-                        Text(
-                            text = "Cliente: $clientId",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-                        Log.d(TAG, "Displaying panels for client: $clientId")
-                    }
-
-                    items(clientPanels) { panel ->
-                        PanelItem(panel)
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(80.dp))
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                LogoutButton(onLogoutClick, context)
-            }
-        }
-    }
-
-    Log.d(TAG, "AdminDashboardScreen composition finished")
-}
-
-@Composable
-private fun DashboardHeader(hasPendingNotifications: Boolean, onViewAlertsClick: () -> Unit) {
-    Log.d(TAG, "Rendering DashboardHeader")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = stringResource(R.string.admin_dashboard_title),
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f)
-        )
-        AnimatedNotificationBell(
-            hasNewNotifications = hasPendingNotifications,
-            onClick = {
-                Log.d(TAG, "Notification bell clicked")
-                onViewAlertsClick()
-            },
-            modifier = Modifier.size(48.dp)
-        )
-    }
-    Log.d(TAG, "DashboardHeader rendered")
-}
-
-@Composable
-private fun DashboardActions(
-    onManageUsersClick: () -> Unit,
-    onViewAlertsClick: () -> Unit,
-    onViewEventHistoryClick: () -> Unit,
-    context: android.content.Context
-) {
-    Log.d(TAG, "Rendering DashboardActions")
-    Column {
-        DashboardButton(
-            onClick = {
-                Log.d(TAG, "Manage Users button clicked")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onManageUsersClick()
-            },
-            text = stringResource(R.string.manage_users)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        DashboardButton(
-            onClick = {
-                Log.d(TAG, "View Alerts button clicked")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onViewAlertsClick()
-            },
-            text = stringResource(R.string.view_alerts)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        DashboardButton(
-            onClick = {
-                Log.d(TAG, "View Event History button clicked")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onViewEventHistoryClick()
-            },
-            text = stringResource(R.string.view_event_history)
-        )
-    }
-    Log.d(TAG, "DashboardActions rendered")
-}
-
-@Composable
-private fun DashboardButton(onClick: () -> Unit, text: String) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(text)
-    }
-}
-
-@Composable
-fun PanelItem(panel: Panel) {
-    Log.d(TAG, "Renderizando PanelItem: ${panel.name}, Estado: ${panel.overallStatus}")
-    var expanded by remember { mutableStateOf(false) }
-    val hasAlerts = panel.overallStatus != "OK"
-    val statusColor = if (hasAlerts) Color.Red else Color.Green
-    val overallStatus = panel.overallStatus
-
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .padding(vertical = 4.dp)
             .animateContentSize()
-            .clickable { expanded = !expanded },
-        colors = CardDefaults.cardColors(
-            containerColor = if (hasAlerts) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
-        )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
-            Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "IP: ${panel.ESP32_IP}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "Cliente: ${panel.clientId}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "Estado: $overallStatus", color = statusColor, style = MaterialTheme.typography.bodyMedium)
-
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Detalles de relays:", style = MaterialTheme.typography.bodyMedium)
-                panel.relays.forEach { relay ->
-                    RelayStatus(relay)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = user.name,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = user.email,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(
+                        R.string.field_status,
+                        if (user.role == UserRole.ADMIN)
+                            stringResource(R.string.admin_dashboard_title)
+                        else
+                            stringResource(R.string.user_dashboard_title)
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row {
+                IconButton(
+                    onClick = {
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
+                        onEditClick()
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = stringResource(R.string.update),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
+                        onDeleteClick()
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.delete),
+                        tint = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
@@ -486,61 +607,122 @@ fun PanelItem(panel: Panel) {
 }
 
 @Composable
-fun RelayStatus(relay: Relay) {
-    Log.d(TAG, "Rendering RelayStatus: ${relay.name}, Status: ${relay.status}")
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = relay.name, style = MaterialTheme.typography.bodySmall)
-        Text(
-            text = relay.status,
-            color = when (relay.status) {
-                "OK" -> Color.Green
-                "DISC" -> Color.Red
-                else -> Color.Yellow
-            },
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
+fun UserDialog(
+    user: UserData? = null,
+    onDismiss: () -> Unit,
+    onConfirm: (UserData) -> Unit
+) {
+    var name by remember { mutableStateOf(user?.name ?: "") }
+    var email by remember { mutableStateOf(user?.email ?: "") }
+    var roleString by remember { mutableStateOf(user?.role?.let { UserRole.toFirestoreValue(it) } ?: "user") }
+    var clientDocName by remember { mutableStateOf(user?.clientDocName ?: "") }
 
-@Composable
-private fun LogoutButton(onLogoutClick: () -> Unit, context: android.content.Context) {
-    Log.d(TAG, "Rendering LogoutButton")
-    Button(
-        onClick = {
-            Log.d(TAG, "Logout button clicked")
-            performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
-            onLogoutClick()
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    if (user == null) R.string.create else R.string.update
+                )
+            )
         },
-        modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.secondary
-        )
-    ) {
-        Text(stringResource(R.string.logout))
-    }
-    Log.d(TAG, "LogoutButton rendered")
+        text = {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                TextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.field_event_title)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                TextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text(stringResource(R.string.email)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                TextField(
+                    value = clientDocName,
+                    onValueChange = { clientDocName = it },
+                    label = { Text(stringResource(R.string.field_panel_id, "")) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Column {
+                    Text(
+                        text = stringResource(R.string.field_status, ""),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        RadioButton(
+                            selected = roleString == UserRole.toFirestoreValue(UserRole.USER),
+                            onClick = { roleString = UserRole.toFirestoreValue(UserRole.USER) }
+                        )
+                        Text(stringResource(R.string.user_dashboard_title))
+                        Spacer(modifier = Modifier.weight(1f))
+                        RadioButton(
+                            selected = roleString == UserRole.toFirestoreValue(UserRole.ADMIN),
+                            onClick = { roleString = UserRole.toFirestoreValue(UserRole.ADMIN) }
+                        )
+                        Text(stringResource(R.string.admin_dashboard_title))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onConfirm(
+                        UserData(
+                            documentName = user?.documentName ?: "",
+                            email = email,
+                            name = name,
+                            roleString = roleString,
+                            clientDocName = clientDocName,
+                            fcmToken = user?.fcmToken
+                        )
+                    )
+                }
+            ) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = {
+                    performHapticFeedback(context)
+                    playSoundEffect(context, R.raw.button_click)
+                    onDismiss()
+                }
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
 }
 
 ==================================================
 
-### presentation\viewmodel\DashboardViewModel.kt ###
+### presentation\viewmodel\UserManagementViewModel.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.viewmodel
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.firestore.FirebaseFirestore
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.data.UserRepository
-import com.pqsolutions.hdd_monitor.data.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -549,158 +731,210 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class DashboardViewModel @Inject constructor(
-    private val panelRepository: PanelRepository,
-    private val userRepository: UserRepository,
-    private val firestore: FirebaseFirestore
+class UserManagementViewModel @Inject constructor(
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(DashboardUiState())
-    val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
-
-    private var panelsJob: Job? = null
+    private val _uiState = MutableStateFlow(UserManagementUiState())
+    val uiState: StateFlow<UserManagementUiState> = _uiState.asStateFlow()
 
     init {
-        Log.d(TAG, "DashboardViewModel initialized")
-        loadPanels()
+        loadUsers()
     }
 
-    fun loadPanels() {
-        Log.d(TAG, "loadPanels() called")
-        panelsJob?.cancel()
-        panelsJob = viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(isLoading = true, error = null) }
-                val currentUser = userRepository.getCurrentUser()
-                Log.d(TAG, "Current user: $currentUser")
-                if (currentUser != null) {
-                    val clientId = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientId
-                    Log.d(TAG, "Fetching panels for clientId: $clientId")
-                    panelRepository.getPanels(clientId).collect { panels ->
-                        Log.d(TAG, "Received ${panels.size} panels")
-                        panels.forEach { panel ->
-                            Log.d(TAG, "Panel: ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.clientId})")
-                            Log.d(TAG, "Relays: ${panel.relays}")
-                        }
-                        updatePanels(panels)
-                    }
-                } else {
-                    Log.e(TAG, "No authenticated user found")
-                    handleNoAuthenticatedUser()
+    private fun loadUsers() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val result = userRepository.getUsers()
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    users = result.getOrNull() ?: emptyList(),
+                    error = result.exceptionOrNull()?.message
+                )
+            }
+        }
+    }
+
+    fun showCreateDialog() {
+        _uiState.update { it.copy(showDialog = true, selectedUser = null) }
+    }
+
+    fun showEditDialog(user: UserData) {
+        _uiState.update { it.copy(showDialog = true, selectedUser = user) }
+    }
+
+    fun dismissDialog() {
+        _uiState.update { it.copy(showDialog = false, selectedUser = null) }
+    }
+
+    fun createUser(userData: UserData) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showDialog = false) }
+            val result = userRepository.createUser(userData)
+            if (result.isSuccess) {
+                loadUsers()
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = result.exceptionOrNull()?.message
+                    )
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading panels", e)
-                handleUnexpectedError(e)
             }
         }
     }
 
-    private fun updatePanels(panels: List<Panel>) {
-        Log.d(TAG, "Actualizando paneles: ${panels.size}")
-        _uiState.update { currentState ->
-            val groupedPanels = panels.groupBy { it.clientId }
-            val updatedPanels = panels.map { panel ->
-                val newStatus = determineOverallPanelStatus(panel)
-                Log.d(TAG, "Panel ${panel.name} nuevo estado: $newStatus")
-                panel.copy(overallStatus = newStatus)
-            }
-            val alertsByPanel = checkForAlerts(updatedPanels)
-            val totalAlerts = alertsByPanel.values.sumOf { it.size }
-            Log.d(TAG, "Total de alertas: $totalAlerts")
-            currentState.copy(
-                isLoading = false,
-                panels = updatedPanels,
-                groupedPanels = groupedPanels,
-                error = null,
-                alertsByPanel = alertsByPanel,
-                totalAlerts = totalAlerts
-            )
-        }
-        logPanelState("Después de updatePanels")
-    }
-
-    private fun determineOverallPanelStatus(panel: Panel): String {
-        val discRelays = panel.relays.filter { it.status == "DISC" }
-        return when {
-            discRelays.isNotEmpty() -> discRelays.joinToString(", ") { it.name }
-            else -> "OK"
-        }
-    }
-
-    private fun checkForAlerts(panels: List<Panel>): Map<String, List<String>> {
-        val alertMap = panels.associate { panel ->
-            val alerts = panel.relays.filter { it.status == "DISC" }.map { relay ->
-                "${panel.name}: ${relay.name} estado DISC"
-            }
-            Log.d(TAG, "Alerts for panel ${panel.name}: $alerts")
-            panel.ID to alerts
-        }
-        val totalPanelsWithAlerts = alertMap.count { it.value.isNotEmpty() }
-        val totalAlerts = alertMap.values.sumOf { it.size }
-        Log.d(TAG, "Total panels with alerts: $totalPanelsWithAlerts")
-        Log.d(TAG, "Total alerts: $totalAlerts")
-        return alertMap
-    }
-
-    private fun handleNoAuthenticatedUser() {
-        Log.e(TAG, "No authenticated user found")
-        _uiState.update { it.copy(
-            isLoading = false,
-            error = "No se encontró usuario autenticado"
-        ) }
-    }
-
-    private fun handleUnexpectedError(e: Exception) {
-        Log.e(TAG, "Unexpected error: ${e.message}", e)
-        _uiState.update { it.copy(
-            isLoading = false,
-            error = e.message ?: "Error desconocido"
-        ) }
-    }
-
-    private fun logPanelState(context: String) {
-        Log.d(TAG, "$context - Panels state:")
-        _uiState.value.panels.forEach { panel ->
-            Log.d(TAG, "Panel ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.clientId}) relays:")
-            panel.relays.forEach { relay ->
-                Log.d(TAG, "  Relay: ${relay.name}, Status: ${relay.status}, DateTime: ${relay.date_time}")
+    fun updateUser(userData: UserData) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showDialog = false) }
+            val result = userRepository.updateUser(userData)
+            if (result.isSuccess) {
+                loadUsers()
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = result.exceptionOrNull()?.message
+                    )
+                }
             }
         }
-        Log.d(TAG, "Alerts by panel: ${_uiState.value.alertsByPanel.size}")
-        _uiState.value.alertsByPanel.forEach { (panelId, alerts) ->
-            Log.d(TAG, "  Panel $panelId Alerts: $alerts")
+    }
+
+    fun deleteUser(userData: UserData) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val result = userRepository.deleteUser(userData.ID, userData.ID_CLIENT)
+            if (result.isSuccess) {
+                loadUsers()
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = result.exceptionOrNull()?.message
+                    )
+                }
+            }
         }
     }
 
-    fun refreshPanels() {
-        Log.d(TAG, "refreshPanels() called")
-        loadPanels()
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
     }
+}
 
-    fun cancelCurrentJob() {
-        Log.d(TAG, "cancelCurrentJob() called")
-        panelsJob?.cancel()
-        panelsJob = null
-    }
+data class UserManagementUiState(
+    val isLoading: Boolean = false,
+    val users: List<UserData> = emptyList(),
+    val error: String? = null,
+    val showDialog: Boolean = false,
+    val selectedUser: UserData? = null
+)
 
-    override fun onCleared() {
-        super.onCleared()
-        cancelCurrentJob()
-        Log.d(TAG, "ViewModel cleared")
-    }
+==================================================
+
+### service\FirebaseMessagingService.kt ###
+
+package com.pqsolutions.hdd_monitor.service
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.presentation.MainActivity
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@AndroidEntryPoint
+class HddFirebaseMessagingService : FirebaseMessagingService() {
+
+    @Inject
+    lateinit var userRepository: UserRepository
 
     companion object {
-        private const val TAG = "DashboardViewModel"
+        private const val TAG = "HddFirebaseMessaging"
     }
 
-    data class DashboardUiState(
-        val isLoading: Boolean = true,
-        val panels: List<Panel> = emptyList(),
-        val groupedPanels: Map<String, List<Panel>> = emptyMap(),
-        val error: String? = null,
-        val alertsByPanel: Map<String, List<String>> = emptyMap(),
-        val totalAlerts: Int = 0  // Nuevo campo
-    )
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
+
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        super.onMessageReceived(remoteMessage)
+        Log.d(TAG, "Mensaje recibido: ${remoteMessage.data}")
+        remoteMessage.notification?.let { notification ->
+            showNotification(notification.title ?: "Actualización", notification.body ?: "Se ha producido un cambio en el sistema.")
+        }
+    }
+
+    private fun showNotification(title: String, message: String) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+        val channelId = getString(R.string.default_notification_channel_id)
+
+        val notificationBuilder = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+        Log.d(TAG, "Notificación de Firebase enviada: $title - $message")
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channelId = getString(R.string.default_notification_channel_id)
+            val name = getString(R.string.channel_name)
+            val descriptionText = getString(R.string.channel_description)
+            val importance = NotificationManager.IMPORTANCE_HIGH
+            val channel = NotificationChannel(channelId, name, importance).apply {
+                description = descriptionText
+                enableVibration(true)
+                enableLights(true)
+            }
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+            Log.d(TAG, "Canal de notificación creado: $channelId")
+        }
+    }
+
+    override fun onNewToken(token: String) {
+        super.onNewToken(token)
+        Log.d(TAG, "Token actualizado: $token")
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
+                    userRepository.updateUserToken(currentUser.ID, token)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al actualizar el token: ${e.message}")
+            }
+        }
+    }
 }
 
 ==================================================

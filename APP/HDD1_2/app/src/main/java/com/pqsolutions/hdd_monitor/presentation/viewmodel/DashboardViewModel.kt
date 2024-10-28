@@ -7,7 +7,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.pqsolutions.hdd_monitor.data.Panel
 import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
-import com.pqsolutions.hdd_monitor.data.UserRole
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,17 +42,32 @@ class DashboardViewModel @Inject constructor(
             try {
                 _uiState.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
-                Log.d(TAG, "Current user: $currentUser")
+                Log.d(TAG, "Current user: ${currentUser?.documentName}")
+
                 if (currentUser != null) {
-                    val clientId = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientId
-                    Log.d(TAG, "Fetching panels for clientId: $clientId")
-                    panelRepository.getPanels(clientId).collect { panels ->
+                    val clientDocName = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientDocName
+                    Log.d(TAG, "Fetching panels for client document: $clientDocName")
+
+                    panelRepository.getPanels(clientDocName).collect { panels ->
                         Log.d(TAG, "Received ${panels.size} panels")
-                        panels.forEach { panel ->
-                            Log.d(TAG, "Panel: ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.ID_CLIENT})")
+
+                        // Validar los nombres de documentos
+                        val validPanels = panels.filter { panel ->
+                            val isValid = panel.documentName.startsWith(DocumentPrefixes.PANEL) &&
+                                    panel.clientDocName.startsWith(DocumentPrefixes.CLIENT)
+                            if (!isValid) {
+                                Log.w(TAG, "Invalid panel document found: ${panel.documentName}")
+                            }
+                            isValid
+                        }
+
+                        validPanels.forEach { panel ->
+                            Log.d(TAG, "Panel: ${panel.name} " +
+                                    "(DocName: ${panel.documentName}, " +
+                                    "ClientDoc: ${panel.clientDocName})")
                             Log.d(TAG, "Relays: ${panel.relays}")
                         }
-                        updatePanels(panels)
+                        updatePanels(validPanels)
                     }
                 } else {
                     Log.e(TAG, "No authenticated user found")
@@ -68,8 +84,8 @@ class DashboardViewModel @Inject constructor(
         Log.d(TAG, "updatePanels called with ${panels.size} panels")
         _uiState.update { currentState ->
             Log.d(TAG, "Current state before update: $currentState")
-            val groupedPanels = panels.groupBy { it.ID_CLIENT }
-            Log.d(TAG, "Grouped panels: ${groupedPanels.keys}")
+            val groupedPanels = panels.groupBy { it.clientDocName }
+            Log.d(TAG, "Grouped panels by client documents: ${groupedPanels.keys}")
 
             val updatedPanels = panels.map { panel ->
                 val newStatus = determineOverallPanelStatus(panel)
@@ -83,7 +99,8 @@ class DashboardViewModel @Inject constructor(
                 isLoading = false,
                 panels = updatedPanels,
                 groupedPanels = groupedPanels,
-                error = null
+                error = null,
+                lastUpdate = System.currentTimeMillis()
             )
             Log.d(TAG, "New state: $newState")
             newState
@@ -121,9 +138,14 @@ class DashboardViewModel @Inject constructor(
     private fun logPanelState(context: String) {
         Log.d(TAG, "$context - Panels state:")
         _uiState.value.panels.forEach { panel ->
-            Log.d(TAG, "Panel ${panel.name} (ID: ${panel.ID}, ClientId: ${panel.ID_CLIENT}) relays:")
+            Log.d(TAG, "Panel ${panel.name} " +
+                    "(DocName: ${panel.documentName}, " +
+                    "ClientDoc: ${panel.clientDocName}) " +
+                    "Relays: ${panel.relays.size}")
             panel.relays.forEach { relay ->
-                Log.d(TAG, "  Relay: ${relay.name}, Status: ${relay.status}, DateTime: ${relay.date_time}")
+                Log.d(TAG, "  Relay: ${relay.name}, " +
+                        "Status: ${relay.status}, " +
+                        "DateTime: ${relay.date_time}")
             }
         }
     }
@@ -153,10 +175,17 @@ class DashboardViewModel @Inject constructor(
         val isLoading: Boolean = true,
         val panels: List<Panel> = emptyList(),
         val groupedPanels: Map<String, List<Panel>> = emptyMap(),
-        val error: String? = null
+        val error: String? = null,
+        val lastUpdate: Long = System.currentTimeMillis()
     ) {
         override fun toString(): String {
-            return "DashboardUiState(isLoading=$isLoading, panels=${panels.size}, groupedPanels=${groupedPanels.keys}, error=$error)"
+            return "DashboardUiState(" +
+                    "isLoading=$isLoading, " +
+                    "panels=${panels.size}, " +
+                    "groupedPanels=${groupedPanels.keys}, " +
+                    "error=$error, " +
+                    "lastUpdate=$lastUpdate" +
+                    ")"
         }
     }
 }

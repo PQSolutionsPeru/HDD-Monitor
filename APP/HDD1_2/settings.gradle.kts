@@ -29,6 +29,11 @@ dependencyResolutionManagement {
             library("androidx-compose-material3", "androidx.compose.material3", "material3").withoutVersion()
             library("androidx-compose-runtime", "androidx.compose.runtime", "runtime").withoutVersion()
 
+            // Nuevas dependencias
+            library("androidx-compose-animation", "androidx.compose.animation", "animation").withoutVersion()
+            library("androidx-compose-foundation", "androidx.compose.foundation", "foundation").withoutVersion()
+            library("androidx-compose-material-icons-extended", "androidx.compose.material", "material-icons-extended").withoutVersion()
+
             library("androidx-core-ktx", "androidx.core", "core-ktx").version("1.12.0")
             library("androidx-lifecycle-runtime-ktx", "androidx.lifecycle", "lifecycle-runtime-ktx").version("2.6.2")
             library("androidx-activity-compose", "androidx.activity", "activity-compose").version("1.8.2")

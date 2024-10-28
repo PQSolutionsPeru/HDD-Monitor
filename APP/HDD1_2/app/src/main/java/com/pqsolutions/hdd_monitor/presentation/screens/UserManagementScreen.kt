@@ -1,21 +1,40 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.pqsolutions.hdd_monitor.data.UserData
-import com.pqsolutions.hdd_monitor.data.UserRole
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.presentation.components.BackButton
+import com.pqsolutions.hdd_monitor.presentation.components.LoadingContent
+import com.pqsolutions.hdd_monitor.presentation.components.RefreshableContent
+import com.pqsolutions.hdd_monitor.presentation.components.ScreenContent
+import com.pqsolutions.hdd_monitor.presentation.components.ScreenHeader
+import com.pqsolutions.hdd_monitor.presentation.components.UserCard
+import com.pqsolutions.hdd_monitor.presentation.components.UserDialog
+import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
+import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.UserManagementViewModel
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 
 @Composable
 fun UserManagementScreen(
@@ -25,193 +44,113 @@ fun UserManagementScreen(
     onNotificationClick: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showDialog by remember { mutableStateOf(false) }
-    var editingUser by remember { mutableStateOf<UserData?>(null) }
+    val context = LocalContext.current
+    val listState = rememberLazyListState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Gestión de Usuarios",
-                style = MaterialTheme.typography.headlineMedium
+    val showEmptyState by remember {
+        derivedStateOf { uiState.users.isEmpty() && !uiState.isLoading && uiState.error == null }
+    }
+
+    ScreenContent(
+        header = {
+            ScreenHeader(
+                title = stringResource(R.string.manage_users),
+                hasPendingNotifications = hasPendingNotifications,
+                onNotificationClick = onNotificationClick,
+                showNotificationBell = true
             )
-            AnimatedNotificationBell(
-                hasNewNotifications = hasPendingNotifications,
-                onClick = onNotificationClick
-            )
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        when {
-            uiState.isLoading -> {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-            }
-            uiState.error != null -> {
-                Text(
-                    text = "Error: ${uiState.error}",
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+        },
+        content = {
+            RefreshableContent(
+                isRefreshing = uiState.isLoading,
+                onRefresh = { /* Implementar la función de refresh */ },
+                listState = listState
+            ) {
+                LoadingContent(
+                    isLoading = uiState.isLoading,
+                    isEmpty = showEmptyState,
+                    error = uiState.error,
+                    onRetry = { /* Implementar función de retry */ },
+                    emptyContent = {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(R.string.no_data_available),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 ) {
-                    items(uiState.users) { user ->
-                        UserItem(
-                            user = user,
-                            onEditClick = {
-                                editingUser = user
-                                showDialog = true
-                            },
-                            onDeleteClick = { viewModel.deleteUser(user) }
-                        )
+                    LazyColumn(
+                        state = listState,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(
+                            items = uiState.users,
+                            key = { user -> user.documentName }  // Cambiado de ID a documentName
+                        ) { user ->
+                            UserCard(
+                                user = user,
+                                onEditClick = {
+                                    performHapticFeedback(context)
+                                    playSoundEffect(context, R.raw.button_click)
+                                    viewModel.showEditDialog(user)
+                                },
+                                onDeleteClick = {
+                                    performHapticFeedback(context)
+                                    playSoundEffect(context, R.raw.button_click)
+                                    viewModel.deleteUser(user)
+                                }
+                            )
+                        }
                     }
                 }
             }
+        },
+        footer = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
+                        viewModel.showCreateDialog()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    Text(stringResource(R.string.create))
+                }
+                BackButton(onBackClick = onBackClick)
+            }
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = {
-                editingUser = null
-                showDialog = true
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Crear Nuevo Usuario")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = onBackClick,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Volver")
-        }
-    }
+    )
 
-    if (showDialog) {
+    // Diálogo de usuario
+    if (uiState.showDialog) {
         UserDialog(
-            user = editingUser,
-            onDismiss = { showDialog = false },
+            user = uiState.selectedUser,
+            onDismiss = {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                viewModel.dismissDialog()
+            },
             onConfirm = { userData ->
-                if (editingUser == null) {
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                if (userData.documentName.isEmpty()) {
                     viewModel.createUser(userData)
                 } else {
                     viewModel.updateUser(userData)
                 }
-                showDialog = false
             }
         )
     }
-}
-
-@Composable
-fun UserItem(
-    user: UserData,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(text = user.name, style = MaterialTheme.typography.bodyLarge)
-                Text(text = user.email, style = MaterialTheme.typography.bodyMedium)
-                Text(text = "Rol: ${user.role}", style = MaterialTheme.typography.bodySmall)
-            }
-            Row {
-                IconButton(onClick = onEditClick) {
-                    Icon(Icons.Default.Edit, contentDescription = "Editar Usuario")
-                }
-                IconButton(onClick = onDeleteClick) {
-                    Icon(Icons.Default.Delete, contentDescription = "Eliminar Usuario")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun UserDialog(
-    user: UserData? = null,
-    onDismiss: () -> Unit,
-    onConfirm: (UserData) -> Unit
-) {
-    var name by remember { mutableStateOf(user?.name ?: "") }
-    var email by remember { mutableStateOf(user?.email ?: "") }
-    var role by remember { mutableStateOf(user?.role ?: UserRole.USER) }
-    var clientId by remember { mutableStateOf(user?.clientId ?: "") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (user == null) "Agregar Usuario" else "Editar Usuario") },
-        text = {
-            Column {
-                TextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nombre") }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                TextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Email") }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                TextField(
-                    value = clientId,
-                    onValueChange = { clientId = it },
-                    label = { Text("ID de Cliente") }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Rol:")
-                    RadioButton(
-                        selected = role == UserRole.USER,
-                        onClick = { role = UserRole.USER }
-                    )
-                    Text("Usuario")
-                    RadioButton(
-                        selected = role == UserRole.ADMIN,
-                        onClick = { role = UserRole.ADMIN }
-                    )
-                    Text("Administrador")
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                onConfirm(UserData(
-                    id = user?.id ?: "",
-                    name = name,
-                    email = email,
-                    role = role,
-                    clientId = clientId
-                ))
-            }) {
-                Text("Confirmar")
-            }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        }
-    )
 }

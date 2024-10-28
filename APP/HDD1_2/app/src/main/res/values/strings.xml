@@ -1,41 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">HDD1_2</string>
-    <string name="alerts">Alertas</string>
-    <string name="no_alerts">No hay alertas</string>
-    <string name="create_new_alert">Crear nueva alerta</string>
-    <string name="back">Volver</string>
-    <string name="date_time">Fecha y hora: %1$s</string>
-    <string name="status">Estado: %1$s</string>
-    <string name="priority">Prioridad: %1$s</string>
-    <string name="edit_alert">Editar alerta</string>
-    <string name="delete_alert">Eliminar alerta</string>
-    <string name="add_alert">Añadir alerta</string>
-    <string name="title">Título</string>
-    <string name="description">Descripción</string>
-    <string name="low">Baja</string>
-    <string name="medium">Media</string>
-    <string name="high">Alta</string>
-    <string name="confirm">Confirmar</string>
-    <string name="cancel">Cancelar</string>
-    <string name="unknown_error">Error desconocido</string>
-    <string name="retry">Reintentar</string>
-    <string name="admin_dashboard_title">Panel de Control Admin</string>
-    <string name="manage_users">Gestionar Usuarios</string>
-    <string name="view_alerts">Ver Alertas</string>
-    <string name="view_event_history">Historial de Eventos</string>
-    <string name="logout">Cerrar Sesión</string>
-    <string name="user_dashboard_title">Panel de Control Usuario</string>
-    <string name="error_message">Error: %1$s</string>
-    <string name="fire_panels">Paneles de Incendio</string>
-    <string name="active_alerts">Alertas Activas</string>
-    <string name="location">Ubicación: %1$s</string>
-    <string name="email">Email</string>
-    <string name="password">Contraseña</string>
-    <string name="login">Iniciar sesión</string>
-    <string name="accept">Aceptar</string>
-    <string name="contact_admin">Contactar al Administrador</string>
+    <!-- Títulos de pantallas -->
+    <string name="app_name">HDD Monitor</string>
+    <string name="notification_history_title">Historial de Notificaciones</string>
+    <string name="events">Eventos</string>
 
-    <!-- Nuevas cadenas agregadas -->
+    <!-- Títulos de Dashboard -->
+    <string name="admin_dashboard_title">Panel de Administración</string>
+    <string name="user_dashboard_title">Panel de Usuario</string>
+    <string name="manage_users">Gestionar Usuarios</string>
+    <string name="view_events">Ver Eventos</string>
+    <string name="view_notification_history">Ver Historial de Notificaciones</string>
+    <string name="logout">Cerrar Sesión</string>
+
+    <!-- Campos de Login -->
+    <string name="email">Correo Electrónico</string>
+    <string name="password">Contraseña</string>
+    <string name="login">Iniciar Sesión</string>
+
+    <!-- Componentes de Dashboard -->
     <string name="no_panels_found">No se encontraron paneles</string>
-    <string name="loading_relays">Cargando relays...</string>
+    <string name="fire_panels">Paneles contra incendios</string>
+    <string name="location">Ubicación</string>
+    <string name="loading_relays">Cargando relays…</string>
+
+    <!-- Diálogos -->
+    <string name="confirm_deletion">Confirmar Eliminación</string>
+    <string name="delete_confirmation_message">¿Está seguro que desea eliminar este elemento?</string>
+    <string name="delete">Eliminar</string>
+    <string name="confirm_acceptance">Confirmar Aceptación</string>
+    <string name="accept_event_confirmation_message">¿Está seguro que desea aceptar este evento?</string>
+    <string name="unsaved_changes">Cambios sin guardar</string>
+    <string name="unsaved_changes_message">¿Desea descartar los cambios realizados?</string>
+    <string name="discard">Descartar</string>
+    <string name="keep_editing">Seguir editando</string>
+    <string name="please_wait">Por favor espere...</string>
+    <string name="close">Cerrar</string>
+    <string name="error">Error</string>
+    <string name="error_message">Ha ocurrido un error</string>
+    <string name="no_data_available">No hay datos disponibles</string>
+    <string name="delete_event">Eliminar evento</string>
+    <string name="menu">Menú</string>
+
+    <!-- Acciones comunes -->
+    <string name="accept">Aceptar</string>
+    <string name="cancel">Cancelar</string>
+    <string name="back">Regresar</string>
+    <string name="retry">Reintentar</string>
+    <string name="update">Actualizar</string>
+    <string name="create">Crear</string>
+    <string name="confirm">Confirmar</string>
+
+    <!-- Eventos - Títulos y etiquetas -->
+    <string name="create_new_event">Crear Nuevo Evento</string>
+    <string name="edit_event">Editar Evento</string>
+    <string name="event_title">Título</string>
+    <string name="event_description">Descripción</string>
+    <string name="event_date_time">Fecha y Hora</string>
+    <string name="event_date_time_format">dd/MM/yyyy HH:mm</string>
+    <string name="event_already_accepted">Este evento ya ha sido aceptado y no puede ser editado.</string>
+    <string name="select_clients">Seleccionar Clientes</string>
+    <string name="no_events">No hay eventos disponibles</string>
+
+    <!-- Eventos - Campos de formulario -->
+    <string name="date">Fecha</string>
+    <string name="time">Hora</string>
+    <string name="select_panel">Seleccionar Panel</string>
+    <string name="panel">Panel</string>
+    <string name="panel_optional">Panel (Opcional)</string>
+    <string name="none">Ninguno</string>
+    <string name="required_field">Campo requerido</string>
+    <string name="single_client_panel_hint">Selecciona un cliente para asignar un panel específico. Solo se puede seleccionar un cliente si deseas asociar un panel.</string>
+
+    <!-- Mensajes de notificaciones -->
+    <string name="no_notifications">No hay notificaciones</string>
+    <string name="contact_admin">Contactar Administrador</string>
+    <string name="default_notification_channel_id">panel_updates</string>
+    <string name="channel_name">Actualizaciones de Panel</string>
+    <string name="channel_description">Notificaciones de cambios en el estado de los paneles</string>
+    <string name="notification_unread">No leído</string>
+
+    <!-- Mensajes de error -->
+    <string name="unknown_error">Error desconocido</string>
+    <string name="error_loading_events">Error al cargar eventos</string>
+    <string name="error_loading_notifications">Error al cargar notificaciones</string>
+    <string name="error_user_not_found">No se encontró usuario actual</string>
+    <string name="error_creating_event">Error al crear evento</string>
+    <string name="error_updating_event">Error al actualizar evento</string>
+    <string name="error_deleting_event">Error al eliminar evento</string>
+    <string name="error_loading_panels">Error al cargar paneles del cliente</string>
+
+    <!-- Estados -->
+    <string name="status_scheduled">PROGRAMADO</string>
+    <string name="status_accepted">ACEPTADO</string>
+
+    <!-- Campos -->
+    <string name="field_event_title">Título del evento</string>
+    <string name="field_event_description">Descripción del evento</string>
+    <string name="field_date_time">Fecha y hora</string>
+    <string name="field_panel_id">ID Panel: %1$s</string>
+    <string name="field_relay">Relay: %1$s</string>
+    <string name="field_status">Estado: %1$s</string>
+
+    <!-- Mensajes informativos -->
+    <string name="info_swipe_hint">Desliza para más opciones</string>
+    <string name="info_select_clients">Selecciona los clientes para este evento</string>
+    <string name="info_required_fields">Todos los campos son requeridos</string>
+    <string name="unread_count">%d no leídos</string>
+    <string name="scroll_to_top">Volver arriba</string>
+
+    <!-- Contenido para WhatsApp -->
+    <string name="whatsapp_event_message">Buen día, quisiera conversar sobre el evento \"%1$s\"</string>
+    <string name="whatsapp_notification_message">Buen día, quisiera conversar sobre la notificación: \"%1$s\"</string>
 </resources>

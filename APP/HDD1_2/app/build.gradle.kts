@@ -1,5 +1,5 @@
-import java.util.Properties
 import java.io.FileInputStream
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -125,7 +125,6 @@ dependencies {
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)
-    implementation(libs.androidx.datastore.preferences.core)
 
     // Multidex
     implementation(libs.androidx.multidex)
@@ -140,13 +139,15 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx.v286)
     implementation(libs.androidx.activity.ktx)
 
-    // Retrofit para llamadas a API (útil para la renovación de tokens)
-    implementation(libs.retrofit)
-    implementation(libs.converter.gson)
+    implementation(libs.androidx.compose.animation)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material.icons.extended)
 
-    // OkHttp para interceptores (útil para agregar tokens a las solicitudes)
-    implementation(libs.okhttp)
-    implementation(libs.logging.interceptor)
+    // Date & Time Pickers
+    implementation(libs.core)
+    implementation(libs.calendar)
+    implementation(libs.clock)
+    implementation(libs.state)
 }
 
 kotlin {

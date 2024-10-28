@@ -2,9 +2,15 @@ package com.pqsolutions.hdd_monitor.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -14,24 +20,27 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 @Singleton
 class UserPreferences @Inject constructor(private val context: Context) {
 
+    // Keys
     private val isFirstLaunchKey = booleanPreferencesKey("is_first_launch")
-    private val clientIdKey = stringPreferencesKey("client_id")
+    private val clientDocNameKey = stringPreferencesKey("client_document_name")
     private val themeKey = stringPreferencesKey("theme")
     private val languageKey = stringPreferencesKey("language")
     private val notificationsEnabledKey = booleanPreferencesKey("notifications_enabled")
     private val authTokenKey = stringPreferencesKey("auth_token")
-    private val userIdKey = stringPreferencesKey("user_id")
+    private val userDocNameKey = stringPreferencesKey("user_document_name")
     private val userNameKey = stringPreferencesKey("user_name")
     private val userEmailKey = stringPreferencesKey("user_email")
-    private val userRoleKey = stringPreferencesKey("user_role")
+    private val userRoleStringKey = stringPreferencesKey("user_role_string")
     private val lastSyncDateKey = longPreferencesKey("last_sync_date")
+    private val sessionValidKey = booleanPreferencesKey("session_valid")
 
+    // Flow getters
     val isFirstLaunchFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[isFirstLaunchKey] ?: true
     }
 
-    val clientIdFlow: Flow<String?> = context.dataStore.data.map { preferences ->
-        preferences[clientIdKey]
+    val clientDocNameFlow: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[clientDocNameKey]
     }
 
     val themeFlow: Flow<String> = context.dataStore.data.map { preferences ->
@@ -51,19 +60,20 @@ class UserPreferences @Inject constructor(private val context: Context) {
     }
 
     val userDataFlow: Flow<UserData?> = context.dataStore.data.map { preferences ->
-        val userId = preferences[userIdKey]
+        val userDocName = preferences[userDocNameKey]
         val userName = preferences[userNameKey]
         val userEmail = preferences[userEmailKey]
-        val userRole = preferences[userRoleKey]
-        val clientId = preferences[clientIdKey]
+        val roleString = preferences[userRoleStringKey]
+        val clientDocName = preferences[clientDocNameKey]
+        val isSessionValid = preferences[sessionValidKey] ?: false
 
-        if (userId != null && userName != null && userEmail != null && userRole != null) {
+        if (userDocName != null && userName != null && userEmail != null && roleString != null && isSessionValid) {
             UserData(
-                id = userId,
+                documentName = userDocName,
                 name = userName,
                 email = userEmail,
-                role = UserRole.valueOf(userRole),
-                clientId = clientId ?: ""
+                roleString = roleString,
+                clientDocName = clientDocName ?: ""
             )
         } else {
             null
@@ -74,15 +84,16 @@ class UserPreferences @Inject constructor(private val context: Context) {
         preferences[lastSyncDateKey] ?: 0L
     }
 
+    // Setters
     suspend fun setFirstLaunch(isFirstLaunch: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[isFirstLaunchKey] = isFirstLaunch
         }
     }
 
-    suspend fun setClientId(clientId: String) {
+    suspend fun setClientDocName(clientDocName: String) {
         context.dataStore.edit { preferences ->
-            preferences[clientIdKey] = clientId
+            preferences[clientDocNameKey] = clientDocName
         }
     }
 
@@ -112,11 +123,12 @@ class UserPreferences @Inject constructor(private val context: Context) {
 
     suspend fun setUserData(userData: UserData) {
         context.dataStore.edit { preferences ->
-            preferences[userIdKey] = userData.id
+            preferences[userDocNameKey] = userData.documentName
             preferences[userNameKey] = userData.name
             preferences[userEmailKey] = userData.email
-            preferences[userRoleKey] = userData.role.name
-            preferences[clientIdKey] = userData.clientId
+            preferences[userRoleStringKey] = UserRole.toFirestoreValue(userData.role)
+            preferences[clientDocNameKey] = userData.clientDocName
+            preferences[sessionValidKey] = true
         }
     }
 
@@ -126,14 +138,29 @@ class UserPreferences @Inject constructor(private val context: Context) {
         }
     }
 
+    suspend fun getUserData(): UserData? {
+        return userDataFlow.first()
+    }
+
+    suspend fun isSessionValid(): Boolean {
+        return context.dataStore.data.first()[sessionValidKey] ?: false
+    }
+
     suspend fun clearUserData() {
         context.dataStore.edit { preferences ->
-            preferences.remove(userIdKey)
-            preferences.remove(userNameKey)
-            preferences.remove(userEmailKey)
-            preferences.remove(userRoleKey)
-            preferences.remove(clientIdKey)
-            preferences.remove(authTokenKey)
+            preferences[userDocNameKey] = ""
+            preferences[userNameKey] = ""
+            preferences[userEmailKey] = ""
+            preferences[userRoleStringKey] = ""
+            preferences[clientDocNameKey] = ""
+            preferences[authTokenKey] = ""
+            preferences[sessionValidKey] = false
+        }
+    }
+
+    suspend fun clearAll() {
+        context.dataStore.edit { preferences ->
+            preferences.clear()
         }
     }
 }
