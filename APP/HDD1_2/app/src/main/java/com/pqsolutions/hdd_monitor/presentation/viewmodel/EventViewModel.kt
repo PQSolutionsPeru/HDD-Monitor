@@ -96,6 +96,11 @@ class EventViewModel @Inject constructor(
                                     lastUpdate = System.currentTimeMillis()
                                 )
                             }
+
+                            // Iniciar observación para eventos con panel asociado
+                            validEvents.filter { it.panelDocName != null }.forEach { event ->
+                                startPanelObservation(event)
+                            }
                         }
                 } else {
                     _state.update {
@@ -152,7 +157,8 @@ class EventViewModel @Inject constructor(
                 availablePanels = emptyList(),
                 selectedClientForPanels = null,
                 newEventTitle = "",
-                newEventDescription = ""
+                newEventDescription = "",
+                selectedPanelDocName = null
             )
         }
     }
@@ -185,12 +191,10 @@ class EventViewModel @Inject constructor(
             is EventDialogEvent.TitleChanged -> {
                 _state.update { currentState ->
                     if (currentState.selectedEvent != null) {
-                        // Modo edición
                         currentState.copy(
                             selectedEvent = currentState.selectedEvent.copy(title = event.title)
                         )
                     } else {
-                        // Modo creación
                         currentState.copy(newEventTitle = event.title)
                     }
                 }
@@ -198,12 +202,10 @@ class EventViewModel @Inject constructor(
             is EventDialogEvent.DescriptionChanged -> {
                 _state.update { currentState ->
                     if (currentState.selectedEvent != null) {
-                        // Modo edición
                         currentState.copy(
                             selectedEvent = currentState.selectedEvent.copy(text = event.description)
                         )
                     } else {
-                        // Modo creación
                         currentState.copy(newEventDescription = event.description)
                     }
                 }
@@ -235,12 +237,21 @@ class EventViewModel @Inject constructor(
             }
             is EventDialogEvent.PanelSelected -> {
                 _state.update {
+                    val selectedPanel = it.availablePanels.find { panel ->
+                        panel.documentName == event.panelDocName
+                    }
                     if (it.selectedEvent != null) {
                         it.copy(
-                            selectedEvent = it.selectedEvent.copy(panelDocName = event.panelDocName)
+                            selectedEvent = it.selectedEvent.copy(
+                                panelDocName = event.panelDocName,
+                                panelName = selectedPanel?.name
+                            )
                         )
                     } else {
-                        it.copy(selectedPanelDocName = event.panelDocName)
+                        it.copy(
+                            selectedPanelDocName = event.panelDocName,
+                            selectedPanelName = selectedPanel?.name
+                        )
                     }
                 }
             }
@@ -253,8 +264,9 @@ class EventViewModel @Inject constructor(
             EventDialogEvent.ShowTimePicker -> {
                 // Manejado por la UI
             }
-
-            is EventDialogEvent.ClientSelected -> TODO()
+            is EventDialogEvent.ClientSelected -> {
+                // Implementación pendiente si es necesaria
+            }
         }
     }
 
@@ -275,7 +287,8 @@ class EventViewModel @Inject constructor(
                             title = currentState.selectedEvent.title,
                             text = currentState.selectedEvent.text,
                             dateTime = dateTime,
-                            panelDocName = currentState.selectedEvent.panelDocName
+                            panelDocName = currentState.selectedEvent.panelDocName,
+                            panelName = currentState.selectedEvent.panelName
                         )
 
                         if (updatedEvent == null) {
@@ -326,66 +339,87 @@ class EventViewModel @Inject constructor(
         }
     }
 
-    private fun clearDialogState() {
-        _state.update {
-            it.copy(
-                showDialog = false,
-                selectedEvent = null,
-                currentDate = null,
-                currentTime = null,
-                selectedClients = emptyList(),
-                availablePanels = emptyList(),
-                selectedClientForPanels = null,
-                newEventTitle = "",
-                newEventDescription = "",
-                selectedPanelDocName = null
-            )
+    private fun startPanelObservation(event: Event) {
+        if (event.panelDocName != null && event.isProgramado) {
+            viewModelScope.launch {
+                try {
+                    panelRepository.observePanelUpdates(event.clientDocName, event.panelDocName)
+                        .collect { panel ->
+                            if (panel != null) {
+                                // El panel existe y se actualizó
+                                if (panel.name != event.panelName) {
+                                    // El nombre del panel ha cambiado, actualizar el evento
+                                    updateEventPanelInfo(event.copy(panelName = panel.name))
+                                }
+                            } else {
+                                // El panel ya no existe
+                                handleDeletedPanel(event)
+                            }
+                        }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error observing panel updates", e)
+                }
+            }
         }
     }
 
-    private fun applyFilterAndSort(events: List<Event>): List<Event> {
-        return events
-            .filter { event ->
-                when (currentFilter) {
-                    is EventFilter.All -> true
-                    is EventFilter.Programmed -> event.isProgramado
-                    is EventFilter.Accepted -> event.isAceptado
-                    is EventFilter.ByClient -> event.clientDocName == (currentFilter as EventFilter.ByClient).clientDocName
-                }
+    private suspend fun verifyPanelExists(clientDocName: String, panelDocName: String): Boolean {
+        return panelRepository.verifyPanelExists(clientDocName, panelDocName)
+    }
+
+    private fun updateEventPanelInfo(event: Event) {
+        viewModelScope.launch {
+            try {
+                eventRepository.updateEvent(event.clientDocName, event)
+                    .onSuccess {
+                        _uiEvent.send(EventUIEvent.ShowSnackbar("Se actualizó el nombre del panel en el evento"))
+                        loadEvents()
+                    }
+                    .onFailure { error ->
+                        handleError(error)
+                    }
+            } catch (e: Exception) {
+                handleError(e)
             }
-            .sortedWith { a, b ->
-                when (currentSort.field) {
-                    EventSortOption.SortField.DATE -> {
-                        val dateComparison = (a.dateTime ?: LocalDateTime.MIN)
-                            .compareTo(b.dateTime ?: LocalDateTime.MIN)
-                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
-                            dateComparison * -1 else dateComparison
+        }
+    }
+
+    private fun handleDeletedPanel(event: Event) {
+        viewModelScope.launch {
+            try {
+                // Actualizar el evento para quitar la referencia al panel eliminado
+                val updatedEvent = event.copy(panelDocName = null, panelName = null)
+                eventRepository.updateEvent(event.clientDocName, updatedEvent)
+                    .onSuccess {
+                        _uiEvent.send(EventUIEvent.ShowSnackbar("Panel eliminado: se actualizó el evento"))
+                        loadEvents()
                     }
-                    EventSortOption.SortField.STATUS -> {
-                        val comparison = a.status.compareTo(b.status)
-                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
-                            comparison * -1 else comparison
+                    .onFailure { error ->
+                        handleError(error)
                     }
-                    EventSortOption.SortField.TITLE -> {
-                        val comparison = a.title.compareTo(b.title)
-                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
-                            comparison * -1 else comparison
-                    }
-                }
+            } catch (e: Exception) {
+                handleError(e)
             }
+        }
     }
 
     fun createEvent(event: Event, selectedClients: List<String>) {
         viewModelScope.launch {
             try {
                 _state.update { it.copy(currentOperation = EventOperation.Loading) }
-                Log.d(TAG, "Creating event for clients: $selectedClients")
+
+                // Verificar si el panel existe antes de crear el evento
+                if (event.panelDocName != null) {
+                    val panelExists = verifyPanelExists(event.clientDocName, event.panelDocName)
+                    if (!panelExists) {
+                        throw IllegalStateException("El panel seleccionado ya no existe")
+                    }
+                }
 
                 if (!event.isValid()) {
                     throw IllegalArgumentException("Evento inválido")
                 }
 
-                // Validar nombres de documentos de clientes
                 val validClients = selectedClients.all { it.startsWith(DocumentPrefixes.CLIENT) }
                 if (!validClients) {
                     throw IllegalArgumentException("Nombres de documentos de clientes inválidos")
@@ -402,6 +436,9 @@ class EventViewModel @Inject constructor(
                         _uiEvent.send(EventUIEvent.ShowSnackbar("Evento creado exitosamente"))
                         clearDialogState()
                         loadEvents()
+
+                        // Iniciar observación del panel
+                        startPanelObservation(event)
                     }
                     .onFailure { error ->
                         handleError(error)
@@ -421,6 +458,14 @@ class EventViewModel @Inject constructor(
 
                 if (!event.isValid()) {
                     throw IllegalArgumentException("Evento inválido")
+                }
+
+                // Verificar que el panel existe si hay uno asociado
+                if (event.panelDocName != null) {
+                    val panelExists = verifyPanelExists(event.clientDocName, event.panelDocName)
+                    if (!panelExists) {
+                        throw IllegalStateException("El panel seleccionado ya no existe")
+                    }
                 }
 
                 // Validar nombres de documentos
@@ -444,6 +489,9 @@ class EventViewModel @Inject constructor(
                         _uiEvent.send(EventUIEvent.ShowSnackbar("Evento actualizado exitosamente"))
                         clearDialogState()
                         loadEvents()
+
+                        // Iniciar o actualizar observación del panel
+                        startPanelObservation(event)
                     }
                     .onFailure { error ->
                         handleError(error)
@@ -556,6 +604,55 @@ class EventViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiEvent.send(EventUIEvent.ShowSnackbar(errorMessage))
+        }
+    }
+
+    private fun applyFilterAndSort(events: List<Event>): List<Event> {
+        return events
+            .filter { event ->
+                when (currentFilter) {
+                    is EventFilter.All -> true
+                    is EventFilter.Programmed -> event.isProgramado
+                    is EventFilter.Accepted -> event.isAceptado
+                    is EventFilter.ByClient -> event.clientDocName == (currentFilter as EventFilter.ByClient).clientDocName
+                }
+            }
+            .sortedWith { a, b ->
+                when (currentSort.field) {
+                    EventSortOption.SortField.DATE -> {
+                        val dateComparison = (a.dateTime ?: LocalDateTime.MIN)
+                            .compareTo(b.dateTime ?: LocalDateTime.MIN)
+                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
+                            dateComparison * -1 else dateComparison
+                    }
+                    EventSortOption.SortField.STATUS -> {
+                        val comparison = a.status.compareTo(b.status)
+                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
+                            comparison * -1 else comparison
+                    }
+                    EventSortOption.SortField.TITLE -> {
+                        val comparison = a.title.compareTo(b.title)
+                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
+                            comparison * -1 else comparison
+                    }
+                }
+            }
+    }
+
+    private fun clearDialogState() {
+        _state.update {
+            it.copy(
+                showDialog = false,
+                selectedEvent = null,
+                currentDate = null,
+                currentTime = null,
+                selectedClients = emptyList(),
+                availablePanels = emptyList(),
+                selectedClientForPanels = null,
+                newEventTitle = "",
+                newEventDescription = "",
+                selectedPanelDocName = null
+            )
         }
     }
 }

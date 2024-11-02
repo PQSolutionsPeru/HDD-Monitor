@@ -9,20 +9,21 @@ import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.data.NotificationRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
 import com.pqsolutions.hdd_monitor.presentation.MainActivity
-import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
-@AndroidEntryPoint
-class HddFirebaseMessagingService : FirebaseMessagingService() {
+class MessagingService : FirebaseMessagingService() {
 
     @Inject
     lateinit var notificationRepository: NotificationRepository
@@ -30,8 +31,15 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var userRepository: UserRepository
 
+    @Inject
+    lateinit var firestore: FirebaseFirestore
+
+    @Inject
+    @ApplicationContext
+    lateinit var appContext: Context
+
     companion object {
-        private const val TAG = "HddFirebaseMessaging"
+        private const val TAG = "HddMessaging"
         private const val CHANNEL_ID = "relay_status"
     }
 
@@ -44,20 +52,47 @@ class HddFirebaseMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(remoteMessage)
         Log.d(TAG, "Mensaje recibido")
 
-        // Procesar el mensaje
+        // Obtener datos del mensaje
         val title = remoteMessage.notification?.title ?: "Alerta de Panel"
         val message = remoteMessage.notification?.body ?: "Se ha producido un cambio en el sistema"
+        val clientDocName = remoteMessage.data["clientDocName"]
 
-        // Mostrar notificación local
-        showNotification(title, message)
+        // Si tenemos el clientDocName, obtenemos el nombre real del cliente
+        if (clientDocName != null) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val clientName = getClientName(clientDocName)
+                    showNotification("$clientName - $title", message)
 
-        // Guardar en Firestore si es necesario
-        remoteMessage.data["clientDocName"]?.let { clientDocName ->
-            remoteMessage.data["panelDocName"]?.let { panelDocName ->
-                remoteMessage.data["relayName"]?.let { relayName ->
-                    saveNotification(clientDocName, panelDocName, relayName, message)
+                    // Guardar en Firestore si es necesario
+                    remoteMessage.data["panelDocName"]?.let { panelDocName ->
+                        remoteMessage.data["relayName"]?.let { relayName ->
+                            saveNotification(clientDocName, panelDocName, relayName, message)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error obteniendo nombre del cliente", e)
+                    showNotification(title, message)
                 }
             }
+        } else {
+            showNotification(title, message)
+        }
+    }
+
+    private suspend fun getClientName(clientDocName: String): String {
+        return try {
+            val clientDoc = firestore.collection("hdd-monitor")
+                .document("accounts")
+                .collection("clients")
+                .document(clientDocName)
+                .get()
+                .await()
+
+            clientDoc.getString("name") ?: clientDocName
+        } catch (e: Exception) {
+            Log.e(TAG, "Error obteniendo nombre del cliente", e)
+            clientDocName
         }
     }
 

@@ -27,8 +27,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 @HiltViewModel
@@ -52,6 +50,7 @@ class MainViewModel @Inject constructor(
     companion object {
         private const val TAG = "MainViewModel"
         const val PANEL_UPDATE_ACTION = "com.pqsolutions.hdd_monitor.PANEL_UPDATE"
+        const val CLIENT_MANAGEMENT_ROUTE = "client_management" // Nueva constante
     }
 
     private val panelUpdateReceiver = object : BroadcastReceiver() {
@@ -304,27 +303,6 @@ class MainViewModel @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error updating FCM token: ${e.message}")
-        }
-    }
-
-    fun sendMessage(subject: String, content: String) {
-        viewModelScope.launch {
-            try {
-                val currentUser = userRepository.getCurrentUser()
-                if (currentUser != null) {
-                    val timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                    val message = UserRepository.Message(
-                        userDocName = currentUser.documentName,
-                        clientDocName = currentUser.clientDocName,
-                        content = content,
-                        subject = subject,
-                        timestamp = timestamp
-                    )
-                    userRepository.addMessage(message)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error sending message: ${e.message}")
-            }
         }
     }
 

@@ -11,31 +11,31 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import com.pqsolutions.hdd_monitor.presentation.screens.AdminDashboardScreen
+import com.pqsolutions.hdd_monitor.presentation.screens.ClientManagementScreen
 import com.pqsolutions.hdd_monitor.presentation.screens.EventScreen
 import com.pqsolutions.hdd_monitor.presentation.screens.LoginScreen
 import com.pqsolutions.hdd_monitor.presentation.screens.NotificationHistoryScreen
 import com.pqsolutions.hdd_monitor.presentation.screens.OnboardingScreen
 import com.pqsolutions.hdd_monitor.presentation.screens.UserDashboardScreen
-import com.pqsolutions.hdd_monitor.presentation.screens.UserManagementScreen
 import com.pqsolutions.hdd_monitor.presentation.state.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.state.MainUiState
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
 
 private const val TAG = "AppNavigation"
 
-sealed class NavigationEvent {
-    object NavigateToLogin : NavigationEvent()
-    object NavigateToDashboard : NavigationEvent()
-    object NavigateToEvents : NavigationEvent()
-    object NavigateToUserManagement : NavigationEvent()
-    object NavigateToNotificationHistory : NavigationEvent()
-    object NavigateBack : NavigationEvent()
+sealed class Screen(val route: String) {
+    object Onboarding : Screen("onboarding")
+    object Login : Screen("login")
+    object Dashboard : Screen("dashboard")
+    object ClientManagement : Screen("client_management")
+    object NotificationHistory : Screen("notification_history")
+    object Events : Screen("events")
 }
 
 @Composable
 fun AppNavigation(
     viewModel: MainViewModel,
-    startDestination: String = "login"
+    startDestination: String = Screen.Login.route
 ) {
     Log.d(TAG, "Starting AppNavigation composition")
     val uiState by viewModel.uiState.collectAsState()
@@ -46,7 +46,7 @@ fun AppNavigation(
         navController = navController,
         startDestination = getStartDestination(uiState)
     ) {
-        composable("onboarding") {
+        composable(Screen.Onboarding.route) {
             OnboardingScreen(
                 onFinish = {
                     viewModel.onEvent(MainUiEvent.FinishOnboarding)
@@ -54,7 +54,8 @@ fun AppNavigation(
                 }
             )
         }
-        composable("login") {
+
+        composable(Screen.Login.route) {
             LoginScreen(
                 onLoginClick = { email, password ->
                     Log.d(TAG, "Login attempt with email: $email")
@@ -62,7 +63,8 @@ fun AppNavigation(
                 }
             )
         }
-        composable("dashboard") {
+
+        composable(Screen.Dashboard.route) {
             LaunchedEffect(Unit) {
                 handleDeepLink(navController, viewModel)
             }
@@ -72,17 +74,17 @@ fun AppNavigation(
                 UserRole.ADMIN -> {
                     AdminDashboardScreen(
                         onLogoutClick = { handleLogout(viewModel) },
-                        onManageUsersClick = { navController.navigate("user_management") },
-                        onViewEventsClick = { navController.navigate("events") },
-                        onViewNotificationHistoryClick = { navController.navigate("notification_history") },
+                        onManageUsersClick = { navController.navigate(Screen.ClientManagement.route) },
+                        onViewEventsClick = { navController.navigate(Screen.Events.route) },
+                        onViewNotificationHistoryClick = { navController.navigate(Screen.NotificationHistory.route) },
                         hasPendingNotifications = hasPendingNotifications
                     )
                 }
                 UserRole.USER -> {
                     UserDashboardScreen(
                         onLogoutClick = { handleLogout(viewModel) },
-                        onViewNotificationHistoryClick = { navController.navigate("notification_history") },
-                        onViewEventsClick = { navController.navigate("events") },
+                        onViewNotificationHistoryClick = { navController.navigate(Screen.NotificationHistory.route) },
+                        onViewEventsClick = { navController.navigate(Screen.Events.route) },
                         hasPendingNotifications = hasPendingNotifications
                     )
                 }
@@ -94,21 +96,24 @@ fun AppNavigation(
                 }
             }
         }
-        composable("user_management") {
-            UserManagementScreen(
+
+        composable(Screen.ClientManagement.route) {
+            ClientManagementScreen(
                 onBackClick = { navController.popBackStack() },
                 hasPendingNotifications = hasPendingNotifications,
-                onNotificationClick = { navController.navigate("events") }
+                onNotificationClick = { navController.navigate(Screen.Events.route) }
             )
         }
-        composable("notification_history") {
+
+        composable(Screen.NotificationHistory.route) {
             NotificationHistoryScreen(
                 onBackClick = { navController.popBackStack() },
                 hasPendingNotifications = hasPendingNotifications,
-                onNotificationClick = { navController.navigate("events") }
+                onNotificationClick = { navController.navigate(Screen.Events.route) }
             )
         }
-        composable("events") {
+
+        composable(Screen.Events.route) {
             EventScreen(
                 onBackClick = { navController.popBackStack() },
                 isAdmin = uiState.userData?.role == UserRole.ADMIN,
@@ -117,7 +122,6 @@ fun AppNavigation(
         }
     }
 
-    // Manejar cambios de ruta basados en el estado de UI
     LaunchedEffect(uiState.currentRoute) {
         Log.d(TAG, "LaunchedEffect: Current route changed to ${uiState.currentRoute}")
         if (uiState.currentRoute != navController.currentDestination?.route) {
@@ -137,9 +141,9 @@ fun AppNavigation(
 
 private fun getStartDestination(uiState: MainUiState): String {
     return when {
-        uiState.isFirstLaunch -> "onboarding"
-        uiState.isLoggedIn -> "dashboard"
-        else -> "login"
+        uiState.isFirstLaunch -> Screen.Onboarding.route
+        uiState.isLoggedIn -> Screen.Dashboard.route
+        else -> Screen.Login.route
     }
 }
 
@@ -149,7 +153,7 @@ private fun handleLogout(viewModel: MainViewModel) {
 }
 
 private fun NavHostController.navigateToLogin() {
-    navigate("login") {
+    navigate(Screen.Login.route) {
         popUpTo(graph.startDestinationId) {
             inclusive = true
             saveState = true
@@ -168,12 +172,11 @@ private suspend fun handleDeepLink(navController: NavHostController, viewModel: 
         when (notificationType) {
             "relay_update" -> {
                 if (panelId != null && relayName != null) {
-                    // Manejar navegación específica para actualizaciones de relay
-                    navController.navigate("dashboard")
+                    navController.navigate(Screen.Dashboard.route)
                 }
             }
-            "event" -> navController.navigate("events")
-            "notification" -> navController.navigate("notification_history")
+            "event" -> navController.navigate(Screen.Events.route)
+            "notification" -> navController.navigate(Screen.NotificationHistory.route)
         }
     }
 }

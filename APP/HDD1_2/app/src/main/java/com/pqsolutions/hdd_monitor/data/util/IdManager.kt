@@ -39,10 +39,10 @@ object IdManager {
     /**
      * Genera un nombre de documento para un usuario dentro de un cliente
      */
-    fun generateUserDocumentName(): String {
+    fun generateUserDocumentName(clientDocName: String): String {
         val timestamp = LocalDateTime.now().format(timestampFormatter)
         val random = generateRandomString(RANDOM_LENGTH)
-        return "${PREFIX_USER}_${timestamp}_$random"
+        return "${PREFIX_USER}_${clientDocName}_${timestamp}_$random"
     }
 
     /**
@@ -78,7 +78,7 @@ object IdManager {
     fun validateDocumentName(documentName: String, type: DocumentType): Boolean {
         val pattern = when (type) {
             DocumentType.ADMIN -> """^${PREFIX_ADMIN}_\d{14}_[A-Z0-9]{6}$"""
-            DocumentType.USER -> """^${PREFIX_USER}_\d{14}_[A-Z0-9]{6}$"""
+            DocumentType.USER -> """^${PREFIX_USER}_${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}_\d{14}_[A-Z0-9]{6}$"""
             DocumentType.CLIENT -> """^${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}$"""
             DocumentType.EVENT -> """^${PREFIX_EVENT}_${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}_\d{14}_[A-Z0-9]{6}$"""
             DocumentType.NOTIFICATION -> """^${PREFIX_NOTIFICATION}_${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}_\d{14}_[A-Z0-9]{6}$"""

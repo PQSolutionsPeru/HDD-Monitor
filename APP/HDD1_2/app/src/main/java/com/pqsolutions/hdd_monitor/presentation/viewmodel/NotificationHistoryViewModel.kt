@@ -74,7 +74,7 @@ class NotificationHistoryViewModel @Inject constructor(
                             // Ordenar las notificaciones por fecha, las más recientes primero
                             val sortedNotifications = notifications
                                 .sortedByDescending { it.date_time }
-                                .distinctBy { it.documentName } // Asegurar que no haya duplicados
+                                .distinctBy { "${it.clientDocName}_${it.documentName}" }
 
                             _uiState.update {
                                 it.copy(
@@ -86,11 +86,12 @@ class NotificationHistoryViewModel @Inject constructor(
                             }
                             Log.d(TAG, "Notifications loaded: ${sortedNotifications.size}")
                             sortedNotifications.forEach { notification ->
-                                Log.d(TAG, "Notification loaded - " +
-                                        "Doc: ${notification.documentName}, " +
-                                        "Client: ${notification.clientDocName}, " +
-                                        "Panel: ${notification.panelDocName}" +
-                                        "${if (!notification.isRead) ", UNREAD" else ""}")
+                                Log.d(
+                                    TAG, "Notification loaded - " +
+                                            "Doc: ${notification.documentName}, " +
+                                            "Client: ${notification.clientDocName}, " +
+                                            "Panel: ${notification.panelDocName}"
+                                )
                             }
                         }
                 } else {
@@ -116,37 +117,6 @@ class NotificationHistoryViewModel @Inject constructor(
     fun refreshNotifications() {
         Log.d(TAG, "Refreshing notifications")
         loadNotifications()
-    }
-
-    fun markNotificationAsRead(notification: Notification) {
-        viewModelScope.launch {
-            try {
-                notificationRepository.markNotificationAsRead(
-                    notification.clientDocName,
-                    notification.documentName
-                ).onSuccess {
-                    // Actualizar la lista local si la operación fue exitosa
-                    _uiState.update { currentState ->
-                        currentState.copy(
-                            notifications = currentState.notifications.map { n ->
-                                if (n.documentName == notification.documentName) {
-                                    n.copy(isRead = true)
-                                } else {
-                                    n
-                                }
-                            }
-                        )
-                    }
-                    Log.d(TAG, "Notification marked as read: ${notification.documentName}")
-                }.onFailure { e ->
-                    Log.e(TAG, "Error marking notification as read", e)
-                    _uiState.update { it.copy(error = "Error al marcar la notificación como leída") }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Exception marking notification as read", e)
-                _uiState.update { it.copy(error = "Error al marcar la notificación como leída") }
-            }
-        }
     }
 
     fun clearError() {

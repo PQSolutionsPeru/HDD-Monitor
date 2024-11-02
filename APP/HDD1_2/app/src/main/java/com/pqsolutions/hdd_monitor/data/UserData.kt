@@ -12,6 +12,7 @@ data class UserData(
     @set:PropertyName("role")
     private var roleString: String = "user",
     val clientDocName: String = "",
+    val clientName: String = "", // Nuevo campo para el nombre del cliente
     @get:PropertyName("fcmToken")
     val fcmToken: String? = null
 ) {
@@ -47,6 +48,7 @@ data class UserData(
             "name" to name,
             "role" to roleString,
             "clientDocName" to clientDocName,
+            "clientName" to clientName,
             "fcmToken" to fcmToken
         )
     }
@@ -67,12 +69,14 @@ data class UserData(
             email: String,
             name: String,
             clientDocName: String,
+            clientName: String,
             fcmToken: String? = null
         ): UserData = UserData(
             email = email,
             name = name,
             roleString = "user",
             clientDocName = clientDocName,
+            clientName = clientName,
             fcmToken = fcmToken
         )
 
@@ -83,6 +87,7 @@ data class UserData(
                 name = map["name"] as? String ?: "",
                 roleString = map["role"] as? String ?: "user",
                 clientDocName = map["clientDocName"] as? String ?: "",
+                clientName = map["clientName"] as? String ?: "",
                 fcmToken = map["fcmToken"] as? String
             )
         }
@@ -93,6 +98,7 @@ data class UserData(
                 "email='$email', " +
                 "name='$name', " +
                 "role=${role.name}, " +
-                "clientDocName='$clientDocName')" // No incluimos fcmToken por seguridad
+                "clientDocName='$clientDocName', " +
+                "clientName='$clientName')" // No incluimos fcmToken por seguridad
     }
 }

@@ -8,14 +8,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -28,8 +33,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
@@ -60,23 +69,37 @@ fun UserCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = user.name,
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 )
                 Text(
                     text = user.email,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                if (user.role == UserRole.USER && user.clientName.isNotEmpty()) {
+                    Text(
+                        text = "Cliente: ${user.clientName}",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 16.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
                 Text(
-                    text = stringResource(
-                        R.string.field_status,
-                        if (user.role == UserRole.ADMIN)
-                            stringResource(R.string.admin_dashboard_title)
-                        else
-                            stringResource(R.string.user_dashboard_title)
+                    text = "Tipo de Cuenta: ${if (user.role == UserRole.ADMIN) "Administrador" else "Usuario"}",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp
                     ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
             Row {
@@ -111,92 +134,214 @@ fun UserCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UserDialog(
     user: UserData? = null,
+    clients: List<Client>,
+    onCreateNewClient: () -> Unit,
     onDismiss: () -> Unit,
     onConfirm: (UserData) -> Unit
 ) {
     var name by remember { mutableStateOf(user?.name ?: "") }
     var email by remember { mutableStateOf(user?.email ?: "") }
+    var password by remember { mutableStateOf("") }
     var roleString by remember { mutableStateOf(user?.role?.let { UserRole.toFirestoreValue(it) } ?: "user") }
-    var clientDocName by remember { mutableStateOf(user?.clientDocName ?: "") }
-
-    val context = LocalContext.current
+    var selectedClient by remember { mutableStateOf<Client?>(
+        user?.clientDocName?.let { docName ->
+            clients.find { it.documentName == docName }
+        }
+    ) }
+    var showClientDropdown by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(text = stringResource(if (user == null) R.string.create else R.string.update))
+            Text(
+                text = stringResource(if (user == null) R.string.create else R.string.update),
+                style = MaterialTheme.typography.headlineSmall
+            )
         },
         text = {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                Column {
+                    Text(
+                        text = "Tipo de Cuenta",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RadioButton(
+                            selected = roleString == UserRole.toFirestoreValue(UserRole.USER),
+                            onClick = {
+                                roleString = UserRole.toFirestoreValue(UserRole.USER)
+                                selectedClient = null
+                            }
+                        )
+                        Text("Usuario")
+                        Spacer(modifier = Modifier.weight(1f))
+                        RadioButton(
+                            selected = roleString == UserRole.toFirestoreValue(UserRole.ADMIN),
+                            onClick = {
+                                roleString = UserRole.toFirestoreValue(UserRole.ADMIN)
+                                selectedClient = null
+                            }
+                        )
+                        Text("Administrador")
+                    }
+                }
+
+                if (roleString == UserRole.toFirestoreValue(UserRole.USER)) {
+                    Column {
+                        Text(
+                            text = "Cliente",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedCard(
+                                onClick = { showClientDropdown = true },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(selectedClient?.name ?: "Seleccionar Cliente")
+                                    Icon(Icons.Default.ArrowDropDown, null)
+                                }
+                            }
+                            Button(onClick = onCreateNewClient) {
+                                Text("Nuevo")
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = showClientDropdown,
+                            onDismissRequest = { showClientDropdown = false }
+                        ) {
+                            clients.forEach { client ->
+                                DropdownMenuItem(
+                                    text = { Text(client.name) },
+                                    onClick = {
+                                        selectedClient = client
+                                        showClientDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 TextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.field_event_title)) },
-                    modifier = Modifier.fillMaxWidth()
+                    label = { Text("Nombre") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
 
                 TextField(
                     value = email,
                     onValueChange = { email = it },
                     label = { Text(stringResource(R.string.email)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                TextField(
-                    value = clientDocName,
-                    onValueChange = { clientDocName = it },
-                    label = { Text(stringResource(R.string.field_panel_id, "")) },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = roleString == UserRole.toFirestoreValue(UserRole.USER)
+                    singleLine = true
                 )
 
-                Column {
-                    Text(
-                        text = stringResource(R.string.field_status, ""),
-                        style = MaterialTheme.typography.labelLarge
+                if (user == null) {
+                    TextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text(stringResource(R.string.password)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        RadioButton(
-                            selected = roleString == UserRole.toFirestoreValue(UserRole.USER),
-                            onClick = { roleString = UserRole.toFirestoreValue(UserRole.USER) }
-                        )
-                        Text(stringResource(R.string.user_dashboard_title))
-                        Spacer(modifier = Modifier.weight(1f))
-                        RadioButton(
-                            selected = roleString == UserRole.toFirestoreValue(UserRole.ADMIN),
-                            onClick = { roleString = UserRole.toFirestoreValue(UserRole.ADMIN) }
-                        )
-                        Text(stringResource(R.string.admin_dashboard_title))
-                    }
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onConfirm(
                         UserData(
                             documentName = user?.documentName ?: "",
                             email = email,
                             name = name,
                             roleString = roleString,
-                            clientDocName = clientDocName,
-                            // fcmToken se maneja automáticamente en el backend
+                            clientDocName = selectedClient?.documentName ?: "",
+                            clientName = selectedClient?.name ?: "",
                             fcmToken = user?.fcmToken
                         )
                     )
+                },
+                enabled = when (UserRole.fromString(roleString)) {
+                    UserRole.ADMIN -> name.isNotBlank() && email.isNotBlank() &&
+                            (user != null || password.isNotBlank())
+                    UserRole.USER -> name.isNotBlank() && email.isNotBlank() &&
+                            selectedClient != null && (user != null || password.isNotBlank())
                 }
+            ) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun ClientDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var clientName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Nuevo Cliente",
+                style = MaterialTheme.typography.headlineSmall
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                TextField(
+                    value = clientName,
+                    onValueChange = { clientName = it },
+                    label = { Text("Nombre del Cliente") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(clientName) },
+                enabled = clientName.isNotBlank()
             ) {
                 Text(stringResource(R.string.confirm))
             }

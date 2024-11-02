@@ -5,7 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.pqsolutions.hdd_monitor.data.util.IdManager
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
-import com.pqsolutions.hdd_monitor.util.Constants
+import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -59,7 +59,6 @@ class NotificationRepository @Inject constructor(
     // Flow para todas las notificaciones (para administradores)
     fun getNotificationsFlow(): Flow<List<Notification>> = callbackFlow {
         val listenerRegistration = firestore.collectionGroup("notifications")
-            .orderBy("date_time", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "Error getting all notifications", error)
@@ -73,21 +72,41 @@ class NotificationRepository @Inject constructor(
                             // Extraer clientDocName del path
                             val clientDocName = doc.reference.path
                                 .split("/")
-                                .find { it.startsWith(Constants.DocumentPrefixes.CLIENT) }
+                                .find { segment -> segment.startsWith("client_") }
 
                             clientDocName?.let { clientDoc ->
-                                doc.toObject(Notification::class.java)?.copy(
-                                    documentName = doc.id,
-                                    clientDocName = clientDoc
-                                ).also { notification ->
-                                    Log.d(TAG, "Loaded notification: ${notification?.toLogString()}")
+                                // Convertir el documento a un mapa
+                                val notificationMap = doc.data?.toMutableMap() ?: mutableMapOf()
+
+                                // Asegurar que los IDs legacy se manejen correctamente
+                                val documentName = when {
+                                    doc.id.startsWith("notification_") -> doc.id // Legacy ID
+                                    doc.id.startsWith(DocumentPrefixes.NOTIFICATION) -> doc.id // Nuevo formato
+                                    else -> "${DocumentPrefixes.NOTIFICATION}${doc.id}" // Agregar prefijo si falta
+                                }
+
+                                // Agregar campos necesarios al mapa
+                                notificationMap["documentName"] = documentName
+                                notificationMap["clientDocName"] = clientDoc
+
+                                // Manejar el panelDocName si existe
+                                notificationMap["panelDocName"]?.let { panelId ->
+                                    if (!panelId.toString().startsWith(DocumentPrefixes.PANEL)) {
+                                        notificationMap["panelDocName"] = "${DocumentPrefixes.PANEL}$panelId"
+                                    }
+                                }
+
+                                // Convertir el mapa a objeto Notification
+                                Notification.fromMap(notificationMap).also { notification ->
+                                    Log.d(TAG, "Loaded notification: ${notification.toLogString()}")
                                 }
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error converting notification document", e)
                             null
                         }
-                    }
+                    }.sortedByDescending { it.getTimestamp() }
+
                     trySend(notifications)
                 }
             }
@@ -130,8 +149,7 @@ class NotificationRepository @Inject constructor(
             "message" to message,
             "date_time" to java.time.LocalDateTime.now().format(
                 java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
-            ),
-            "isRead" to false
+            )
         )
 
         firestore.collection("$BASE_PATH/$clientDocName/notifications")
@@ -140,75 +158,6 @@ class NotificationRepository @Inject constructor(
             .await()
 
         Log.d(TAG, "Notification created: $notificationDocName")
-    }
-
-    // Marcar notificación como leída
-    suspend fun markNotificationAsRead(
-        clientDocName: String,
-        notificationDocName: String
-    ): Result<Unit> = runCatching {
-        val notificationRef = firestore
-            .document("$BASE_PATH/$clientDocName/notifications/$notificationDocName")
-
-        val snapshot = notificationRef.get().await()
-        if (!snapshot.exists()) {
-            throw IllegalStateException("Notification not found: $notificationDocName")
-        }
-
-        notificationRef.update("isRead", true).await()
-        Log.d(TAG, "Notification marked as read: $notificationDocName")
-    }
-
-    // Obtener flujo de notificaciones no leídas
-    fun getUnreadNotificationsFlow(clientDocName: String): Flow<List<Notification>> = callbackFlow {
-        val notificationsRef = firestore.collection("$BASE_PATH/$clientDocName/notifications")
-            .whereEqualTo("isRead", false)
-            .orderBy("date_time", Query.Direction.DESCENDING)
-
-        val listenerRegistration = notificationsRef.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                Log.e(TAG, "Error getting unread notifications", error)
-                close(error)
-                return@addSnapshotListener
-            }
-
-            snapshot?.let { querySnapshot ->
-                val notifications = querySnapshot.documents.mapNotNull { doc ->
-                    try {
-                        doc.toObject(Notification::class.java)?.copy(
-                            documentName = doc.id,
-                            clientDocName = clientDocName
-                        )
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error converting notification document", e)
-                        null
-                    }
-                }
-                trySend(notifications)
-            }
-        }
-
-        awaitClose { listenerRegistration.remove() }
-    }
-
-    // Obtener conteo de notificaciones no leídas
-    fun getUnreadNotificationCount(clientDocName: String): Flow<Int> = callbackFlow {
-        val notificationsRef = firestore.collection("$BASE_PATH/$clientDocName/notifications")
-            .whereEqualTo("isRead", false)
-
-        val listenerRegistration = notificationsRef.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                Log.e(TAG, "Error getting unread notification count", error)
-                close(error)
-                return@addSnapshotListener
-            }
-
-            snapshot?.let { querySnapshot ->
-                trySend(querySnapshot.size())
-            }
-        }
-
-        awaitClose { listenerRegistration.remove() }
     }
 
     // Eliminar notificación

@@ -14,7 +14,7 @@ data class Panel(
     val SSID: String = "",
     @get:PropertyName("SSID_CON")
     @set:PropertyName("SSID_CON")
-    var SSID_CON: String = "",
+    var SSID_CON: String? = null,
     @get:PropertyName("SSID_PW")
     @set:PropertyName("SSID_PW")
     var SSID_PW: String = "",
@@ -22,7 +22,11 @@ data class Panel(
     @set:PropertyName("ESP32_IP")
     var ESP32_IP: String = "",
     val clientDocName: String = "",
-    val relays: List<Relay> = emptyList(),
+    val relays: List<Relay> = listOf(
+        Relay(name = "Alarma"),
+        Relay(name = "Problema"),
+        Relay(name = "Supervision")
+    ),
     @get:PropertyName("overallStatus")
     var overallStatus: String = Status.OK
 ) : Stateable {
@@ -49,7 +53,7 @@ data class Panel(
                 SSID_PW = ssidPw.trim(),
                 ESP32_IP = esp32Ip.trim(),
                 clientDocName = clientDocName,
-                SSID_CON = Status.OK,
+                SSID_CON = null, // Inicialmente null, será actualizado por el ESP32
                 relays = listOf(
                     Relay(name = "Alarma"),
                     Relay(name = "Problema"),
@@ -65,7 +69,7 @@ data class Panel(
                 name = map["name"] as? String ?: "",
                 location = map["location"] as? String ?: "",
                 SSID = map["SSID"] as? String ?: "",
-                SSID_CON = map["SSID_CON"] as? String ?: Status.OK,
+                SSID_CON = map["SSID_CON"] as? String,
                 SSID_PW = map["SSID_PW"] as? String ?: "",
                 ESP32_IP = map["ESP32_IP"] as? String ?: "",
                 clientDocName = map["clientDocName"] as? String ?: "",
@@ -73,10 +77,16 @@ data class Panel(
                     (it as? Map<*, *>)?.let { relayMap ->
                         Relay.fromMap(relayMap.mapKeys { entry -> entry.key.toString() })
                     }
-                } ?: emptyList(),
+                } ?: defaultRelays(),
                 overallStatus = map["overallStatus"] as? String ?: Status.OK
             )
         }
+
+        private fun defaultRelays() = listOf(
+            Relay(name = "Alarma"),
+            Relay(name = "Problema"),
+            Relay(name = "Supervision")
+        )
     }
 
     fun isValid(): Boolean {
@@ -85,6 +95,7 @@ data class Panel(
                 location.isNotBlank() &&
                 SSID.isNotBlank() &&
                 ESP32_IP.isNotBlank() &&
+                SSID_PW.isNotBlank() &&
                 relays.isNotEmpty() &&
                 relays.all { it.isValid() }
     }
@@ -122,10 +133,19 @@ data class Panel(
         append("name='$name', ")
         append("location='$location', ")
         append("ESP32_IP='$ESP32_IP', ")
+        append("SSID_CON=${SSID_CON ?: "null"}, ")
         append("clientDocName='$clientDocName', ")
         append("status='$overallStatus', ")
         append("relays=${relays.size}")
         append(")")
+    }
+
+    fun getConnectionStatus(): String {
+        return SSID_CON ?: Status.DISC
+    }
+
+    fun isConnected(): Boolean {
+        return SSID_CON == Status.OK
     }
 
     override fun canTransitionTo(newStatus: String): Boolean {
@@ -187,6 +207,12 @@ data class Relay(
         } else {
             this
         }
+    }
+
+    fun withUpdatedDateTime(): Relay {
+        return copy(
+            date_time = LocalDateTime.now().format(DATE_FORMATTER)
+        )
     }
 
     override fun toString(): String = "$name: $status ($date_time)"

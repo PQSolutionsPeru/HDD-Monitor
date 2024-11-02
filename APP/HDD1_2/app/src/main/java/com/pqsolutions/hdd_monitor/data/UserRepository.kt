@@ -19,32 +19,163 @@ class UserRepository @Inject constructor(
 ) {
     companion object {
         private const val TAG = "UserRepository"
+        private const val BASE_PATH = "hdd-monitor/accounts"
+    }
+
+    suspend fun getClients(): Result<List<Client>> = withContext(Dispatchers.IO) {
+        try {
+            val clientsQuery = firestore.collection("$BASE_PATH/clients").get().await()
+            val clients = clientsQuery.documents.mapNotNull { doc ->
+                if (doc.exists()) {
+                    Client(
+                        documentName = doc.id,
+                        name = doc.getString("name") ?: ""
+                    )
+                } else null
+            }
+            Result.success(clients)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting clients: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createClient(client: Client): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val documentName = IdManager.generateClientDocumentName()
+            val clientData = mapOf(
+                "documentName" to documentName,
+                "name" to client.name
+            )
+
+            firestore.document("$BASE_PATH/clients/$documentName")
+                .set(clientData)
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating client: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateClient(client: Client): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            if (client.documentName.isEmpty()) {
+                throw IllegalArgumentException("Client document name cannot be empty")
+            }
+
+            val clientData = mapOf(
+                "documentName" to client.documentName,
+                "name" to client.name
+            )
+
+            firestore.document("$BASE_PATH/clients/${client.documentName}")
+                .set(clientData)
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating client: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteClient(clientDocName: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            if (clientDocName.isEmpty()) {
+                throw IllegalArgumentException("Client document name cannot be empty")
+            }
+
+            val clientRef = firestore.document("$BASE_PATH/clients/$clientDocName")
+            val batch = firestore.batch()
+
+            // Eliminar todos los usuarios del cliente
+            val usersSnapshot = clientRef.collection("users").get().await()
+            usersSnapshot.documents.forEach { doc ->
+                batch.delete(doc.reference)
+            }
+
+            // Eliminar todos los paneles y sus subcolecciones
+            val panelsSnapshot = clientRef.collection("panels").get().await()
+            panelsSnapshot.documents.forEach { panelDoc ->
+                // Eliminar las subcolecciones de cada panel
+                val relaysSnapshot = panelDoc.reference.collection("relays").get().await()
+                relaysSnapshot.documents.forEach { doc ->
+                    batch.delete(doc.reference)
+                }
+
+                val panelEventsSnapshot = panelDoc.reference.collection("panel_events").get().await()
+                panelEventsSnapshot.documents.forEach { doc ->
+                    batch.delete(doc.reference)
+                }
+
+                val panelEventsLogSnapshot = panelDoc.reference.collection("panel_events_log").get().await()
+                panelEventsLogSnapshot.documents.forEach { doc ->
+                    batch.delete(doc.reference)
+                }
+
+                // Eliminar el panel
+                batch.delete(panelDoc.reference)
+            }
+
+            // Eliminar las notificaciones del cliente
+            val notificationsSnapshot = clientRef.collection("notifications").get().await()
+            notificationsSnapshot.documents.forEach { doc ->
+                batch.delete(doc.reference)
+            }
+
+            // Eliminar los eventos del cliente
+            val eventsSnapshot = clientRef.collection("events").get().await()
+            eventsSnapshot.documents.forEach { doc ->
+                batch.delete(doc.reference)
+            }
+
+            // Finalmente eliminar el documento del cliente
+            batch.delete(clientRef)
+
+            // Ejecutar todas las operaciones en batch
+            batch.commit().await()
+
+            Log.d(TAG, "Client and all related documents deleted successfully: $clientDocName")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting client: ${e.message}")
+            Result.failure(e)
+        }
     }
 
     suspend fun getUsers(): Result<List<UserData>> = withContext(Dispatchers.IO) {
         try {
             val users = mutableListOf<UserData>()
 
-            // Obtener administradores
-            val adminsQuery = firestore.collection("hdd-monitor/accounts/admins").get().await()
-            users.addAll(adminsQuery.documents.mapNotNull { adminDoc ->
-                if (adminDoc.exists()) {
-                    adminDoc.toUserData(UserRole.ADMIN, "")
-                } else null
-            })
+            // Obtener todos los clientes
+            val clientsQuery = firestore.collection("$BASE_PATH/clients").get().await()
 
-            // Obtener usuarios de clientes
-            val clientsQuery = firestore.collection("hdd-monitor/accounts/clients").get().await()
+            // Para cada cliente, obtener sus usuarios
             clientsQuery.documents.forEach { clientDoc ->
+                val clientName = clientDoc.getString("name") ?: clientDoc.id
                 val usersQuery = clientDoc.reference.collection("users").get().await()
-                users.addAll(usersQuery.documents.mapNotNull { userDoc ->
+
+                val clientUsers = usersQuery.documents.mapNotNull { userDoc ->
                     if (userDoc.exists()) {
-                        userDoc.toUserData(UserRole.USER, clientDoc.id)
+                        UserData(
+                            documentName = userDoc.id,
+                            email = userDoc.getString("email") ?: "",
+                            name = userDoc.getString("name") ?: "",
+                            roleString = userDoc.getString("role") ?: "user",
+                            clientDocName = clientDoc.id,
+                            clientName = clientName,
+                            fcmToken = userDoc.getString("fcmToken")
+                        )
                     } else null
-                })
+                }
+
+                users.addAll(clientUsers)
+                Log.d(TAG, "Retrieved ${clientUsers.size} users for client ${clientDoc.id}")
             }
 
-            Log.d(TAG, "Retrieved ${users.size} users")
+            Log.d(TAG, "Retrieved ${users.size} total users")
             Result.success(users)
         } catch (e: Exception) {
             Log.e(TAG, "Error getting users: ${e.message}")
@@ -52,7 +183,11 @@ class UserRepository @Inject constructor(
         }
     }
 
-    private fun DocumentSnapshot.toUserData(defaultRole: UserRole, clientDocName: String): UserData? {
+    private fun DocumentSnapshot.toUserData(
+        defaultRole: UserRole,
+        clientDocName: String,
+        clientName: String
+    ): UserData? {
         return try {
             UserData(
                 documentName = id,
@@ -60,6 +195,7 @@ class UserRepository @Inject constructor(
                 name = getString("name") ?: "",
                 roleString = getString("role") ?: UserRole.toFirestoreValue(defaultRole),
                 clientDocName = clientDocName,
+                clientName = clientName,
                 fcmToken = getString("fcmToken")
             )
         } catch (e: Exception) {
@@ -72,12 +208,12 @@ class UserRepository @Inject constructor(
         try {
             val documentName = when (user.role) {
                 UserRole.ADMIN -> IdManager.generateAdminDocumentName()
-                UserRole.USER -> IdManager.generateUserDocumentName()
+                UserRole.USER -> IdManager.generateUserDocumentName(user.clientDocName)
             }
 
             val collectionPath = when (user.role) {
-                UserRole.ADMIN -> "hdd-monitor/accounts/admins"
-                UserRole.USER -> "hdd-monitor/accounts/clients/${user.clientDocName}/users"
+                UserRole.ADMIN -> "$BASE_PATH/admins"
+                UserRole.USER -> "$BASE_PATH/clients/${user.clientDocName}/users"
             }
 
             val userMap = mapOf(
@@ -109,8 +245,8 @@ class UserRepository @Inject constructor(
             }
 
             val collectionPath = when (user.role) {
-                UserRole.ADMIN -> "hdd-monitor/accounts/admins"
-                UserRole.USER -> "hdd-monitor/accounts/clients/${user.clientDocName}/users"
+                UserRole.ADMIN -> "$BASE_PATH/admins"
+                UserRole.USER -> "$BASE_PATH/clients/${user.clientDocName}/users"
             }
 
             val userMap = mapOf(
@@ -142,10 +278,10 @@ class UserRepository @Inject constructor(
             }
 
             val collectionPath = if (documentName.startsWith(IdManager.PREFIX_ADMIN)) {
-                "hdd-monitor/accounts/admins"
+                "$BASE_PATH/admins"
             } else {
                 requireNotNull(clientDocName) { "Client document name is required for client users" }
-                "hdd-monitor/accounts/clients/$clientDocName/users"
+                "$BASE_PATH/clients/$clientDocName/users"
             }
 
             firestore.collection(collectionPath)
@@ -169,8 +305,8 @@ class UserRepository @Inject constructor(
 
             val user = getCurrentUser() ?: throw Exception("No user logged in")
             val collectionPath = when (user.role) {
-                UserRole.ADMIN -> "hdd-monitor/accounts/admins"
-                UserRole.USER -> "hdd-monitor/accounts/clients/${user.clientDocName}/users"
+                UserRole.ADMIN -> "$BASE_PATH/admins"
+                UserRole.USER -> "$BASE_PATH/clients/${user.clientDocName}/users"
             }
 
             firestore.collection(collectionPath)
@@ -195,18 +331,18 @@ class UserRepository @Inject constructor(
         Log.d(TAG, "Firebase user: ${firebaseUser.uid}")
 
         try {
-            // Buscar en la colección de admins
-            val adminUser = findUserInCollection("hdd-monitor/accounts/admins", firebaseUser.email, UserRole.ADMIN)
+            val adminUser = findUserInCollection("$BASE_PATH/admins", firebaseUser.email, UserRole.ADMIN)
             if (adminUser != null) return@withContext adminUser
 
-            // Buscar en la colección de clientes
-            val clientsQuery = firestore.collection("hdd-monitor/accounts/clients").get().await()
+            val clientsQuery = firestore.collection("$BASE_PATH/clients").get().await()
             for (clientDoc in clientsQuery.documents) {
+                val clientName = clientDoc.getString("name") ?: clientDoc.id
                 val user = findUserInCollection(
-                    "hdd-monitor/accounts/clients/${clientDoc.id}/users",
+                    "$BASE_PATH/clients/${clientDoc.id}/users",
                     firebaseUser.email,
                     UserRole.USER,
-                    clientDoc.id
+                    clientDoc.id,
+                    clientName
                 )
                 if (user != null) return@withContext user
             }
@@ -223,7 +359,8 @@ class UserRepository @Inject constructor(
         collectionPath: String,
         email: String?,
         defaultRole: UserRole,
-        clientDocName: String = ""
+        clientDocName: String = "",
+        clientName: String = ""
     ): UserData? {
         val query = firestore.collection(collectionPath)
             .whereEqualTo("email", email)
@@ -233,51 +370,8 @@ class UserRepository @Inject constructor(
         if (!query.isEmpty) {
             val userDoc = query.documents.first()
             Log.d(TAG, "User found in collection: $collectionPath")
-            return userDoc.toUserData(defaultRole, clientDocName)
+            return userDoc.toUserData(defaultRole, clientDocName, clientName)
         }
         return null
-    }
-
-    data class Message(
-        val documentName: String = "",
-        val userDocName: String = "",
-        val clientDocName: String = "",
-        val content: String = "",
-        val subject: String = "",
-        val timestamp: String = ""
-    )
-
-    suspend fun addMessage(message: Message): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
-            val messageDocName = IdManager.generateNotificationDocumentName(message.clientDocName)
-            val messageWithDocName = message.copy(documentName = messageDocName)
-
-            firestore.collection("hdd-monitor/accounts/messages")
-                .document(messageDocName)
-                .set(messageWithDocName)
-                .await()
-
-            Log.d(TAG, "Message added successfully: $messageDocName")
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error adding message: ${e.message}")
-            Result.failure(e)
-        }
-    }
-
-    suspend fun getMessages(userDocName: String): Result<List<Message>> = withContext(Dispatchers.IO) {
-        try {
-            val messages = firestore.collection("hdd-monitor/accounts/messages")
-                .whereEqualTo("userDocName", userDocName)
-                .get()
-                .await()
-                .documents
-                .mapNotNull { it.toObject(Message::class.java) }
-            Log.d(TAG, "Retrieved ${messages.size} messages for user $userDocName")
-            Result.success(messages)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting messages: ${e.message}")
-            Result.failure(e)
-        }
     }
 }

@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.data.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,6 +23,7 @@ class UserManagementViewModel @Inject constructor(
 
     init {
         loadUsers()
+        loadClients()
     }
 
     private fun loadUsers() {
@@ -38,48 +40,56 @@ class UserManagementViewModel @Inject constructor(
         }
     }
 
-    fun showCreateDialog() {
-        _uiState.update { it.copy(showDialog = true, selectedUser = null) }
+    private fun loadClients() {
+        viewModelScope.launch {
+            val result = userRepository.getClients()
+            _uiState.update { currentState ->
+                currentState.copy(
+                    clients = result.getOrNull() ?: emptyList(),
+                    error = if (currentState.error == null && result.isFailure) {
+                        result.exceptionOrNull()?.message
+                    } else currentState.error
+                )
+            }
+        }
     }
 
-    fun showEditDialog(user: UserData) {
-        _uiState.update { it.copy(showDialog = true, selectedUser = user) }
+    fun showCreateUserDialog() {
+        _uiState.update { it.copy(showUserDialog = true, selectedUser = null) }
     }
 
-    fun dismissDialog() {
-        _uiState.update { it.copy(showDialog = false, selectedUser = null) }
+    fun showEditUserDialog(user: UserData) {
+        _uiState.update { it.copy(showUserDialog = true, selectedUser = user) }
+    }
+
+    fun dismissUserDialog() {
+        _uiState.update { it.copy(showUserDialog = false, selectedUser = null) }
+    }
+
+    fun showNewClientDialog() {
+        _uiState.update { it.copy(showClientDialog = true) }
+    }
+
+    fun dismissClientDialog() {
+        _uiState.update { it.copy(showClientDialog = false) }
     }
 
     fun createUser(userData: UserData) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, showDialog = false) }
+            _uiState.update { it.copy(isLoading = true, showUserDialog = false) }
             val result = userRepository.createUser(userData)
-            if (result.isSuccess) {
+            handleOperationResult(result) {
                 loadUsers()
-            } else {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = result.exceptionOrNull()?.message
-                    )
-                }
             }
         }
     }
 
     fun updateUser(userData: UserData) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, showDialog = false) }
+            _uiState.update { it.copy(isLoading = true, showUserDialog = false) }
             val result = userRepository.updateUser(userData)
-            if (result.isSuccess) {
+            handleOperationResult(result) {
                 loadUsers()
-            } else {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = result.exceptionOrNull()?.message
-                    )
-                }
             }
         }
     }
@@ -87,10 +97,29 @@ class UserManagementViewModel @Inject constructor(
     fun deleteUser(userData: UserData) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            // Usar documentName en lugar de ID
             val result = userRepository.deleteUser(userData.documentName, userData.clientDocName)
-            if (result.isSuccess) {
+            handleOperationResult(result) {
                 loadUsers()
+            }
+        }
+    }
+
+    fun createClient(clientName: String) {
+        if (clientName.isBlank()) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showClientDialog = false) }
+            val result = userRepository.createClient(Client(name = clientName))
+            handleOperationResult(result) {
+                loadClients()
+            }
+        }
+    }
+
+    private fun handleOperationResult(result: Result<Unit>, onSuccess: suspend () -> Unit) {
+        viewModelScope.launch {
+            if (result.isSuccess) {
+                onSuccess()
             } else {
                 _uiState.update {
                     it.copy(
@@ -110,7 +139,9 @@ class UserManagementViewModel @Inject constructor(
 data class UserManagementUiState(
     val isLoading: Boolean = false,
     val users: List<UserData> = emptyList(),
+    val clients: List<Client> = emptyList(),
     val error: String? = null,
-    val showDialog: Boolean = false,
+    val showUserDialog: Boolean = false,
+    val showClientDialog: Boolean = false,
     val selectedUser: UserData? = null
 )

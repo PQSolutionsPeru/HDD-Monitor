@@ -1,6 +1,5 @@
 package com.pqsolutions.hdd_monitor.data
 
-import com.google.firebase.firestore.PropertyName
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -12,10 +11,7 @@ data class Notification(
     val panelDocName: String = "",
     val relayName: String = "",
     val message: String = "",
-    val date_time: String = "",
-    @get:PropertyName("isRead")
-    @set:PropertyName("isRead")
-    var isRead: Boolean = false
+    val date_time: String = ""
 ) {
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
@@ -32,8 +28,7 @@ data class Notification(
                 panelDocName = panelDocName,
                 relayName = relayName,
                 message = message.trim(),
-                date_time = LocalDateTime.now().format(DATE_FORMATTER),
-                isRead = false
+                date_time = LocalDateTime.now().format(DATE_FORMATTER)
             )
         }
 
@@ -44,8 +39,7 @@ data class Notification(
                 panelDocName = map["panelDocName"] as? String ?: "",
                 relayName = map["relayName"] as? String ?: "",
                 message = map["message"] as? String ?: "",
-                date_time = map["date_time"] as? String ?: "",
-                isRead = map["isRead"] as? Boolean ?: false
+                date_time = map["date_time"] as? String ?: ""
             )
         }
     }
@@ -77,8 +71,7 @@ data class Notification(
             "panelDocName" to panelDocName,
             "relayName" to relayName,
             "message" to message,
-            "date_time" to date_time,
-            "isRead" to isRead
+            "date_time" to date_time
         )
     }
 
@@ -89,8 +82,7 @@ data class Notification(
         append("panelDocName='$panelDocName', ")
         append("relayName='$relayName', ")
         append("message='${message.take(30)}${if (message.length > 30) "..." else ""}', ")
-        append("date_time='$date_time', ")
-        append("isRead=$isRead")
+        append("date_time='$date_time'")
         append(")")
     }
 
@@ -101,8 +93,7 @@ data class Notification(
         ID_PANEL: String,
         ID_RELAY: String,
         message: String,
-        date_time: String,
-        isRead: Boolean = false
+        date_time: String
     ): Notification {
         return Notification(
             documentName = if (ID.startsWith(DocumentPrefixes.NOTIFICATION)) ID else "${DocumentPrefixes.NOTIFICATION}$ID",
@@ -110,8 +101,7 @@ data class Notification(
             panelDocName = if (ID_PANEL.startsWith(DocumentPrefixes.PANEL)) ID_PANEL else "${DocumentPrefixes.PANEL}$ID_PANEL",
             relayName = ID_RELAY,
             message = message,
-            date_time = date_time,
-            isRead = isRead
+            date_time = date_time
         )
     }
 

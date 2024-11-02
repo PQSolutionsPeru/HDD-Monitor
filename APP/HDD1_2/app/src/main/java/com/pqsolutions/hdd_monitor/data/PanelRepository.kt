@@ -86,6 +86,31 @@ class PanelRepository @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
+    fun observePanelUpdates(clientDocName: String, panelDocName: String): Flow<Panel?> = callbackFlow {
+        val panelRef = firestore
+            .document("$BASE_PATH/$clientDocName/panels/$panelDocName")
+
+        val listenerRegistration = panelRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.e(TAG, "Error observing panel updates", error)
+                close(error)
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null && snapshot.exists()) {
+                val panel = snapshot.toObject(Panel::class.java)?.copy(
+                    documentName = snapshot.id,
+                    clientDocName = clientDocName
+                )
+                trySend(panel)
+            } else {
+                trySend(null)
+            }
+        }
+
+        awaitClose { listenerRegistration.remove() }
+    }.flowOn(Dispatchers.IO)
+
     private fun fetchRelaysForPanel(panel: Panel, onUpdate: (Panel) -> Unit) {
         Log.d(TAG, "Fetching relays for panel ${panel.documentName} of client ${panel.clientDocName}")
 
@@ -210,5 +235,18 @@ class PanelRepository @Inject constructor(
         // Luego eliminar el panel
         panelRef.delete().await()
         Log.d(TAG, "Panel and all relays deleted successfully: $panelDocName")
+    }
+
+    suspend fun verifyPanelExists(clientDocName: String, panelDocName: String): Boolean {
+        return try {
+            val panelDoc = firestore
+                .document("$BASE_PATH/$clientDocName/panels/$panelDocName")
+                .get()
+                .await()
+            panelDoc.exists()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error verifying panel existence", e)
+            false
+        }
     }
 }
