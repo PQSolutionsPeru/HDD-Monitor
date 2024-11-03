@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pqsolutions.hdd_monitor.data.Client
@@ -58,12 +59,29 @@ fun EventCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
+            // Tipo de evento primero y en mayúsculas
+            event.type?.let { type ->
+                if (type.isNotEmpty()) {
+                    Text(
+                        text = type.uppercase(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp)
+                    )
+                }
+            }
+
             // Título del evento
             Text(
                 text = event.title,
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.error,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Start
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -78,17 +96,6 @@ fun EventCard(
             )
 
             Spacer(modifier = Modifier.height(12.dp))
-
-            // Tipo de evento
-            event.type?.let { type ->
-                Text(
-                    text = "Tipo: $type",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
 
             // Fecha y hora
             Column {

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
@@ -26,8 +27,189 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
+import androidx.compose.ui.text.font.FontWeight
 
 private const val TAG = "EventDialog"
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EventTypeSelector(
+    selectedEventType: String?,
+    eventTypes: List<String>,
+    isAdmin: Boolean,
+    onTypeSelected: (String) -> Unit,
+    onCreateNewType: () -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = "Tipo de Evento",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { if (enabled) expanded = it }
+        ) {
+            OutlinedTextField(
+                value = selectedEventType ?: "Seleccione tipo de evento",
+                onValueChange = { },
+                readOnly = true,
+                enabled = enabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(),
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                },
+                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                    disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    disabledBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                    disabledTrailingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    disabledPlaceholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                ),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                singleLine = true,
+            )
+
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.exposedDropdownSize()
+            ) {
+                eventTypes.sortedBy { it }.forEach { eventType ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = eventType,
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        onClick = {
+                            onTypeSelected(eventType)
+                            expanded = false
+                        },
+                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                    )
+                }
+
+                if (isAdmin) {
+                    Divider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
+                    )
+
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Crear Nuevo Tipo",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onCreateNewType()
+                        },
+                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                        colors = MenuDefaults.itemColors(
+                            textColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+            }
+        }
+
+        // Mensaje de error si no hay tipo seleccionado
+        if (selectedEventType == null) {
+            Text(
+                text = "Debe seleccionar un tipo de evento",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 4.dp, start = 16.dp)
+            )
+        }
+    }
+}
+
+
+@Composable
+fun NewEventTypeDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var newType by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Crear Nuevo Tipo de Evento",
+                style = MaterialTheme.typography.headlineSmall
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = newType,
+                    onValueChange = {
+                        newType = it
+                        error = null
+                    },
+                    label = { Text("Nombre del tipo") },
+                    singleLine = true,
+                    isError = error != null,
+                    supportingText = error?.let { { Text(it) } },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyLarge
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    when {
+                        newType.isBlank() -> error = "El nombre no puede estar vacío"
+                        newType.length > 50 -> error = "El nombre es demasiado largo"
+                        else -> onConfirm(newType.trim())
+                    }
+                },
+                enabled = newType.isNotBlank()
+            ) {
+                Text("Crear")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        },
+        modifier = modifier
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,7 +236,7 @@ fun EventDialog(
     val title = if (isEditing) event?.title ?: "" else newEventTitle
     val description = if (isEditing) event?.text ?: "" else newEventDescription
     var selectedClients by remember { mutableStateOf(setOf<String>()) }
-    var expandedTypeDropdown by remember { mutableStateOf(false) }
+    var showNewTypeDialog by remember { mutableStateOf(false) }
 
     val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -149,40 +331,16 @@ fun EventDialog(
                         )
                     }
 
-                    // Selector de tipo de evento
-                    ExposedDropdownMenuBox(
-                        expanded = expandedTypeDropdown,
-                        onExpandedChange = { if (canEdit) expandedTypeDropdown = it }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedEventType ?: "Seleccione tipo de evento",
-                            onValueChange = { },
-                            label = { Text("Tipo de Evento") },
-                            readOnly = true,
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTypeDropdown)
-                            },
-                            modifier = Modifier
-                                .menuAnchor()
-                                .fillMaxWidth(),
-                            enabled = canEdit
-                        )
-
-                        ExposedDropdownMenu(
-                            expanded = expandedTypeDropdown,
-                            onDismissRequest = { expandedTypeDropdown = false }
-                        ) {
-                            eventTypes.forEach { eventType ->
-                                DropdownMenuItem(
-                                    text = { Text(eventType) },
-                                    onClick = {
-                                        onEvent(EventDialogEvent.EventTypeSelected(eventType))
-                                        expandedTypeDropdown = false
-                                    }
-                                )
-                            }
-                        }
-                    }
+                    EventTypeSelector(
+                        selectedEventType = selectedEventType,
+                        eventTypes = eventTypes,
+                        isAdmin = isAdmin,
+                        onTypeSelected = { eventType ->
+                            onEvent(EventDialogEvent.EventTypeSelected(eventType))
+                        },
+                        onCreateNewType = { showNewTypeDialog = true },
+                        enabled = canEdit
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -399,4 +557,14 @@ fun EventDialog(
             }
         }
     )
+
+    if (showNewTypeDialog) {
+        NewEventTypeDialog(
+            onDismiss = { showNewTypeDialog = false },
+            onConfirm = { newType ->
+                onEvent(EventDialogEvent.CreateNewEventType(newType))
+                showNewTypeDialog = false
+            }
+        )
+    }
 }

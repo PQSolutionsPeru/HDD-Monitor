@@ -129,7 +129,13 @@ data class Event(
             date_time = dateTime.format(DATE_FORMATTER),
             panelDocName = panelDocName,
             panelName = panelName,
-            type = type
+            type = type,
+            documentName = this.documentName,
+            clientDocName = this.clientDocName,
+            status = this.status,
+            userAcceptDocName = this.userAcceptDocName,
+            createdByUserId = this.createdByUserId,
+            createdByUserRole = this.createdByUserRole
         )
     }
 

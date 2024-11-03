@@ -196,7 +196,8 @@ class UserRepository @Inject constructor(
                 roleString = getString("role") ?: UserRole.toFirestoreValue(defaultRole),
                 clientDocName = clientDocName,
                 clientName = clientName,
-                fcmToken = getString("fcmToken")
+                fcmToken = getString("fcmToken"),
+                phone = getString("phone") ?: "" // Agregado el campo phone
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error converting document to UserData: ${e.message}")
@@ -222,7 +223,8 @@ class UserRepository @Inject constructor(
                 "name" to user.name,
                 "role" to UserRole.toFirestoreValue(user.role),
                 "clientDocName" to user.clientDocName,
-                "fcmToken" to user.fcmToken
+                "fcmToken" to user.fcmToken,
+                "phone" to user.phone // Agregado el campo phone
             )
 
             firestore.collection(collectionPath)
@@ -255,7 +257,8 @@ class UserRepository @Inject constructor(
                 "name" to user.name,
                 "role" to UserRole.toFirestoreValue(user.role),
                 "clientDocName" to user.clientDocName,
-                "fcmToken" to user.fcmToken
+                "fcmToken" to user.fcmToken,
+                "phone" to user.phone // Agregado el campo phone
             )
 
             firestore.collection(collectionPath)
@@ -352,6 +355,60 @@ class UserRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error getting current user: ${e.message}")
             null
+        }
+    }
+
+    suspend fun getAllUsers(): Result<List<UserData>> = withContext(Dispatchers.IO) {
+        try {
+            val allUsers = mutableListOf<UserData>()
+
+            // Obtener usuarios administradores
+            val adminsSnapshot = firestore.collection("$BASE_PATH/admins")
+                .get()
+                .await()
+
+            for (adminDoc in adminsSnapshot.documents) {
+                if (adminDoc.exists()) {
+                    UserData(
+                        documentName = adminDoc.id,
+                        email = adminDoc.getString("email") ?: "",
+                        name = adminDoc.getString("name") ?: "",
+                        roleString = "admin",
+                        clientDocName = "",
+                        clientName = "",
+                        fcmToken = adminDoc.getString("fcmToken"),
+                        phone = adminDoc.getString("phone") ?: ""
+                    ).also { allUsers.add(it) }
+                }
+            }
+
+            // Obtener usuarios cliente
+            val clientsQuery = firestore.collection("$BASE_PATH/clients").get().await()
+            for (clientDoc in clientsQuery.documents) {
+                val clientName = clientDoc.getString("name") ?: clientDoc.id
+                val usersQuery = clientDoc.reference.collection("users").get().await()
+
+                for (userDoc in usersQuery.documents) {
+                    if (userDoc.exists()) {
+                        UserData(
+                            documentName = userDoc.id,
+                            email = userDoc.getString("email") ?: "",
+                            name = userDoc.getString("name") ?: "",
+                            roleString = "user",
+                            clientDocName = clientDoc.id,
+                            clientName = clientName,
+                            fcmToken = userDoc.getString("fcmToken"),
+                            phone = userDoc.getString("phone") ?: ""
+                        ).also { allUsers.add(it) }
+                    }
+                }
+            }
+
+            Log.d(TAG, "Retrieved total ${allUsers.size} users")
+            Result.success(allUsers)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting all users", e)
+            Result.failure(e)
         }
     }
 

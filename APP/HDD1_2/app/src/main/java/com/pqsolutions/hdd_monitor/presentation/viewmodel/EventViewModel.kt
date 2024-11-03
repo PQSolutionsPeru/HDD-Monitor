@@ -40,6 +40,7 @@ class EventViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "EventViewModel"
+        private const val EVENT_TYPES_PATH = "hdd-monitor/event_types"
     }
 
     private val _state = MutableStateFlow(EventViewState.initial())
@@ -54,6 +55,7 @@ class EventViewModel @Inject constructor(
     init {
         loadEvents()
         loadEventTypes()
+        loadUsers()
     }
 
     fun loadEvents() {
@@ -63,6 +65,10 @@ class EventViewModel @Inject constructor(
                 val currentUser = userRepository.getCurrentUser()
 
                 if (currentUser != null) {
+                    if (currentUser.role == UserRole.ADMIN) {
+                        loadUsers()
+                    }
+
                     val eventsFlow = if (currentUser.role == UserRole.ADMIN) {
                         eventRepository.getAllEventsFlow()
                     } else {
@@ -128,18 +134,28 @@ class EventViewModel @Inject constructor(
     private fun loadEventTypes() {
         viewModelScope.launch {
             try {
-                val documentSnapshot = firestore.collection("hdd-monitor")
-                    .document("event_types")
-                    .get()
-                    .await()
-
+                val documentSnapshot = firestore.document(EVENT_TYPES_PATH).get().await()
                 val typesString = documentSnapshot.getString("types")
-                val types = typesString?.split(",")?.map { it.trim() } ?: emptyList()
-
+                val types = typesString?.split(",")?.map { it.trim() }?.sorted() ?: emptyList()
                 _state.update { it.copy(eventTypes = types) }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading event types", e)
                 _uiEvent.send(EventUIEvent.ShowSnackbar("Error al cargar tipos de eventos"))
+            }
+        }
+    }
+
+    private fun loadUsers() {
+        viewModelScope.launch {
+            try {
+                val usersResult = userRepository.getAllUsers()
+                usersResult.onSuccess { usersList ->
+                    _state.update { it.copy(users = usersList) }
+                }.onFailure { error ->
+                    Log.e(TAG, "Error loading users", error)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in loadUsers", e)
             }
         }
     }
@@ -203,10 +219,52 @@ class EventViewModel @Inject constructor(
                     currentDate = event.dateTime?.toLocalDate(),
                     currentTime = event.dateTime?.toLocalTime(),
                     selectedClientForPanels = event.clientDocName,
-                    selectedEventType = event.type
+                    selectedPanelDocName = event.panelDocName,
+                    selectedPanelName = event.panelName,
+                    selectedEventType = event.type,
+                    newEventTitle = event.title,
+                    newEventDescription = event.text
                 )
             }
             loadPanelsForClient(event.clientDocName)
+        }
+    }
+
+    fun createNewEventType(newType: String) {
+        viewModelScope.launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser?.role != UserRole.ADMIN) {
+                    _uiEvent.send(EventUIEvent.ShowSnackbar("Solo los administradores pueden crear nuevos tipos de eventos"))
+                    return@launch
+                }
+
+                _state.update { it.copy(isCreatingNewType = true, newTypeError = null) }
+
+                val docRef = firestore.document(EVENT_TYPES_PATH)
+
+                firestore.runTransaction { transaction ->
+                    val snapshot = transaction.get(docRef)
+                    val currentTypes = snapshot.getString("types")?.split(",")?.map { it.trim() } ?: emptyList()
+
+                    if (currentTypes.contains(newType)) {
+                        throw IllegalArgumentException("Este tipo de evento ya existe")
+                    }
+
+                    val updatedTypes = (currentTypes + newType).sorted().joinToString(",")
+                    transaction.update(docRef, "types", updatedTypes)
+                }.await()
+
+                loadEventTypes()
+                _uiEvent.send(EventUIEvent.ShowSnackbar("Nuevo tipo de evento creado: $newType"))
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating new event type", e)
+                _state.update { it.copy(newTypeError = e.message) }
+                _uiEvent.send(EventUIEvent.ShowSnackbar(e.message ?: "Error al crear nuevo tipo de evento"))
+            } finally {
+                _state.update { it.copy(isCreatingNewType = false) }
+            }
         }
     }
 
@@ -235,26 +293,35 @@ class EventViewModel @Inject constructor(
                 }
             }
             is EventDialogEvent.DateSelected -> {
-                _state.update {
-                    it.copy(currentDate = event.date)
-                }
+                _state.update { it.copy(currentDate = event.date) }
             }
             is EventDialogEvent.TimeSelected -> {
-                _state.update {
-                    it.copy(currentTime = event.time)
+                _state.update { it.copy(currentTime = event.time) }
+            }
+            is EventDialogEvent.EventTypeSelected -> {
+                Log.d(TAG, "Tipo de evento seleccionado: ${event.eventType}")
+                _state.update { currentState ->
+                    if (currentState.selectedEvent != null) {
+                        currentState.copy(
+                            selectedEvent = currentState.selectedEvent.copy(type = event.eventType),
+                            selectedEventType = event.eventType
+                        )
+                    } else {
+                        currentState.copy(selectedEventType = event.eventType)
+                    }
                 }
             }
             is EventDialogEvent.MultipleClientsSelected -> {
-                _state.update {
-                    it.copy(selectedClients = event.clientDocNames)
-                }
+                _state.update { it.copy(selectedClients = event.clientDocNames) }
                 if (event.clientDocNames.size == 1) {
                     loadPanelsForClient(event.clientDocNames.first())
                 } else {
                     _state.update {
                         it.copy(
                             availablePanels = emptyList(),
-                            selectedClientForPanels = null
+                            selectedClientForPanels = null,
+                            selectedPanelDocName = null,
+                            selectedPanelName = null
                         )
                     }
                 }
@@ -269,7 +336,9 @@ class EventViewModel @Inject constructor(
                             selectedEvent = it.selectedEvent.copy(
                                 panelDocName = event.panelDocName,
                                 panelName = selectedPanel?.name
-                            )
+                            ),
+                            selectedPanelDocName = event.panelDocName,
+                            selectedPanelName = selectedPanel?.name
                         )
                     } else {
                         it.copy(
@@ -279,27 +348,12 @@ class EventViewModel @Inject constructor(
                     }
                 }
             }
-            is EventDialogEvent.EventTypeSelected -> {
-                _state.update { currentState ->
-                    if (currentState.selectedEvent != null) {
-                        currentState.copy(
-                            selectedEvent = currentState.selectedEvent.copy(type = event.eventType)
-                        )
-                    } else {
-                        currentState.copy(selectedEventType = event.eventType)
-                    }
-                }
+            is EventDialogEvent.CreateNewEventType -> {
+                createNewEventType(event.type)
             }
-            is EventDialogEvent.Confirm -> {
-                Log.d(TAG, "Evento de confirmación recibido")
-                handleConfirmDialog()
-            }
+            is EventDialogEvent.Confirm -> handleConfirmDialog()
             is EventDialogEvent.Dismiss -> clearDialogState()
-            is EventDialogEvent.ClientSelected,
-            EventDialogEvent.ShowDatePicker,
-            EventDialogEvent.ShowTimePicker -> {
-                // Manejado por la UI
-            }
+            else -> {} // ShowDatePicker, ShowTimePicker, etc. manejados por la UI
         }
     }
 
@@ -340,11 +394,17 @@ class EventViewModel @Inject constructor(
                             return@launch
                         }
 
+                        Log.d(TAG, "Actualizando evento con tipo: ${updatedEvent.type}")
                         updateEvent(updatedEvent)
                     } else {
                         // Creación de nuevo evento
                         val clientDocName = currentState.selectedClients.firstOrNull() ?: run {
                             _uiEvent.send(EventUIEvent.ShowSnackbar("Debe seleccionar un cliente"))
+                            return@launch
+                        }
+
+                        val eventType = currentState.selectedEventType ?: run {
+                            _uiEvent.send(EventUIEvent.ShowSnackbar("Debe seleccionar un tipo de evento"))
                             return@launch
                         }
 
@@ -355,10 +415,7 @@ class EventViewModel @Inject constructor(
                             title = currentState.newEventTitle,
                             text = currentState.newEventDescription,
                             dateTime = dateTime,
-                            type = currentState.selectedEventType ?: run {
-                                _uiEvent.send(EventUIEvent.ShowSnackbar("Debe seleccionar un tipo de evento"))
-                                return@launch
-                            },
+                            type = eventType,
                             createdByUserId = currentUser.documentName,
                             createdByUserRole = currentUser.role.toString()
                         )
@@ -368,6 +425,7 @@ class EventViewModel @Inject constructor(
                             return@launch
                         }
 
+                        Log.d(TAG, "Creando nuevo evento con tipo: ${newEvent.type}")
                         createEvent(newEvent, currentState.selectedClients)
                     }
                 } catch (e: Exception) {
@@ -406,10 +464,6 @@ class EventViewModel @Inject constructor(
         }
     }
 
-    private suspend fun verifyPanelExists(clientDocName: String, panelDocName: String): Boolean {
-        return panelRepository.verifyPanelExists(clientDocName, panelDocName)
-    }
-
     private fun updateEventPanelInfo(event: Event) {
         viewModelScope.launch {
             try {
@@ -430,7 +484,6 @@ class EventViewModel @Inject constructor(
     private fun handleDeletedPanel(event: Event) {
         viewModelScope.launch {
             try {
-                // Actualizar el evento para quitar la referencia al panel eliminado
                 val updatedEvent = event.copy(panelDocName = null, panelName = null)
                 eventRepository.updateEvent(event.clientDocName, updatedEvent)
                     .onSuccess {
@@ -479,8 +532,6 @@ class EventViewModel @Inject constructor(
                         _uiEvent.send(EventUIEvent.ShowSnackbar("Evento creado exitosamente"))
                         clearDialogState()
                         loadEvents()
-
-                        // Iniciar observación del panel
                         startPanelObservation(event)
                     }
                     .onFailure { error ->
@@ -503,7 +554,6 @@ class EventViewModel @Inject constructor(
                     throw IllegalArgumentException("Evento inválido")
                 }
 
-                // Verificar que el panel existe si hay uno asociado
                 if (event.panelDocName != null) {
                     val panelExists = verifyPanelExists(event.clientDocName, event.panelDocName)
                     if (!panelExists) {
@@ -511,7 +561,6 @@ class EventViewModel @Inject constructor(
                     }
                 }
 
-                // Validar nombres de documentos
                 if (!event.documentName.startsWith(DocumentPrefixes.EVENT) ||
                     !event.clientDocName.startsWith(DocumentPrefixes.CLIENT) ||
                     (event.panelDocName != null && !event.panelDocName.startsWith(DocumentPrefixes.PANEL))) {
@@ -532,8 +581,6 @@ class EventViewModel @Inject constructor(
                         _uiEvent.send(EventUIEvent.ShowSnackbar("Evento actualizado exitosamente"))
                         clearDialogState()
                         loadEvents()
-
-                        // Iniciar o actualizar observación del panel
                         startPanelObservation(event)
                     }
                     .onFailure { error ->
@@ -548,7 +595,6 @@ class EventViewModel @Inject constructor(
     fun updateEventStatus(clientDocName: String, eventDocName: String, newStatus: String) {
         viewModelScope.launch {
             try {
-                // Validar nombres de documentos
                 if (!clientDocName.startsWith(DocumentPrefixes.CLIENT) ||
                     !eventDocName.startsWith(DocumentPrefixes.EVENT)) {
                     throw IllegalArgumentException("Nombres de documentos inválidos")
@@ -580,7 +626,6 @@ class EventViewModel @Inject constructor(
     fun deleteEvent(clientDocName: String, eventDocName: String) {
         viewModelScope.launch {
             try {
-                // Validar nombres de documentos
                 if (!clientDocName.startsWith(DocumentPrefixes.CLIENT) ||
                     !eventDocName.startsWith(DocumentPrefixes.EVENT)) {
                     throw IllegalArgumentException("Nombres de documentos inválidos")
@@ -607,6 +652,10 @@ class EventViewModel @Inject constructor(
         }
     }
 
+    private suspend fun verifyPanelExists(clientDocName: String, panelDocName: String): Boolean {
+        return panelRepository.verifyPanelExists(clientDocName, panelDocName)
+    }
+
     fun setFilter(filter: EventFilter) {
         currentFilter = filter
         loadEvents()
@@ -625,13 +674,14 @@ class EventViewModel @Inject constructor(
     fun refresh() {
         _state.update { it.copy(isRefreshing = true) }
         loadEvents()
+        loadEventTypes()
+        loadUsers()
     }
 
     fun loadClients() {
         viewModelScope.launch {
             try {
                 val clients = eventRepository.getClients()
-                // Validar nombres de documentos de clientes
                 val validClients = clients.filter { it.documentName.startsWith(DocumentPrefixes.CLIENT) }
                 _state.update { it.copy(clients = validClients) }
             } catch (e: Exception) {
@@ -652,6 +702,26 @@ class EventViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiEvent.send(EventUIEvent.ShowSnackbar(errorMessage))
+        }
+    }
+
+    private fun clearDialogState() {
+        _state.update {
+            it.copy(
+                showDialog = false,
+                showCreateTypeDialog = false,
+                selectedEvent = null,
+                currentDate = null,
+                currentTime = null,
+                selectedClients = emptyList(),
+                availablePanels = emptyList(),
+                selectedClientForPanels = null,
+                newEventTitle = "",
+                newEventDescription = "",
+                selectedPanelDocName = null,
+                selectedEventType = null,
+                newTypeError = null
+            )
         }
     }
 
@@ -691,23 +761,5 @@ class EventViewModel @Inject constructor(
                     }
                 }
             }
-    }
-
-    private fun clearDialogState() {
-        _state.update {
-            it.copy(
-                showDialog = false,
-                selectedEvent = null,
-                currentDate = null,
-                currentTime = null,
-                selectedClients = emptyList(),
-                availablePanels = emptyList(),
-                selectedClientForPanels = null,
-                newEventTitle = "",
-                newEventDescription = "",
-                selectedPanelDocName = null,
-                selectedEventType = null
-            )
-        }
     }
 }

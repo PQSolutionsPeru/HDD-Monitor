@@ -79,6 +79,7 @@ sealed class EventUIEvent {
     object RefreshData : EventUIEvent()
     data class ShowDatePicker(val currentDate: LocalDate?) : EventUIEvent()
     data class ShowTimePicker(val currentTime: LocalTime?) : EventUIEvent()
+    data class ShowCreateTypeDialog(val currentTypes: List<String>) : EventUIEvent()
 }
 
 sealed class EventDialogEvent {
@@ -90,8 +91,10 @@ sealed class EventDialogEvent {
     data class PanelSelected(val panelDocName: String?) : EventDialogEvent()
     data class MultipleClientsSelected(val clientDocNames: List<String>) : EventDialogEvent()
     data class EventTypeSelected(val eventType: String) : EventDialogEvent()
+    data class CreateNewEventType(val type: String) : EventDialogEvent()
     object ShowDatePicker : EventDialogEvent()
     object ShowTimePicker : EventDialogEvent()
+    object ShowCreateTypeDialog : EventDialogEvent()
     object Confirm : EventDialogEvent()
     object Dismiss : EventDialogEvent()
 }
@@ -114,6 +117,7 @@ data class EventViewState(
 
     // Estados del diálogo
     val showDialog: Boolean = false,
+    val showCreateTypeDialog: Boolean = false,
     val selectedEvent: Event? = null,
     val selectedClients: List<String> = emptyList(),
     val selectedClientForPanels: String? = null,
@@ -132,7 +136,11 @@ data class EventViewState(
     val selectedPanelName: String? = null,
 
     // Estado de última actualización
-    val lastUpdate: Long = System.currentTimeMillis()
+    val lastUpdate: Long = System.currentTimeMillis(),
+
+    // Estado de manejo de tipos de evento
+    val isCreatingNewType: Boolean = false,
+    val newTypeError: String? = null
 ) {
     // Propiedades computadas
     val hasEvents: Boolean
@@ -206,7 +214,8 @@ data class EventViewState(
                 "selectedClient=$selectedClientForPanels, " +
                 "selectedEventType=$selectedEventType, " +
                 "hasDateTime=$hasDateTime, " +
-                "lastUpdate=$lastUpdate" +
+                "lastUpdate=$lastUpdate, " +
+                "isCreatingNewType=$isCreatingNewType" +
                 ")"
     }
 }
