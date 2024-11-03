@@ -1,677 +1,113 @@
-### BaseViewModel.kt ###
+### data\UserData.kt ###
 
-package com.pqsolutions.hdd_monitor.presentation
+package com.pqsolutions.hdd_monitor.data
 
-import androidx.lifecycle.ViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import com.google.firebase.firestore.PropertyName
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 
-abstract class BaseViewModel<State, Event>(initialState: State) : ViewModel() {
-    private val _state = MutableStateFlow(initialState)
-    val state: StateFlow<State> = _state.asStateFlow()
-
-    protected fun setState(reduce: State.() -> State) {
-        val newState = state.value.reduce()
-        _state.value = newState
-    }
-
-    abstract fun onEvent(event: Event)
-}
-
-==================================================
-
-### components\ClientComponents.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.components
-
-import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedButton
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Client
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-
-private const val TAG = "ClientComponents"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ClientList(
-    clients: List<Client>,
-    onClientSelect: (Client) -> Unit,
-    onEditClient: (Client) -> Unit,
-    onDeleteClient: (Client) -> Unit,
-    modifier: Modifier = Modifier
+data class UserData(
+    val documentName: String = "",
+    val email: String = "",
+    val name: String = "",
+    @get:PropertyName("role")
+    @set:PropertyName("role")
+    private var roleString: String = "user",
+    val clientDocName: String = "",
+    val clientName: String = "", // Nuevo campo para el nombre del cliente
+    @get:PropertyName("fcmToken")
+    val fcmToken: String? = null
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(
-            items = clients,
-            key = { it.documentName }
-        ) { client ->
-            ClientCard(
-                client = client,
-                onClientSelect = { onClientSelect(client) },
-                onEditClient = { onEditClient(client) },
-                onDeleteClient = { onDeleteClient(client) }
-            )
-        }
-    }
-}
+    var role: UserRole
+        get() = UserRole.fromString(roleString)
+        set(value) { roleString = UserRole.toFirestoreValue(value) }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ClientCard(
-    client: Client,
-    onClientSelect: () -> Unit,
-    onEditClient: () -> Unit,
-    onDeleteClient: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-
-    Card(
-        onClick = {
-            performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
-            onClientSelect()
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = client.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = stringResource(
-                        R.string.client_id,
-                        client.documentName.removePrefix("client_")
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Row {
-                IconButton(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onEditClient()
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = stringResource(R.string.edit),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+    fun isValid(): Boolean {
+        return email.isNotBlank() &&
+                name.isNotBlank() &&
+                when (role) {
+                    UserRole.ADMIN -> isValidAdminDocument()
+                    UserRole.USER -> isValidUserDocument() && isValidClientDocument()
                 }
-                IconButton(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onDeleteClient()
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.delete),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
     }
-}
 
-@Composable
-fun ClientDetailContent(
-    client: Client,
-    panelCount: Int,
-    userCount: Int,
-    onManagePanels: () -> Unit,
-    onManageUsers: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Información del Cliente
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.header_client_info),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = client.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Text(
-                    text = stringResource(
-                        R.string.client_id,
-                        client.documentName.removePrefix("client_")
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.client_panels_count, panelCount),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = stringResource(R.string.client_users_count, userCount),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                }
-            }
-        }
-
-        // Botones de Gestión
-        ElevatedButton(
-            onClick = {
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onManagePanels()
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(
-                imageVector = Icons.Default.Dashboard,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(R.string.manage_panels))
-        }
-
-        ElevatedButton(
-            onClick = {
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onManageUsers()
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(
-                imageVector = Icons.Default.People,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(R.string.manage_users))
-        }
+    private fun isValidAdminDocument(): Boolean {
+        return documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.ADMIN)
     }
-}
 
-@Composable
-fun ClientEmptyState(
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Business,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = stringResource(R.string.no_clients),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    private fun isValidUserDocument(): Boolean {
+        return documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.USER)
     }
-}
 
-==================================================
+    private fun isValidClientDocument(): Boolean {
+        return clientDocName.startsWith(DocumentPrefixes.CLIENT)
+    }
 
-### components\ClientManagementDialogs.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.components
-
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.UserData
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-
-private const val TAG = "ClientManagementDialogs"
-
-@Composable
-private fun ValidationError(error: String?) {
-    if (error != null) {
-        Text(
-            text = error,
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall
+    fun toMap(): Map<String, Any?> {
+        return mapOf(
+            "documentName" to documentName,
+            "email" to email,
+            "name" to name,
+            "role" to roleString,
+            "clientDocName" to clientDocName,
+            "clientName" to clientName,
+            "fcmToken" to fcmToken
         )
     }
-}
 
-@Composable
-fun PanelDialog(
-    panel: Panel?,
-    onDismiss: () -> Unit,
-    onConfirm: (Panel) -> Unit
-) {
-    val context = LocalContext.current
-    var name by remember { mutableStateOf(panel?.name ?: "") }
-    var location by remember { mutableStateOf(panel?.location ?: "") }
-    var esp32Ip by remember { mutableStateOf(panel?.ESP32_IP ?: "") }
-    var ssid by remember { mutableStateOf(panel?.SSID ?: "") }
-    var ssidPw by remember { mutableStateOf(panel?.SSID_PW ?: "") }
+    companion object {
+        fun createAdmin(
+            email: String,
+            name: String,
+            fcmToken: String? = null
+        ): UserData = UserData(
+            email = email,
+            name = name,
+            roleString = "admin",
+            fcmToken = fcmToken
+        )
 
-    var nameError by remember { mutableStateOf<String?>(null) }
-    var locationError by remember { mutableStateOf<String?>(null) }
-    var esp32IpError by remember { mutableStateOf<String?>(null) }
-    var ssidError by remember { mutableStateOf<String?>(null) }
-    var ssidPwError by remember { mutableStateOf<String?>(null) }
+        fun createClientUser(
+            email: String,
+            name: String,
+            clientDocName: String,
+            clientName: String,
+            fcmToken: String? = null
+        ): UserData = UserData(
+            email = email,
+            name = name,
+            roleString = "user",
+            clientDocName = clientDocName,
+            clientName = clientName,
+            fcmToken = fcmToken
+        )
 
-    fun validateField(value: String, field: String): String? {
-        return if (value.isBlank()) context.getString(R.string.error_required_field) else null
-    }
-
-    fun validateIp(value: String): String? {
-        return when {
-            value.isBlank() -> context.getString(R.string.error_required_field)
-            !value.matches(Regex("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\$")) ->
-                context.getString(R.string.error_invalid_ip)
-            else -> null
+        fun fromMap(map: Map<String, Any?>): UserData {
+            return UserData(
+                documentName = map["documentName"] as? String ?: "",
+                email = map["email"] as? String ?: "",
+                name = map["name"] as? String ?: "",
+                roleString = map["role"] as? String ?: "user",
+                clientDocName = map["clientDocName"] as? String ?: "",
+                clientName = map["clientName"] as? String ?: "",
+                fcmToken = map["fcmToken"] as? String
+            )
         }
     }
 
-    fun validateSsidPw(value: String): String? {
-        return when {
-            value.isBlank() -> context.getString(R.string.error_required_field)
-            value.length < 8 -> context.getString(R.string.error_ssid_password_length)
-            else -> null
-        }
+    override fun toString(): String {
+        return "UserData(documentName='$documentName', " +
+                "email='$email', " +
+                "name='$name', " +
+                "role=${role.name}, " +
+                "clientDocName='$clientDocName', " +
+                "clientName='$clientName')" // No incluimos fcmToken por seguridad
     }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(text = stringResource(if (panel == null) R.string.new_panel else R.string.edit_panel))
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                        nameError = validateField(it, "name")
-                    },
-                    label = { Text(stringResource(R.string.field_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = nameError != null,
-                    supportingText = { ValidationError(nameError) },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = location,
-                    onValueChange = {
-                        location = it
-                        locationError = validateField(it, "location")
-                    },
-                    label = { Text(stringResource(R.string.field_location)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = locationError != null,
-                    supportingText = { ValidationError(locationError) },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = esp32Ip,
-                    onValueChange = {
-                        esp32Ip = it
-                        esp32IpError = validateIp(it)
-                    },
-                    label = { Text(stringResource(R.string.field_esp32_ip)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = esp32IpError != null,
-                    supportingText = { ValidationError(esp32IpError) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = ssid,
-                    onValueChange = {
-                        ssid = it
-                        ssidError = validateField(it, "ssid")
-                    },
-                    label = { Text(stringResource(R.string.field_ssid)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = ssidError != null,
-                    supportingText = { ValidationError(ssidError) },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = ssidPw,
-                    onValueChange = {
-                        ssidPw = it
-                        ssidPwError = validateSsidPw(it)
-                    },
-                    label = { Text(stringResource(R.string.field_ssid_password)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = ssidPwError != null,
-                    supportingText = { ValidationError(ssidPwError) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val isValid = nameError == null && locationError == null &&
-                            esp32IpError == null && ssidError == null && ssidPwError == null &&
-                            name.isNotBlank() && location.isNotBlank() &&
-                            esp32Ip.isNotBlank() && ssid.isNotBlank() && ssidPw.isNotBlank()
-
-                    if (isValid) {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onConfirm(
-                            Panel(
-                                documentName = panel?.documentName ?: "",
-                                name = name.trim(),
-                                location = location.trim(),
-                                ESP32_IP = esp32Ip.trim(),
-                                SSID = ssid.trim(),
-                                SSID_PW = ssidPw.trim(),
-                                SSID_CON = panel?.SSID_CON,
-                                clientDocName = panel?.clientDocName ?: ""
-                            )
-                        )
-                    }
-                }
-            ) {
-                Text(stringResource(R.string.confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onDismiss()
-                }
-            ) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
-}
-
-@Composable
-fun UserDialog(
-    user: UserData?,
-    clientDocName: String,
-    onDismiss: () -> Unit,
-    onConfirm: (UserData) -> Unit
-) {
-    val context = LocalContext.current
-    var name by remember { mutableStateOf(user?.name ?: "") }
-    var email by remember { mutableStateOf(user?.email ?: "") }
-    var password by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
-
-    var nameError by remember { mutableStateOf<String?>(null) }
-    var emailError by remember { mutableStateOf<String?>(null) }
-    var passwordError by remember { mutableStateOf<String?>(null) }
-
-    fun validateEmail(value: String): String? {
-        return when {
-            value.isBlank() -> context.getString(R.string.error_required_field)
-            !android.util.Patterns.EMAIL_ADDRESS.matcher(value).matches() ->
-                context.getString(R.string.error_invalid_email)
-            else -> null
-        }
-    }
-
-    fun validatePassword(value: String): String? {
-        return when {
-            value.isBlank() -> context.getString(R.string.error_required_field)
-            value.length < 6 -> context.getString(R.string.error_password_length)
-            else -> null
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(text = stringResource(if (user == null) R.string.new_user else R.string.edit_user))
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                        nameError = if (it.isBlank()) context.getString(R.string.error_required_field) else null
-                    },
-                    label = { Text(stringResource(R.string.field_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = nameError != null,
-                    supportingText = { ValidationError(nameError) },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = {
-                        email = it
-                        emailError = validateEmail(it)
-                    },
-                    label = { Text(stringResource(R.string.field_email)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = emailError != null,
-                    supportingText = { ValidationError(emailError) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    singleLine = true
-                )
-
-                if (user == null) {
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it
-                            passwordError = validatePassword(it)
-                        },
-                        label = { Text(stringResource(R.string.field_password)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        isError = passwordError != null,
-                        supportingText = { ValidationError(passwordError) },
-                        visualTransformation = if (showPassword)
-                            VisualTransformation.None
-                        else
-                            PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showPassword = !showPassword }) {
-                                Icon(
-                                    if (showPassword)
-                                        Icons.Default.Visibility
-                                    else
-                                        Icons.Default.VisibilityOff,
-                                    contentDescription = if (showPassword)
-                                        stringResource(R.string.hide_password)
-                                    else
-                                        stringResource(R.string.show_password)
-                                )
-                            }
-                        },
-                        singleLine = true
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val isValid = nameError == null && emailError == null &&
-                            (user != null || passwordError == null) &&
-                            name.isNotBlank() && email.isNotBlank() &&
-                            (user != null || password.isNotBlank())
-
-                    if (isValid) {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onConfirm(
-                            UserData(
-                                documentName = user?.documentName ?: "",
-                                email = email.trim(),
-                                name = name.trim(),
-                                roleString = "user",
-                                clientDocName = clientDocName,
-                                fcmToken = user?.fcmToken
-                            )
-                        )
-                    }
-                }
-            ) {
-                Text(stringResource(R.string.confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onDismiss()
-                }
-            ) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
 }
 
 ==================================================
 
-### components\CommonComponents.kt ###
+### presentation\components\CommonComponents.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.components
 
@@ -943,545 +379,11 @@ fun ScreenContent(
 
 ==================================================
 
-### components\ConfirmationDialogs.kt ###
+### presentation\components\EventCard.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.components
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.presentation.util.Dimensions
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-
-@Composable
-fun ConfirmationDialog(
-    title: String,
-    message: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-    confirmText: String = stringResource(R.string.confirm),
-    dismissText: String = stringResource(R.string.cancel),
-    icon: @Composable (() -> Unit)? = null,
-    confirmButtonColors: ButtonColors = ButtonDefaults.buttonColors(
-        containerColor = MaterialTheme.colorScheme.primary
-    ),
-    isDestructive: Boolean = false
-) {
-    val context = LocalContext.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = icon,
-        title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall
-            )
-        },
-        text = {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onConfirm()
-                },
-                colors = if (isDestructive) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                } else confirmButtonColors
-            ) {
-                Text(confirmText)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onDismiss()
-                }
-            ) {
-                Text(dismissText)
-            }
-        }
-    )
-}
-
-@Composable
-fun DeleteConfirmationDialog(
-    itemType: String,
-    onConfirmDelete: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    ConfirmationDialog(
-        title = stringResource(R.string.confirm_deletion),
-        message = stringResource(R.string.delete_confirmation_message, itemType),
-        onConfirm = onConfirmDelete,
-        onDismiss = onDismiss,
-        confirmText = stringResource(R.string.delete),
-        isDestructive = true
-    )
-}
-
-@Composable
-fun AcceptEventDialog(
-    onConfirmAccept: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    ConfirmationDialog(
-        title = stringResource(R.string.confirm_acceptance),
-        message = stringResource(R.string.accept_event_confirmation_message),
-        onConfirm = onConfirmAccept,
-        onDismiss = onDismiss,
-        confirmText = stringResource(R.string.accept)
-    )
-}
-
-@Composable
-fun UnsavedChangesDialog(
-    onConfirmDiscard: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    ConfirmationDialog(
-        title = stringResource(R.string.unsaved_changes),
-        message = stringResource(R.string.unsaved_changes_message),
-        onConfirm = onConfirmDiscard,
-        onDismiss = onDismiss,
-        confirmText = stringResource(R.string.discard),
-        dismissText = stringResource(R.string.keep_editing),
-        isDestructive = true
-    )
-}
-
-@Composable
-fun LoadingDialog(
-    message: String = stringResource(R.string.please_wait)
-) {
-    AlertDialog(
-        onDismissRequest = { /* No dismissible */ },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Dimensions.paddingMedium),
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                CircularProgressIndicator()
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center
-                )
-            }
-        },
-        confirmButton = { }
-    )
-}
-
-@Composable
-fun ErrorDialog(
-    title: String = stringResource(R.string.error),
-    message: String,
-    onDismiss: () -> Unit,
-    onRetry: (() -> Unit)? = null
-) {
-    val context = LocalContext.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(title)
-        },
-        text = {
-            Text(message)
-        },
-        confirmButton = {
-            if (onRetry != null) {
-                Button(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onRetry()
-                    }
-                ) {
-                    Text(stringResource(R.string.retry))
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onDismiss()
-                }
-            ) {
-                Text(stringResource(R.string.close))
-            }
-        }
-    )
-}
-
-// Estado para manejar múltiples diálogos
-class DialogState {
-    var currentDialog by mutableStateOf<@Composable (() -> Unit)?>(null)
-        private set
-
-    fun show(content: @Composable () -> Unit) {
-        currentDialog = content
-    }
-
-    fun dismiss() {
-        currentDialog = null
-    }
-}
-
-@Composable
-fun rememberDialogState() = remember { DialogState() }
-
-// Componente para mostrar el diálogo actual
-@Composable
-fun DialogHost(dialogState: DialogState) {
-    dialogState.currentDialog?.invoke()
-}
-
-==================================================
-
-### components\DashboardComponents.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.components
-
-import android.util.Log
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonColors
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.Relay
-import com.pqsolutions.hdd_monitor.presentation.theme.HddBlack
-import com.pqsolutions.hdd_monitor.presentation.theme.HddGreen
-import com.pqsolutions.hdd_monitor.presentation.theme.HddRed
-import com.pqsolutions.hdd_monitor.presentation.theme.HddWhite
-import com.pqsolutions.hdd_monitor.presentation.theme.HddYellow
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
-import kotlinx.coroutines.delay
-
-private const val TAG = "DashboardComponents"
-
-@Composable
-fun DashboardButton(
-    onClick: () -> Unit,
-    text: String,
-    colors: ButtonColors = ButtonDefaults.buttonColors()
-) {
-    Log.d(TAG, "Composing DashboardButton: $text")
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (isPressed) 0.95f else 1f)
-
-    Button(
-        onClick = {
-            Log.d(TAG, "DashboardButton clicked: $text")
-            isPressed = true
-            onClick()
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .scale(scale),
-        colors = colors,
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onPrimary
-        )
-    }
-
-    LaunchedEffect(isPressed) {
-        if (isPressed) {
-            delay(100)
-            isPressed = false
-        }
-    }
-}
-
-@Composable
-fun PanelsList(uiState: DashboardViewModel.DashboardUiState) {
-    Log.d(TAG, "Composing PanelsList with ${uiState.panels.size} panels")
-    when {
-        uiState.isLoading -> {
-            Log.d(TAG, "PanelsList: Loading")
-            LoadingIndicator()
-        }
-        uiState.error != null -> {
-            Log.d(TAG, "PanelsList: Error - ${uiState.error}")
-            ErrorMessage(uiState.error)
-        }
-        uiState.panels.isEmpty() -> {
-            Log.d(TAG, "PanelsList: No panels")
-            EmptyPanelsMessage()
-        }
-        else -> {
-            Log.d(TAG, "PanelsList: Showing panels")
-            PanelsContent(uiState)
-        }
-    }
-}
-
-@Composable
-private fun LoadingIndicator() {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(200.dp)
-    ) {
-        CircularProgressIndicator(
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(64.dp)
-        )
-    }
-}
-
-@Composable
-private fun ErrorMessage(error: String) {
-    Text(
-        text = error,
-        color = MaterialTheme.colorScheme.error,
-        style = MaterialTheme.typography.bodyLarge
-    )
-}
-
-@Composable
-private fun EmptyPanelsMessage() {
-    Text(
-        text = stringResource(R.string.no_panels_found),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurface
-    )
-}
-
-@Composable
-private fun PanelsContent(uiState: DashboardViewModel.DashboardUiState) {
-    Log.d(TAG, "PanelsContent: Showing ${uiState.panels.size} panels")
-    Column {
-        Text(
-            text = stringResource(R.string.fire_panels),
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        uiState.panels.forEach { panel ->
-            Log.d(TAG, "PanelsContent: Showing panel ${panel.name}")
-            PanelItem(panel)
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-    }
-}
-
-@Composable
-fun PanelItem(panel: Panel) {
-    Log.d(TAG, "Composing PanelItem: ${panel.name}, Relays: ${panel.relays.size}")
-    val context = LocalContext.current
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                Log.d(TAG, "PanelItem clicked: ${panel.name}")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-            },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp)
-        ) {
-            Text(
-                text = panel.name,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = panel.location,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            if (panel.relays.isEmpty()) {
-                Log.d(TAG, "PanelItem: No relays for panel ${panel.name}")
-                Text(
-                    text = stringResource(R.string.loading_relays),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                panel.relays.forEach { relay ->
-                    Log.d(TAG, "PanelItem: Showing relay ${relay.name} for panel ${panel.name}")
-                    RelayStatusItem(relay)
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun RelayStatusItem(relay: Relay) {
-    Log.d(TAG, "Composing RelayStatusItem: ${relay.name}, Status: ${relay.status}")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = relay.name,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        StatusChip(status = relay.status)
-    }
-}
-
-@Composable
-fun StatusChip(status: String) {
-    Log.d(TAG, "Composing StatusChip: $status")
-    val (backgroundColor, textColor) = when (status) {
-        "OK" -> HddGreen to HddWhite
-        "WARNING" -> HddYellow to HddBlack
-        else -> HddRed to HddWhite
-    }
-
-    Surface(
-        color = backgroundColor,
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Text(
-            text = status,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelLarge,
-            color = textColor
-        )
-    }
-}
-
-@Composable
-fun HddButton(
-    onClick: () -> Unit,
-    text: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
-        )
-    ) {
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-@Composable
-fun HddOutlinedTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    isError: Boolean = false,
-    errorMessage: String? = null,
-    isPassword: Boolean = false
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        modifier = modifier.fillMaxWidth(),
-        isError = isError,
-        visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline
-        ),
-        textStyle = MaterialTheme.typography.bodyLarge
-    )
-    if (isError && errorMessage != null) {
-        Text(
-            text = errorMessage,
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 16.dp, top = 4.dp)
-        )
-    }
-}
-
-==================================================
-
-### components\EventListItem.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.components
-
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -1499,19 +401,23 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
+import com.pqsolutions.hdd_monitor.domain.model.EventStatus
 
 @Composable
-fun EventItem(
+fun EventCard(
     event: Event,
+    client: Client?,
     isAdmin: Boolean,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
@@ -1522,318 +428,170 @@ fun EventItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = event.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = event.text,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = event.getFormattedDateTime(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (isAdmin) Arrangement.End else Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isAdmin) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        IconButton(
-                            onClick = onEditClick,
-                            enabled = event.isProgramado
-                        ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = stringResource(R.string.edit_event),
-                                tint = if (event.isProgramado)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                            )
-                        }
-                        IconButton(
-                            onClick = onDeleteClick,
-                            enabled = event.isProgramado
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = stringResource(R.string.delete_event),
-                                tint = if (event.isProgramado)
-                                    MaterialTheme.colorScheme.error
-                                else
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                            )
-                        }
-                    }
-                } else if (event.isProgramado) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(onClick = onAcceptClick) {
-                            Text(stringResource(R.string.accept))
-                        }
-                        Button(
-                            onClick = onContactAdmin,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondary
-                            )
-                        ) {
-                            Text(stringResource(R.string.contact_admin))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-==================================================
-
-### components\PanelListComponents.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.components
-
-import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.Relay
-import com.pqsolutions.hdd_monitor.presentation.theme.HddGreen
-import com.pqsolutions.hdd_monitor.presentation.theme.HddRed
-import com.pqsolutions.hdd_monitor.presentation.theme.HddYellow
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-
-private const val TAG = "PanelListComponents"
-
-@Composable
-fun PanelList(
-    panels: List<Panel>,
-    onPanelSelect: (Panel) -> Unit,
-    onEditPanel: (Panel) -> Unit,
-    onDeletePanel: (Panel) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(
-            items = panels,
-            key = { it.documentName }
-        ) { panel ->
-            PanelCard(
-                panel = panel,
-                onPanelSelect = { onPanelSelect(panel) },
-                onEditPanel = { onEditPanel(panel) },
-                onDeletePanel = { onDeletePanel(panel) }
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PanelCard(
-    panel: Panel,
-    onPanelSelect: () -> Unit,
-    onEditPanel: () -> Unit,
-    onDeletePanel: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    var expanded by remember { mutableStateOf(false) }
-
-    Card(
-        onClick = {
-            performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
-            onPanelSelect()
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize()
+            .padding(vertical = 4.dp)
+            .animateContentSize(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Header con información básica y acciones
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = panel.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.field_location, panel.location),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Row {
-                    IconButton(
-                        onClick = {
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            onEditPanel()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = stringResource(R.string.edit),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            onDeletePanel()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = stringResource(R.string.delete),
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            expanded = !expanded
-                        }
-                    ) {
-                        Icon(
-                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (expanded)
-                                "Mostrar menos" else "Mostrar más"
-                        )
-                    }
-                }
-            }
-
-            // Información técnica
+            // Título del evento
             Text(
-                text = stringResource(R.string.field_esp32_ip, panel.ESP32_IP),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = event.title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Bold
             )
 
-            // Estado de conexión WiFi
-            Row(
-                modifier = Modifier.padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Wifi,
-                    contentDescription = null,
-                    tint = if (panel.SSID_CON == "OK") HddGreen else HddRed,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Descripción del evento
+            Text(
+                text = event.text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Fecha y hora
+            Column {
                 Text(
-                    text = stringResource(
-                        if (panel.SSID_CON == "OK")
-                            R.string.panel_connection_ok
-                        else
-                            R.string.panel_connection_error
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Fecha/Hora del Evento:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = event.getFormattedDateTime(),
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            // Detalles expandibles de relays
-            if (expanded) {
+            // Panel asociado (si existe)
+            event.panelName?.let { panelName ->
                 Spacer(modifier = Modifier.height(8.dp))
-                Divider()
+                Column {
+                    Text(
+                        text = "Panel:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = panelName,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Cliente (solo en modo admin)
+            if (isAdmin && client != null) {
                 Spacer(modifier = Modifier.height(8.dp))
+                Column {
+                    Text(
+                        text = "Cliente:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = client.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Estado del evento
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
-                    text = stringResource(R.string.panel_relay_status),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "Estado:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                panel.relays.forEach { relay ->
-                    RelayStatusRow(relay = relay)
-                    Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    color = when (event.status) {
+                        EventStatus.STATUS_PROGRAMADO -> MaterialTheme.colorScheme.primary
+                        EventStatus.STATUS_ACEPTADO -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.error
+                    },
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        text = event.status,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Botones de acción
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (isAdmin) Arrangement.End else Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isAdmin) {
+                    IconButton(
+                        onClick = onEditClick,
+                        enabled = event.isProgramado
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Editar evento",
+                            tint = if (event.isProgramado)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        )
+                    }
+                    IconButton(
+                        onClick = onDeleteClick,
+                        enabled = event.isProgramado
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Eliminar evento",
+                            tint = if (event.isProgramado)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        )
+                    }
+                } else if (event.isProgramado) {
+                    Button(
+                        onClick = onAcceptClick,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text("Aceptar")
+                    }
+                    Button(
+                        onClick = onContactAdmin,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Text("Contactar Admin")
+                    }
                 }
             }
         }
@@ -1841,74 +599,35 @@ fun PanelCard(
 }
 
 @Composable
-private fun RelayStatusRow(
-    relay: Relay,
+fun EventList(
+    events: List<Event>,
+    clients: List<Client>,
+    isAdmin: Boolean,
+    onEditClick: (Event) -> Unit,
+    onDeleteClick: (Event) -> Unit,
+    onAcceptClick: (Event) -> Unit,
+    onContactAdmin: (Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = relay.name,
-            style = MaterialTheme.typography.bodyMedium
-        )
-        RelayStatusChip(status = relay.status)
-    }
-}
+        events.forEach { event ->
+            val client = if (isAdmin) {
+                clients.find { client ->
+                    event.clientDocName == client.documentName
+                }
+            } else null
 
-@Composable
-private fun RelayStatusChip(
-    status: String,
-    modifier: Modifier = Modifier
-) {
-    val (backgroundColor, textColor) = when (status) {
-        "OK" -> HddGreen to Color.White
-        "WARNING" -> HddYellow to Color.Black
-        else -> HddRed to Color.White
-    }
-
-    Surface(
-        color = backgroundColor,
-        shape = MaterialTheme.shapes.small,
-        modifier = modifier
-    ) {
-        Text(
-            text = status,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = textColor
-        )
-    }
-}
-
-@Composable
-fun PanelEmptyState(
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Dashboard,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = stringResource(R.string.no_panels),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            EventCard(
+                event = event,
+                client = client,
+                isAdmin = isAdmin,
+                onEditClick = { onEditClick(event) },
+                onDeleteClick = { onDeleteClick(event) },
+                onAcceptClick = { onAcceptClick(event) },
+                onContactAdmin = { onContactAdmin(event) }
             )
         }
     }
@@ -1916,7 +635,373 @@ fun PanelEmptyState(
 
 ==================================================
 
-### components\UserComponents.kt ###
+### presentation\components\EventDialog.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.components
+
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.util.Log
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.Client
+import com.pqsolutions.hdd_monitor.data.Event
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.presentation.state.EventDialogEvent
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Calendar
+
+private const val TAG = "EventDialog"
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EventDialog(
+    event: Event?,
+    clients: List<Client>,
+    availablePanels: List<Panel>,
+    selectedDate: LocalDate?,
+    selectedTime: LocalTime?,
+    selectedClientForPanels: String?,
+    selectedPanelDocName: String?,
+    newEventTitle: String,
+    newEventDescription: String,
+    isAdmin: Boolean,
+    onEvent: (EventDialogEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val isEditing = event != null
+    val canEdit = event == null || event.isProgramado
+
+    val title = if (isEditing) event?.title ?: "" else newEventTitle
+    val description = if (isEditing) event?.text ?: "" else newEventDescription
+    var selectedClients by remember { mutableStateOf(setOf<String>()) }
+
+    val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+    val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+    // Validación del máximo de caracteres
+    val maxTitleLength = 50
+    val maxDescriptionLength = 500
+
+    // Validación de fechas
+    val isDateValid = if (isEditing) {
+        selectedDate != null
+    } else {
+        selectedDate != null &&
+                (selectedDate.isAfter(LocalDate.now()) || selectedDate.isEqual(LocalDate.now()))
+    }
+
+    val isTimeValid = if (isEditing) {
+        selectedTime != null
+    } else {
+        selectedTime != null &&
+                (selectedDate?.isAfter(LocalDate.now()) == true ||
+                        (selectedDate?.isEqual(LocalDate.now()) == true &&
+                                selectedTime.isAfter(LocalTime.now())))
+    }
+
+    // Validación del formulario
+    val isFormValid = canEdit &&
+            title.isNotBlank() &&
+            description.isNotBlank() &&
+            isDateValid &&
+            isTimeValid &&
+            title.length <= maxTitleLength &&
+            description.length <= maxDescriptionLength &&
+            (isEditing || selectedClients.isNotEmpty())
+
+    // Date Picker
+    val datePickerDialog = remember {
+        val calendar = Calendar.getInstance()
+        selectedDate?.let {
+            calendar.set(it.year, it.monthValue - 1, it.dayOfMonth)
+        }
+
+        DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                onEvent(EventDialogEvent.DateSelected(LocalDate.of(year, month + 1, dayOfMonth)))
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        ).apply {
+            datePicker.minDate = System.currentTimeMillis()
+        }
+    }
+
+    // Time Picker
+    val timePickerDialog = remember {
+        TimePickerDialog(
+            context,
+            { _, hourOfDay, minute ->
+                onEvent(EventDialogEvent.TimeSelected(LocalTime.of(hourOfDay, minute)))
+            },
+            selectedTime?.hour ?: LocalTime.now().hour,
+            selectedTime?.minute ?: LocalTime.now().minute,
+            true
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    if (event == null) R.string.create_new_event else R.string.edit_event
+                )
+            )
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    if (!canEdit) {
+                        Text(
+                            text = stringResource(R.string.event_already_accepted),
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = {
+                            if (canEdit && it.length <= maxTitleLength) {
+                                onEvent(EventDialogEvent.TitleChanged(it))
+                            }
+                        },
+                        label = { Text(stringResource(R.string.event_title)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = canEdit,
+                        singleLine = true,
+                        isError = title.isBlank(),
+                        supportingText = {
+                            Text(
+                                "${title.length}/$maxTitleLength" +
+                                        if (title.isBlank()) " - ${stringResource(R.string.error_required_field)}" else ""
+                            )
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = {
+                            if (canEdit && it.length <= maxDescriptionLength) {
+                                onEvent(EventDialogEvent.DescriptionChanged(it))
+                            }
+                        },
+                        label = { Text(stringResource(R.string.event_description)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = canEdit,
+                        minLines = 3,
+                        maxLines = 5,
+                        isError = description.isBlank(),
+                        supportingText = {
+                            Text(
+                                "${description.length}/$maxDescriptionLength" +
+                                        if (description.isBlank()) " - ${stringResource(R.string.error_required_field)}" else ""
+                            )
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = selectedDate?.format(dateFormatter) ?: "",
+                            onValueChange = { },
+                            label = { Text(stringResource(R.string.date)) },
+                            modifier = Modifier.weight(1f),
+                            readOnly = true,
+                            enabled = canEdit,
+                            isError = !isDateValid,
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { if (canEdit) datePickerDialog.show() },
+                                    enabled = canEdit
+                                ) {
+                                    Icon(Icons.Default.CalendarToday, contentDescription = null)
+                                }
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        OutlinedTextField(
+                            value = selectedTime?.format(timeFormatter) ?: "",
+                            onValueChange = { },
+                            label = { Text(stringResource(R.string.time)) },
+                            modifier = Modifier.weight(1f),
+                            readOnly = true,
+                            enabled = canEdit,
+                            isError = !isTimeValid,
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { if (canEdit) timePickerDialog.show() },
+                                    enabled = canEdit
+                                ) {
+                                    Icon(Icons.Default.Schedule, contentDescription = null)
+                                }
+                            }
+                        )
+                    }
+                }
+
+                if (!isEditing && isAdmin) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.select_clients),
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                        )
+
+                        Text(
+                            text = stringResource(R.string.single_client_panel_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+
+                    items(clients.sortedBy { it.name }) { client ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = client.documentName in selectedClients,
+                                onCheckedChange = { checked ->
+                                    if (canEdit) {
+                                        selectedClients = if (checked) {
+                                            setOf(client.documentName)  // Solo permitir uno
+                                        } else {
+                                            emptySet()
+                                        }
+                                        onEvent(EventDialogEvent.MultipleClientsSelected(selectedClients.toList()))
+                                    }
+                                },
+                                enabled = canEdit
+                            )
+                            Text(
+                                text = client.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 8.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                if (selectedClients.size == 1 && availablePanels.isNotEmpty()) {
+                    item {
+                        var expanded by remember { mutableStateOf(false) }
+
+                        Text(
+                            text = stringResource(R.string.select_panel),
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                        )
+
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { if (canEdit) expanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = availablePanels.find { it.documentName == selectedPanelDocName }?.name
+                                    ?: stringResource(R.string.select_panel),
+                                onValueChange = { },
+                                label = { Text(stringResource(R.string.panel)) },
+                                readOnly = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                enabled = canEdit
+                            )
+
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                availablePanels
+                                    .sortedBy { it.name }
+                                    .forEach { panel ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = panel.name,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            },
+                                            onClick = {
+                                                onEvent(EventDialogEvent.PanelSelected(panel.documentName))
+                                                expanded = false
+                                            }
+                                        )
+                                    }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    Log.d(TAG, "Confirmando con título: $title")
+                    Log.d(TAG, "Confirmando con descripción: $description")
+                    Log.d(TAG, "Confirmando con panel: $selectedPanelDocName")
+                    onEvent(EventDialogEvent.Confirm)
+                },
+                enabled = isFormValid
+            ) {
+                Text(
+                    stringResource(
+                        if (isEditing) R.string.update else R.string.create
+                    )
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+==================================================
+
+### presentation\components\UserComponents.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.components
 
@@ -2276,795 +1361,7 @@ fun ClientDialog(
 
 ==================================================
 
-### components\UserListComponents.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.components
-
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import com.pqsolutions.hdd_monitor.data.UserData
-
-@Composable
-fun UserList(
-    users: List<UserData>,
-    onEditClick: (UserData) -> Unit,
-    onDeleteClick: (UserData) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(
-            items = users,
-            key = { it.documentName }
-        ) { user ->
-            UserCard(
-                user = user,
-                onEditClick = { onEditClick(user) },
-                onDeleteClick = { onDeleteClick(user) }
-            )
-        }
-    }
-}
-
-==================================================
-
-### screens\AdminDashboardScreen.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.screens
-
-import android.util.Log
-import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.Relay
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
-import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
-
-private const val TAG = "AdminDashboardScreen"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AdminDashboardScreen(
-    viewModel: DashboardViewModel = hiltViewModel(),
-    notificationViewModel: NotificationViewModel = hiltViewModel(),
-    onLogoutClick: () -> Unit,
-    onManageUsersClick: () -> Unit,
-    onViewEventsClick: () -> Unit,
-    onViewNotificationHistoryClick: () -> Unit,
-    hasPendingNotifications: Boolean
-) {
-    Log.d(TAG, "AdminDashboardScreen composition started")
-
-    val uiState by viewModel.uiState.collectAsState()
-    val notificationUiState by notificationViewModel.uiState.collectAsState()
-    val context = LocalContext.current
-
-    HDD1_2Theme {
-        Scaffold(
-            topBar = {
-                ScreenTopBar(
-                    title = stringResource(R.string.admin_dashboard_title),
-                    actions = {
-                        AnimatedNotificationBell(
-                            hasNewNotifications = hasPendingNotifications,
-                            notificationCount = notificationUiState.pendingCount,
-                            onClick = onViewEventsClick,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-                )
-            },
-            bottomBar = {
-                Button(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onLogoutClick()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary
-                    )
-                ) {
-                    Text(stringResource(R.string.logout))
-                }
-            }
-        ) { paddingValues ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(horizontal = 16.dp)
-            ) {
-                item {
-                    DashboardActions(
-                        onManageUsersClick = onManageUsersClick,
-                        onViewEventsClick = onViewEventsClick,
-                        onViewNotificationHistoryClick = onViewNotificationHistoryClick,
-                        context = context
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                uiState.groupedPanels.forEach { (clientDocName, clientPanels) ->
-                    item {
-                        Text(
-                            text = "Cliente: $clientDocName",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-                    }
-
-                    items(
-                        items = clientPanels,
-                        key = { panel -> "${panel.clientDocName}_${panel.documentName}" }
-                    ) { panel ->
-                        AdminPanelItem(panel)
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-        }
-    }
-    Log.d(TAG, "AdminDashboardScreen composition finished")
-}
-
-@Composable
-private fun DashboardActions(
-    onManageUsersClick: () -> Unit,
-    onViewEventsClick: () -> Unit,
-    onViewNotificationHistoryClick: () -> Unit,
-    context: android.content.Context
-) {
-    Log.d(TAG, "Rendering DashboardActions")
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp)
-    ) {
-        DashboardButton(
-            onClick = {
-                Log.d(TAG, "Manage Users button clicked")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onManageUsersClick()
-            },
-            text = stringResource(R.string.manage_clients)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        DashboardButton(
-            onClick = {
-                Log.d(TAG, "View Events button clicked")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onViewEventsClick()
-            },
-            text = stringResource(R.string.view_events)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        DashboardButton(
-            onClick = {
-                Log.d(TAG, "View Notification History button clicked")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onViewNotificationHistoryClick()
-            },
-            text = stringResource(R.string.view_notification_history)
-        )
-    }
-}
-
-@Composable
-private fun DashboardButton(onClick: () -> Unit, text: String) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(text)
-    }
-}
-
-@Composable
-fun AdminPanelItem(panel: Panel) {
-    Log.d(TAG, "Rendering AdminPanelItem: ${panel.name}, Status: ${panel.overallStatus}")
-    var expanded by remember { mutableStateOf(false) }
-    val hasIssues = panel.overallStatus != "OK"
-    val statusColor = if (hasIssues) Color.Red else Color.Green
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize()
-            .clickable { expanded = !expanded },
-        colors = CardDefaults.cardColors(
-            containerColor = if (hasIssues) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
-            Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "IP: ${panel.ESP32_IP}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "Cliente: ${panel.clientDocName}", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = "Estado: ${panel.overallStatus}",
-                color = statusColor,
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Detalles de relays:", style = MaterialTheme.typography.bodyMedium)
-                panel.relays.forEach { relay ->
-                    AdminRelayStatus(relay)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AdminRelayStatus(relay: Relay) {
-    Log.d(TAG, "Rendering AdminRelayStatus: ${relay.name}, Status: ${relay.status}")
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = relay.name, style = MaterialTheme.typography.bodySmall)
-        Text(
-            text = relay.status,
-            color = when (relay.status) {
-                "OK" -> Color.Green
-                "DISC" -> Color.Red
-                else -> Color.Yellow
-            },
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
-
-==================================================
-
-### screens\ClientManagementScreen.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.screens
-
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Client
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.UserData
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
-import com.pqsolutions.hdd_monitor.presentation.components.ClientDetailContent
-import com.pqsolutions.hdd_monitor.presentation.components.ClientDialog
-import com.pqsolutions.hdd_monitor.presentation.components.ClientList
-import com.pqsolutions.hdd_monitor.presentation.components.LoadingContent
-import com.pqsolutions.hdd_monitor.presentation.components.PanelDialog
-import com.pqsolutions.hdd_monitor.presentation.components.PanelList
-import com.pqsolutions.hdd_monitor.presentation.components.RefreshableContent
-import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
-import com.pqsolutions.hdd_monitor.presentation.components.UserDialog
-import com.pqsolutions.hdd_monitor.presentation.components.UserList
-import com.pqsolutions.hdd_monitor.presentation.state.ClientManagementState
-import com.pqsolutions.hdd_monitor.presentation.state.ClientOperation
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.ClientManagementViewModel
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ClientManagementScreen(
-    viewModel: ClientManagementViewModel = hiltViewModel(),
-    onBackClick: () -> Unit,
-    hasPendingNotifications: Boolean,
-    onNotificationClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val state by viewModel.state.collectAsState()
-    val context = LocalContext.current
-    val listState = rememberLazyListState()
-    var showDeleteConfirmation by remember { mutableStateOf<Any?>(null) }
-    var editingClient by remember { mutableStateOf<Client?>(null) }
-
-    val showEmptyState by remember {
-        derivedStateOf {
-            when (state.currentScreen) {
-                ClientManagementState.Screen.ClientList -> state.clients.isEmpty()
-                ClientManagementState.Screen.PanelList -> state.panels.isEmpty()
-                ClientManagementState.Screen.UserList -> state.users.isEmpty()
-                else -> false
-            } && !state.isLoading && state.error == null
-        }
-    }
-
-    HDD1_2Theme {
-        Scaffold(
-            topBar = {
-                ScreenTopBar(
-                    title = when (state.currentScreen) {
-                        ClientManagementState.Screen.ClientList ->
-                            stringResource(R.string.client_management)
-                        ClientManagementState.Screen.ClientDetail ->
-                            state.selectedClient?.name ?: ""
-                        ClientManagementState.Screen.PanelList ->
-                            stringResource(R.string.manage_panels)
-                        ClientManagementState.Screen.UserList ->
-                            stringResource(R.string.manage_users)
-                        else -> ""
-                    },
-                    // Quitar la condición y siempre mostrar el botón de retroceso
-                    onBackClick = onBackClick,  // Mostrar siempre la flecha de retroceso
-                    actions = {
-                        AnimatedNotificationBell(
-                            hasNewNotifications = hasPendingNotifications,
-                            onClick = onNotificationClick
-                        )
-
-                        when (state.currentScreen) {
-                            ClientManagementState.Screen.ClientList -> {
-                                IconButton(
-                                    onClick = {
-                                        performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
-                                        viewModel.showCreateClientDialog()
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = stringResource(R.string.new_client)
-                                    )
-                                }
-                            }
-                            ClientManagementState.Screen.PanelList -> {
-                                IconButton(
-                                    onClick = {
-                                        performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
-                                        viewModel.showCreatePanelDialog()
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = stringResource(R.string.new_panel)
-                                    )
-                                }
-                            }
-                            ClientManagementState.Screen.UserList -> {
-                                IconButton(
-                                    onClick = {
-                                        performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
-                                        viewModel.showCreateUserDialog()
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = stringResource(R.string.new_user)
-                                    )
-                                }
-                            }
-                            else -> {}
-                        }
-                    }
-                )
-            }
-        ) { paddingValues ->
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                AnimatedContent(state.currentScreen) { screen ->
-                    when (screen) {
-                        ClientManagementState.Screen.ClientList -> {
-                            RefreshableContent(
-                                isRefreshing = state.isLoading,
-                                onRefresh = { viewModel.loadClients() },
-                                listState = listState
-                            ) {
-                                LoadingContent(
-                                    isLoading = state.isLoading,
-                                    isEmpty = showEmptyState,
-                                    error = state.error,
-                                    onRetry = { viewModel.loadClients() },
-                                    emptyContent = { EmptyStateMessage(ClientManagementState.Screen.ClientList) }
-                                ) {
-                                    ClientList(
-                                        clients = state.clients,
-                                        onClientSelect = { viewModel.selectClient(it) },
-                                        onEditClient = { client ->
-                                            performHapticFeedback(context)
-                                            playSoundEffect(context, R.raw.button_click)
-                                            editingClient = client
-                                        },
-                                        onDeleteClient = { client ->
-                                            showDeleteConfirmation = client
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        ClientManagementState.Screen.ClientDetail -> {
-                            state.selectedClient?.let { client ->
-                                ClientDetailContent(
-                                    client = client,
-                                    panelCount = state.panels.size,
-                                    userCount = state.users.size,
-                                    onManagePanels = { viewModel.showPanelList() },
-                                    onManageUsers = { viewModel.showUserList() }
-                                )
-                            }
-                        }
-                        ClientManagementState.Screen.PanelList -> {
-                            RefreshableContent(
-                                isRefreshing = state.isLoading,
-                                onRefresh = { state.selectedClient?.let { viewModel.selectClient(it) } },
-                                listState = listState
-                            ) {
-                                LoadingContent(
-                                    isLoading = state.isLoading,
-                                    isEmpty = showEmptyState,
-                                    error = state.error,
-                                    onRetry = { state.selectedClient?.let { viewModel.selectClient(it) } },
-                                    emptyContent = { EmptyStateMessage(ClientManagementState.Screen.PanelList) }
-                                ) {
-                                    PanelList(
-                                        panels = state.panels,
-                                        onPanelSelect = { /* TODO: Implementar vista detalle */ },
-                                        onEditPanel = { panel ->
-                                            performHapticFeedback(context)
-                                            playSoundEffect(context, R.raw.button_click)
-                                            viewModel.showEditPanelDialog(panel)
-                                        },
-                                        onDeletePanel = { panel ->
-                                            showDeleteConfirmation = panel
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        ClientManagementState.Screen.UserList -> {
-                            RefreshableContent(
-                                isRefreshing = state.isLoading,
-                                onRefresh = { state.selectedClient?.let { viewModel.selectClient(it) } },
-                                listState = listState
-                            ) {
-                                LoadingContent(
-                                    isLoading = state.isLoading,
-                                    isEmpty = showEmptyState,
-                                    error = state.error,
-                                    onRetry = { state.selectedClient?.let { viewModel.selectClient(it) } },
-                                    emptyContent = { EmptyStateMessage(ClientManagementState.Screen.UserList) }
-                                ) {
-                                    UserList(
-                                        users = state.users,
-                                        onEditClick = { user ->
-                                            performHapticFeedback(context)
-                                            playSoundEffect(context, R.raw.button_click)
-                                            viewModel.showEditUserDialog(user)
-                                        },
-                                        onDeleteClick = { user ->
-                                            showDeleteConfirmation = user
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        else -> {}
-                    }
-                }
-            }
-        }
-
-        // Diálogos
-        HandleDialogs(
-            state = state,
-            showDeleteConfirmation = showDeleteConfirmation,
-            onDismissDelete = { showDeleteConfirmation = null },
-            onConfirmDelete = { target ->
-                when (target) {
-                    is Client -> viewModel.deleteClient(target)
-                    is Panel -> viewModel.deletePanel(target)
-                    is UserData -> viewModel.deleteUser(target)
-                }
-                showDeleteConfirmation = null
-            },
-            viewModel = viewModel
-        )
-
-        // Diálogo de edición de cliente
-        if (editingClient != null) {
-            ClientEditDialog(
-                client = editingClient!!,
-                onDismiss = { editingClient = null },
-                onConfirm = { updatedClient ->
-                    viewModel.updateClient(updatedClient)
-                    editingClient = null
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun AnimatedContent(
-    screen: ClientManagementState.Screen,
-    content: @Composable (ClientManagementState.Screen) -> Unit
-) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn() + slideInHorizontally(),
-        exit = fadeOut() + slideOutHorizontally()
-    ) {
-        content(screen)
-    }
-}
-
-@Composable
-private fun ClientEditDialog(
-    client: Client,
-    onDismiss: () -> Unit,
-    onConfirm: (Client) -> Unit
-) {
-    var name by remember { mutableStateOf(client.name) }
-    val context = LocalContext.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.edit_client)) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.client_name)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onConfirm(client.copy(name = name))
-                }
-            ) {
-                Text(stringResource(R.string.save))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
-                    onDismiss()
-                }
-            ) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
-}
-
-@Composable
-private fun HandleDialogs(
-    state: ClientManagementState,
-    showDeleteConfirmation: Any?,
-    onDismissDelete: () -> Unit,
-    onConfirmDelete: (Any) -> Unit,
-    viewModel: ClientManagementViewModel
-) {
-    val context = LocalContext.current
-
-    // Diálogo de eliminación
-    if (showDeleteConfirmation != null) {
-        AlertDialog(
-            onDismissRequest = onDismissDelete,
-            title = { Text(stringResource(R.string.confirm_deletion)) },
-            text = {
-                Text(
-                    when (showDeleteConfirmation) {
-                        is Client -> stringResource(R.string.info_confirm_delete_client)
-                        is Panel -> stringResource(R.string.info_confirm_delete_panel)
-                        is UserData -> stringResource(R.string.info_confirm_delete_user)
-                        else -> stringResource(R.string.delete_confirmation_message)
-                    }
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onConfirmDelete(showDeleteConfirmation)
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text(stringResource(R.string.delete))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onDismissDelete()
-                    }
-                ) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        )
-    }
-
-    // Diálogo de panel
-    if (state.showPanelDialog) {
-        PanelDialog(
-            panel = state.selectedPanel,
-            onDismiss = { viewModel.dismissPanelDialog() },
-            onConfirm = { panel ->
-                if (state.selectedPanel == null) {
-                    viewModel.createPanel(panel)
-                } else {
-                    viewModel.updatePanel(panel)
-                }
-            }
-        )
-    }
-
-    // Diálogo de usuario
-    if (state.showUserDialog) {
-        UserDialog(
-            user = state.selectedUser,
-            clientDocName = state.selectedClient?.documentName ?: "",
-            onDismiss = { viewModel.dismissUserDialog() },
-            onConfirm = { userData ->
-                if (state.selectedUser == null) {
-                    viewModel.createUser(userData)
-                } else {
-                    viewModel.updateUser(userData)
-                }
-            }
-        )
-    }
-
-    // Diálogo de cliente
-    if (state.showClientDialog) {
-        ClientDialog(
-            onDismiss = { viewModel.dismissClientDialog() },
-            onConfirm = { clientName ->
-                viewModel.createClient(Client(documentName = "", name = clientName))
-            }
-        )
-    }
-
-    // Diálogo de operación en progreso
-    if (state.currentOperation is ClientOperation.Loading) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text(stringResource(R.string.please_wait)) },
-            text = { CircularProgressIndicator() },
-            confirmButton = { }
-        )
-    }
-}
-
-@Composable
-private fun EmptyStateMessage(screen: ClientManagementState.Screen) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = when (screen) {
-                ClientManagementState.Screen.ClientList -> stringResource(R.string.no_clients)
-                ClientManagementState.Screen.PanelList -> stringResource(R.string.no_panels)
-                ClientManagementState.Screen.UserList -> stringResource(R.string.no_users)
-                else -> stringResource(R.string.no_data_available)
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-==================================================
-
-### screens\EventScreen.kt ###
+### presentation\screens\EventScreen.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.screens
 
@@ -3080,9 +1377,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -3223,19 +1518,6 @@ fun EventScreen(
                         }
                     }
                 }
-
-                // Botón flotante de actualizar siempre visible en la parte inferior derecha
-                FloatingActionButton(
-                    onClick = { viewModel.loadEvents() },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = "Actualizar"
-                    )
-                }
             }
 
             if (state.showDialog) {
@@ -3319,466 +1601,13 @@ private fun launchWhatsApp(context: android.content.Context, event: Event) {
 
 ==================================================
 
-### screens\NotificationHistoryScreen.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.screens
-
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Notification
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
-import com.pqsolutions.hdd_monitor.presentation.components.LoadingContent
-import com.pqsolutions.hdd_monitor.presentation.components.RefreshableContent
-import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationHistoryViewModel
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
-
-private const val TAG = "NotificationHistoryScreen"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun NotificationHistoryScreen(
-    viewModel: NotificationHistoryViewModel = hiltViewModel(),
-    notificationViewModel: NotificationViewModel = hiltViewModel(),
-    onBackClick: () -> Unit,
-    hasPendingNotifications: Boolean,
-    onNotificationClick: () -> Unit
-) {
-    val uiState by viewModel.uiState.collectAsState()
-    val notificationState by notificationViewModel.uiState.collectAsState()
-    val listState = rememberLazyListState()
-
-    val showEmptyState by remember {
-        derivedStateOf { uiState.notifications.isEmpty() && !uiState.isLoading && uiState.error == null }
-    }
-
-    HDD1_2Theme {
-        Scaffold(
-            topBar = {
-                ScreenTopBar(
-                    title = stringResource(R.string.notification_history_title),
-                    onBackClick = onBackClick,
-                    actions = {
-                        AnimatedNotificationBell(
-                            hasNewNotifications = hasPendingNotifications,
-                            notificationCount = notificationState.pendingCount,
-                            onClick = onNotificationClick
-                        )
-                    }
-                )
-            }
-        ) { paddingValues ->
-            RefreshableContent(
-                isRefreshing = uiState.isLoading,
-                onRefresh = { viewModel.refreshNotifications() },
-                listState = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                LoadingContent(
-                    isLoading = uiState.isLoading,
-                    isEmpty = showEmptyState,
-                    error = uiState.error,
-                    onRetry = { viewModel.refreshNotifications() },
-                    emptyContent = { EmptyNotificationsContent() }
-                ) {
-                    NotificationsList(
-                        notifications = uiState.notifications
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun EmptyNotificationsContent() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = stringResource(R.string.no_notifications),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun NotificationsList(
-    notifications: List<Notification>
-) {
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(16.dp)
-    ) {
-        items(
-            items = notifications,
-            key = { notification -> "${notification.clientDocName}_${notification.documentName}" }
-        ) { notification ->
-            NotificationCard(notification = notification)
-        }
-    }
-}
-
-@Composable
-private fun NotificationCard(
-    notification: Notification
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth()
-        ) {
-            Text(
-                text = notification.message,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(
-                        R.string.field_panel_id,
-                        notification.panelDocName
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = notification.date_time,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.field_relay, notification.relayName),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-==================================================
-
-### screens\UserDashboardScreen.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.screens
-
-import android.util.Log
-import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.Relay
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
-import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
-import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
-
-private const val TAG = "UserDashboardScreen"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun UserDashboardScreen(
-    viewModel: DashboardViewModel = hiltViewModel(),
-    notificationViewModel: NotificationViewModel = hiltViewModel(),
-    onLogoutClick: () -> Unit,
-    onViewEventsClick: () -> Unit,
-    onViewNotificationHistoryClick: () -> Unit,
-    hasPendingNotifications: Boolean
-) {
-    Log.d(TAG, "UserDashboardScreen composition started")
-
-    val uiState by viewModel.uiState.collectAsState()
-    val notificationUiState by notificationViewModel.uiState.collectAsState()
-    val context = LocalContext.current
-    val listState = rememberLazyListState()
-
-    HDD1_2Theme {
-        Scaffold(
-            topBar = {
-                ScreenTopBar(
-                    title = stringResource(R.string.user_dashboard_title),
-                    actions = {
-                        AnimatedNotificationBell(
-                            hasNewNotifications = hasPendingNotifications,
-                            notificationCount = notificationUiState.pendingCount,
-                            onClick = onViewEventsClick
-                        )
-                    }
-                )
-            },
-            bottomBar = {
-                Button(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        onLogoutClick()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary
-                    )
-                ) {
-                    Text(stringResource(R.string.logout))
-                }
-            }
-        ) { paddingValues ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(horizontal = 16.dp),
-                state = listState
-            ) {
-                item {
-                    DashboardActions(
-                        onViewEventsClick = onViewEventsClick,
-                        onViewNotificationHistoryClick = onViewNotificationHistoryClick,
-                        context = context
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                if (uiState.panels.isEmpty()) {
-                    item {
-                        EmptyPanelsContent()
-                    }
-                } else {
-                    items(
-                        items = uiState.panels,
-                        key = { panel -> "${panel.clientDocName}_${panel.documentName}" }
-                    ) { panel ->
-                        UserPanelItem(panel)
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-        }
-    }
-
-    Log.d(TAG, "UserDashboardScreen composition finished")
-}
-
-@Composable
-private fun DashboardActions(
-    onViewEventsClick: () -> Unit,
-    onViewNotificationHistoryClick: () -> Unit,
-    context: android.content.Context
-) {
-    Log.d(TAG, "Rendering DashboardActions")
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp)
-    ) {
-        DashboardButton(
-            onClick = {
-                Log.d(TAG, "View Events button clicked")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onViewEventsClick()
-            },
-            text = stringResource(R.string.view_events)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        DashboardButton(
-            onClick = {
-                Log.d(TAG, "View Notification History button clicked")
-                performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
-                onViewNotificationHistoryClick()
-            },
-            text = stringResource(R.string.view_notification_history)
-        )
-    }
-}
-
-@Composable
-private fun DashboardButton(onClick: () -> Unit, text: String) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(text)
-    }
-}
-
-@Composable
-private fun EmptyPanelsContent() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = stringResource(R.string.no_panels_available),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun UserPanelItem(panel: Panel) {
-    Log.d(TAG, "Rendering UserPanelItem: ${panel.name}, Status: ${panel.overallStatus}")
-    var expanded by remember { mutableStateOf(false) }
-    val hasIssues = panel.overallStatus != "OK"
-    val statusColor = if (hasIssues) Color.Red else Color.Green
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize()
-            .clickable { expanded = !expanded },
-        colors = CardDefaults.cardColors(
-            containerColor = if (hasIssues) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
-            Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = "Estado: ${panel.overallStatus}",
-                color = statusColor,
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Detalles de relays:", style = MaterialTheme.typography.bodyMedium)
-                panel.relays.forEach { relay ->
-                    UserRelayStatus(relay)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun UserRelayStatus(relay: Relay) {
-    Log.d(TAG, "Rendering UserRelayStatus: ${relay.name}, Status: ${relay.status}")
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = relay.name, style = MaterialTheme.typography.bodySmall)
-        Text(
-            text = relay.status,
-            color = when (relay.status) {
-                "OK" -> Color.Green
-                "DISC" -> Color.Red
-                else -> Color.Yellow
-            },
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
-
-==================================================
-
-### screens\UserManagementScreen.kt ###
+### presentation\screens\UserManagementScreen.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -3799,7 +1628,6 @@ import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 import com.pqsolutions.hdd_monitor.presentation.components.ClientDialog
 import com.pqsolutions.hdd_monitor.presentation.components.LoadingContent
-import com.pqsolutions.hdd_monitor.presentation.components.RefreshableContent
 import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
 import com.pqsolutions.hdd_monitor.presentation.components.UserDialog
 import com.pqsolutions.hdd_monitor.presentation.components.UserList
@@ -3817,7 +1645,6 @@ fun UserManagementScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val listState = rememberLazyListState()
 
     Scaffold(
         topBar = {
@@ -3850,43 +1677,37 @@ fun UserManagementScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            RefreshableContent(
-                isRefreshing = uiState.isLoading,
-                onRefresh = { /* Implementar la función de refresh */ },
-                listState = listState
-            ) {
-                LoadingContent(
-                    isLoading = uiState.isLoading,
-                    isEmpty = uiState.users.isEmpty() && !uiState.isLoading,
-                    error = uiState.error,
-                    onRetry = { /* Implementar función de retry */ },
-                    emptyContent = {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = stringResource(R.string.no_users),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+            LoadingContent(
+                isLoading = uiState.isLoading,
+                isEmpty = uiState.users.isEmpty() && !uiState.isLoading,
+                error = uiState.error,
+                onRetry = { viewModel.clearError() },
+                emptyContent = {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.no_users),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                ) {
-                    UserList(
-                        users = uiState.users,
-                        onEditClick = { user ->
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            viewModel.showEditUserDialog(user)
-                        },
-                        onDeleteClick = { user ->
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            viewModel.deleteUser(user)
-                        }
-                    )
                 }
+            ) {
+                UserList(
+                    users = uiState.users,
+                    onEditClick = { user ->
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
+                        viewModel.showEditUserDialog(user)
+                    },
+                    onDeleteClick = { user ->
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
+                        viewModel.deleteUser(user)
+                    }
+                )
             }
         }
     }
@@ -3932,656 +1753,208 @@ fun UserManagementScreen(
 
 ==================================================
 
-### viewmodel\ClientManagementViewModel.kt ###
+### presentation\state\EventViewState.kt ###
 
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
+package com.pqsolutions.hdd_monitor.presentation.state
 
-import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.pqsolutions.hdd_monitor.data.Client
+import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.PanelRepository
-import com.pqsolutions.hdd_monitor.data.UserData
-import com.pqsolutions.hdd_monitor.data.UserRepository
-import com.pqsolutions.hdd_monitor.presentation.state.ClientManagementState
-import com.pqsolutions.hdd_monitor.presentation.state.ClientOperation
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import javax.inject.Inject
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 
-@HiltViewModel
-class ClientManagementViewModel @Inject constructor(
-    private val userRepository: UserRepository,
-    private val panelRepository: PanelRepository
-) : ViewModel() {
+sealed class EventOperation {
+    object None : EventOperation()
+    object Loading : EventOperation()
+    data class Success(val message: String? = null) : EventOperation()
+    data class Error(val message: String) : EventOperation()
 
-    private val _state = MutableStateFlow(ClientManagementState())
-    val state: StateFlow<ClientManagementState> = _state.asStateFlow()
+    fun isLoading(): Boolean = this is Loading
+    fun isError(): Boolean = this is Error
+    fun isSuccess(): Boolean = this is Success
+}
 
-    init {
-        loadClients()
+sealed class EventFilter {
+    object All : EventFilter()
+    object Programmed : EventFilter()
+    object Accepted : EventFilter()
+    data class ByClient(val clientDocName: String) : EventFilter()
+
+    override fun toString(): String = when (this) {
+        is All -> "Todos"
+        is Programmed -> "Programados"
+        is Accepted -> "Aceptados"
+        is ByClient -> "Cliente: $clientDocName"
+    }
+}
+
+data class EventSortOption(
+    val field: SortField,
+    val direction: SortDirection
+) {
+    enum class SortField {
+        DATE,
+        STATUS,
+        TITLE
     }
 
-    fun loadClients() {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(isLoading = true, error = null) }
-                val result = userRepository.getClients()
-                result.fold(
-                    onSuccess = { clients ->
-                        _state.update {
-                            it.copy(
-                                clients = clients,
-                                isLoading = false,
-                                error = null,
-                                lastUpdate = System.currentTimeMillis()
-                            )
-                        }
-                        Log.d(TAG, "Loaded ${clients.size} clients successfully")
-                    },
-                    onFailure = { error ->
-                        handleError("Error loading clients", error)
-                    }
-                )
-            } catch (e: Exception) {
-                handleError("Unexpected error loading clients", e)
-            }
-        }
-    }
-
-    fun selectClient(client: Client) {
-        _state.update {
-            it.copy(
-                selectedClient = client,
-                currentScreen = ClientManagementState.Screen.ClientDetail
-            )
-        }
-        loadPanelsAndUsers(client.documentName)
-    }
-
-    private fun loadPanelsAndUsers(clientDocName: String) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(isLoading = true) }
-
-                // Cargar paneles
-                panelRepository.getPanels(clientDocName).collect { panels ->
-                    // Cargar usuarios
-                    val usersResult = userRepository.getUsers()
-                    usersResult.fold(
-                        onSuccess = { allUsers ->
-                            // Filtrar usuarios por clientDocName sin verificar prefijo
-                            val clientUsers = allUsers.filter {
-                                it.clientDocName == clientDocName
-                            }
-
-                            _state.update {
-                                it.copy(
-                                    isLoading = false,
-                                    panels = panels,
-                                    users = clientUsers,
-                                    error = null
-                                )
-                            }
-
-                            Log.d("ClientManagementVM", "Loaded ${clientUsers.size} users for client $clientDocName")
-                        },
-                        onFailure = { error ->
-                            handleError("Error loading users", error)
-                        }
-                    )
-                }
-            } catch (e: Exception) {
-                handleError("Error loading panels and users", e)
-            }
-        }
-    }
-
-    fun createClient(client: Client) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                userRepository.createClient(client)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Cliente creado exitosamente"),
-                                showClientDialog = false
-                            )
-                        }
-                        loadClients()
-                    }
-                    .onFailure { error ->
-                        handleError("Error creating client", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error creating client", e)
-            }
-        }
-    }
-
-    fun updateClient(client: Client) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                userRepository.updateClient(client)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Cliente actualizado exitosamente"),
-                                showClientDialog = false
-                            )
-                        }
-                        loadClients()
-                    }
-                    .onFailure { error ->
-                        handleError("Error updating client", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error updating client", e)
-            }
-        }
-    }
-
-    fun deleteClient(client: Client) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                userRepository.deleteClient(client.documentName)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Cliente eliminado exitosamente"),
-                                selectedClient = null,
-                                currentScreen = ClientManagementState.Screen.ClientList
-                            )
-                        }
-                        loadClients()
-                    }
-                    .onFailure { error ->
-                        handleError("Error deleting client", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error deleting client", e)
-            }
-        }
-    }
-
-    fun createPanel(panel: Panel) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                val clientDocName = state.value.selectedClient?.documentName
-                    ?: throw IllegalStateException("No client selected")
-
-                panelRepository.createNewPanel(clientDocName, panel)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Panel creado exitosamente"),
-                                showPanelDialog = false
-                            )
-                        }
-                        loadPanelsAndUsers(clientDocName)
-                    }
-                    .onFailure { error ->
-                        handleError("Error creating panel", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error creating panel", e)
-            }
-        }
-    }
-
-    fun updatePanel(panel: Panel) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                val clientDocName = state.value.selectedClient?.documentName
-                    ?: throw IllegalStateException("No client selected")
-
-                panelRepository.updatePanel(clientDocName, panel)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Panel actualizado exitosamente"),
-                                showPanelDialog = false
-                            )
-                        }
-                        loadPanelsAndUsers(clientDocName)
-                    }
-                    .onFailure { error ->
-                        handleError("Error updating panel", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error updating panel", e)
-            }
-        }
-    }
-
-    fun deletePanel(panel: Panel) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                val clientDocName = state.value.selectedClient?.documentName
-                    ?: throw IllegalStateException("No client selected")
-
-                panelRepository.deletePanel(clientDocName, panel.documentName)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Panel eliminado exitosamente")
-                            )
-                        }
-                        loadPanelsAndUsers(clientDocName)
-                    }
-                    .onFailure { error ->
-                        handleError("Error deleting panel", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error deleting panel", e)
-            }
-        }
-    }
-
-    fun createUser(userData: UserData) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                userRepository.createUser(userData)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Usuario creado exitosamente"),
-                                showUserDialog = false
-                            )
-                        }
-                        loadPanelsAndUsers(userData.clientDocName)
-                    }
-                    .onFailure { error ->
-                        handleError("Error creating user", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error creating user", e)
-            }
-        }
-    }
-
-    fun updateUser(userData: UserData) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                userRepository.updateUser(userData)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Usuario actualizado exitosamente"),
-                                showUserDialog = false
-                            )
-                        }
-                        loadPanelsAndUsers(userData.clientDocName)
-                    }
-                    .onFailure { error ->
-                        handleError("Error updating user", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error updating user", e)
-            }
-        }
-    }
-
-    fun deleteUser(userData: UserData) {
-        viewModelScope.launch {
-            try {
-                _state.update { it.copy(currentOperation = ClientOperation.Loading) }
-
-                userRepository.deleteUser(userData.documentName, userData.clientDocName)
-                    .onSuccess {
-                        _state.update {
-                            it.copy(
-                                currentOperation = ClientOperation.Success("Usuario eliminado exitosamente")
-                            )
-                        }
-                        loadPanelsAndUsers(userData.clientDocName)
-                    }
-                    .onFailure { error ->
-                        handleError("Error deleting user", error)
-                    }
-            } catch (e: Exception) {
-                handleError("Unexpected error deleting user", e)
-            }
-        }
-    }
-
-    fun showPanelList() {
-        _state.update { it.copy(currentScreen = ClientManagementState.Screen.PanelList) }
-    }
-
-    fun showUserList() {
-        _state.update { it.copy(currentScreen = ClientManagementState.Screen.UserList) }
-    }
-
-    fun showCreatePanelDialog() {
-        _state.update {
-            it.copy(
-                showPanelDialog = true,
-                selectedPanel = null
-            )
-        }
-    }
-
-    fun showEditPanelDialog(panel: Panel) {
-        _state.update {
-            it.copy(
-                showPanelDialog = true,
-                selectedPanel = panel
-            )
-        }
-    }
-
-    fun dismissPanelDialog() {
-        _state.update {
-            it.copy(
-                showPanelDialog = false,
-                selectedPanel = null
-            )
-        }
-    }
-
-    fun showCreateUserDialog() {
-        _state.update {
-            it.copy(
-                showUserDialog = true,
-                selectedUser = null
-            )
-        }
-    }
-
-    fun showEditUserDialog(user: UserData) {
-        _state.update {
-            it.copy(
-                showUserDialog = true,
-                selectedUser = user
-            )
-        }
-    }
-
-    fun dismissUserDialog() {
-        _state.update {
-            it.copy(
-                showUserDialog = false,
-                selectedUser = null
-            )
-        }
-    }
-
-    fun showCreateClientDialog() {
-        _state.update { it.copy(showClientDialog = true) }
-    }
-
-    fun dismissClientDialog() {
-        _state.update { it.copy(showClientDialog = false) }
-    }
-
-    fun navigateBack() {
-        _state.update { state ->
-            when (state.currentScreen) {
-                ClientManagementState.Screen.ClientDetail -> state.copy(
-                    selectedClient = null,
-                    currentScreen = ClientManagementState.Screen.ClientList
-                )
-                ClientManagementState.Screen.PanelList,
-                ClientManagementState.Screen.UserList -> state.copy(
-                    currentScreen = ClientManagementState.Screen.ClientDetail
-                )
-                ClientManagementState.Screen.PanelDetail -> state.copy(
-                    currentScreen = ClientManagementState.Screen.PanelList
-                )
-                ClientManagementState.Screen.UserDetail -> state.copy(
-                    currentScreen = ClientManagementState.Screen.UserList
-                )
-                else -> state
-            }
-        }
-    }
-
-    private fun handleError(message: String, error: Throwable) {
-        Log.e(TAG, "$message: ${error.message}", error)
-        _state.update {
-            it.copy(
-                isLoading = false,
-                error = error.message ?: "Error desconocido",
-                currentOperation = ClientOperation.Error(error.message ?: "Error desconocido")
-            )
-        }
-    }
-
-    fun clearError() {
-        _state.update {
-            it.copy(
-                error = null,
-                currentOperation = ClientOperation.None
-            )
-        }
+    enum class SortDirection {
+        ASC,
+        DESC
     }
 
     companion object {
-        private const val TAG = "ClientManagementVM"
+        val DEFAULT = EventSortOption(SortField.DATE, SortDirection.DESC)
+    }
+
+    override fun toString(): String {
+        val fieldStr = when (field) {
+            SortField.DATE -> "Fecha"
+            SortField.STATUS -> "Estado"
+            SortField.TITLE -> "Título"
+        }
+        val dirStr = when (direction) {
+            SortDirection.ASC -> "↑"
+            SortDirection.DESC -> "↓"
+        }
+        return "$fieldStr $dirStr"
+    }
+}
+
+sealed class EventUIEvent {
+    data class ShowSnackbar(val message: String) : EventUIEvent()
+    data class Navigate(val route: String) : EventUIEvent()
+    object NavigateBack : EventUIEvent()
+    data class ShowDialog(val message: String) : EventUIEvent()
+    object DismissDialog : EventUIEvent()
+    object RefreshData : EventUIEvent()
+    data class ShowDatePicker(val currentDate: LocalDate?) : EventUIEvent()
+    data class ShowTimePicker(val currentTime: LocalTime?) : EventUIEvent()
+}
+
+sealed class EventDialogEvent {
+    data class TitleChanged(val title: String) : EventDialogEvent()
+    data class DescriptionChanged(val description: String) : EventDialogEvent()
+    data class DateSelected(val date: LocalDate) : EventDialogEvent()
+    data class TimeSelected(val time: LocalTime) : EventDialogEvent()
+    data class ClientSelected(val clientDocName: String) : EventDialogEvent()
+    data class PanelSelected(val panelDocName: String?) : EventDialogEvent()
+    data class MultipleClientsSelected(val clientDocNames: List<String>) : EventDialogEvent()
+    object ShowDatePicker : EventDialogEvent()
+    object ShowTimePicker : EventDialogEvent()
+    object Confirm : EventDialogEvent()
+    object Dismiss : EventDialogEvent()
+}
+
+data class EventViewState(
+    // Lista principal de eventos
+    val events: List<Event> = emptyList(),
+
+    // Datos relacionados
+    val clients: List<Client> = emptyList(),
+    val availablePanels: List<Panel> = emptyList(),
+
+    // Estados de carga y error
+    val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val error: String? = null,
+    val currentOperation: EventOperation = EventOperation.None,
+
+    // Estados del diálogo
+    val showDialog: Boolean = false,
+    val selectedEvent: Event? = null,
+    val selectedClients: List<String> = emptyList(), // Lista de nombres de documentos de clientes
+    val selectedClientForPanels: String? = null, // Nombre del documento del cliente seleccionado
+    val selectedPanelDocName: String? = null,
+
+    // Estados de fecha y hora
+    val currentDate: LocalDate? = null,
+    val currentTime: LocalTime? = null,
+
+    // Manejar el título y descripción de nuevos eventos
+    val newEventTitle: String = "",
+    val newEventDescription: String = "",
+
+    // Campo name dentro del documento panel
+    val selectedPanelName: String? = null,
+
+    // Estado de última actualización
+    val lastUpdate: Long = System.currentTimeMillis()
+) {
+    // Propiedades computadas
+    val hasEvents: Boolean
+        get() = events.isNotEmpty()
+
+    val hasError: Boolean
+        get() = error != null
+
+    val canCreateEvent: Boolean
+        get() = !isLoading && error == null
+
+    val hasSelectedClients: Boolean
+        get() = selectedClients.isNotEmpty()
+
+    val hasDateTime: Boolean
+        get() = currentDate != null && currentTime != null
+
+    val currentDateTime: LocalDateTime?
+        get() = if (hasDateTime) {
+            LocalDateTime.of(currentDate, currentTime)
+        } else null
+
+    val hasValidSelection: Boolean
+        get() = hasSelectedClients || selectedEvent != null
+
+    val selectedClientNames: List<String>
+        get() = clients
+            .filter { it.documentName in selectedClients }
+            .map { it.name }
+
+    fun isValid(): Boolean {
+        return !isLoading &&
+                error == null &&
+                currentOperation !is EventOperation.Error
+    }
+
+    companion object {
+        fun initial() = EventViewState()
+
+        fun loading() = EventViewState(isLoading = true)
+
+        fun success(events: List<Event>) = EventViewState(
+            events = events,
+            isLoading = false,
+            error = null
+        )
+
+        fun error(message: String) = EventViewState(
+            isLoading = false,
+            error = message
+        )
+    }
+
+    override fun toString(): String {
+        return "EventViewState(" +
+                "events=${events.size}, " +
+                "clients=${clients.size}, " +
+                "panels=${availablePanels.size}, " +
+                "loading=$isLoading, " +
+                "refreshing=$isRefreshing, " +
+                "error=$error, " +
+                "operation=$currentOperation, " +
+                "dialog=$showDialog, " +
+                "selectedClients=${selectedClients.size}, " +
+                "selectedClient=$selectedClientForPanels, " +
+                "hasDateTime=$hasDateTime, " +
+                "lastUpdate=$lastUpdate" +
+                ")"
     }
 }
 
 ==================================================
 
-### viewmodel\DashboardViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.google.firebase.firestore.FirebaseFirestore
-import com.pqsolutions.hdd_monitor.data.Panel
-import com.pqsolutions.hdd_monitor.data.PanelRepository
-import com.pqsolutions.hdd_monitor.data.UserRepository
-import com.pqsolutions.hdd_monitor.domain.model.UserRole
-import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-@HiltViewModel
-class DashboardViewModel @Inject constructor(
-    private val panelRepository: PanelRepository,
-    private val userRepository: UserRepository,
-    private val firestore: FirebaseFirestore
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(DashboardUiState())
-    val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
-
-    private var panelsJob: Job? = null
-
-    init {
-        Log.d(TAG, "DashboardViewModel initialized")
-        loadPanels()
-    }
-
-    fun loadPanels() {
-        Log.d(TAG, "loadPanels() called")
-        panelsJob?.cancel()
-        panelsJob = viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(isLoading = true, error = null) }
-                val currentUser = userRepository.getCurrentUser()
-                Log.d(TAG, "Current user: ${currentUser?.documentName}")
-
-                if (currentUser != null) {
-                    val clientDocName = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientDocName
-                    Log.d(TAG, "Fetching panels for client document: $clientDocName")
-
-                    panelRepository.getPanels(clientDocName).collect { panels ->
-                        Log.d(TAG, "Received ${panels.size} panels")
-
-                        // Validar los nombres de documentos
-                        val validPanels = panels.filter { panel ->
-                            val isValid = panel.documentName.startsWith(DocumentPrefixes.PANEL) &&
-                                    panel.clientDocName.startsWith(DocumentPrefixes.CLIENT)
-                            if (!isValid) {
-                                Log.w(TAG, "Invalid panel document found: ${panel.documentName}")
-                            }
-                            isValid
-                        }
-
-                        validPanels.forEach { panel ->
-                            Log.d(TAG, "Panel: ${panel.name} " +
-                                    "(DocName: ${panel.documentName}, " +
-                                    "ClientDoc: ${panel.clientDocName})")
-                            Log.d(TAG, "Relays: ${panel.relays}")
-                        }
-                        updatePanels(validPanels)
-                    }
-                } else {
-                    Log.e(TAG, "No authenticated user found")
-                    handleNoAuthenticatedUser()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading panels", e)
-                handleUnexpectedError(e)
-            }
-        }
-    }
-
-    private fun updatePanels(panels: List<Panel>) {
-        Log.d(TAG, "updatePanels called with ${panels.size} panels")
-        _uiState.update { currentState ->
-            Log.d(TAG, "Current state before update: $currentState")
-            val groupedPanels = panels.groupBy { it.clientDocName }
-            Log.d(TAG, "Grouped panels by client documents: ${groupedPanels.keys}")
-
-            val updatedPanels = panels.map { panel ->
-                val newStatus = determineOverallPanelStatus(panel)
-                Log.d(TAG, "Panel ${panel.name} new status: $newStatus")
-                panel.copy(overallStatus = newStatus)
-            }
-
-            Log.d(TAG, "Updated panels: ${updatedPanels.map { it.name to it.overallStatus }}")
-
-            val newState = currentState.copy(
-                isLoading = false,
-                panels = updatedPanels,
-                groupedPanels = groupedPanels,
-                error = null,
-                lastUpdate = System.currentTimeMillis()
-            )
-            Log.d(TAG, "New state: $newState")
-            newState
-        }
-        logPanelState("After updatePanels")
-    }
-
-    private fun determineOverallPanelStatus(panel: Panel): String {
-        Log.d(TAG, "Determining overall status for panel: ${panel.name}")
-        val discRelays = panel.relays.filter { it.status == "DISC" }
-        val status = when {
-            discRelays.isNotEmpty() -> discRelays.joinToString(", ") { it.name }
-            else -> "OK"
-        }
-        Log.d(TAG, "Overall status for panel ${panel.name}: $status")
-        return status
-    }
-
-    private fun handleNoAuthenticatedUser() {
-        Log.e(TAG, "No authenticated user found")
-        _uiState.update { it.copy(
-            isLoading = false,
-            error = "No se encontró usuario autenticado"
-        ) }
-    }
-
-    private fun handleUnexpectedError(e: Exception) {
-        Log.e(TAG, "Unexpected error: ${e.message}", e)
-        _uiState.update { it.copy(
-            isLoading = false,
-            error = e.message ?: "Error desconocido"
-        ) }
-    }
-
-    private fun logPanelState(context: String) {
-        Log.d(TAG, "$context - Panels state:")
-        _uiState.value.panels.forEach { panel ->
-            Log.d(TAG, "Panel ${panel.name} " +
-                    "(DocName: ${panel.documentName}, " +
-                    "ClientDoc: ${panel.clientDocName}) " +
-                    "Relays: ${panel.relays.size}")
-            panel.relays.forEach { relay ->
-                Log.d(TAG, "  Relay: ${relay.name}, " +
-                        "Status: ${relay.status}, " +
-                        "DateTime: ${relay.date_time}")
-            }
-        }
-    }
-
-    fun refreshPanels() {
-        Log.d(TAG, "refreshPanels() called")
-        loadPanels()
-    }
-
-    fun cancelCurrentJob() {
-        Log.d(TAG, "cancelCurrentJob() called")
-        panelsJob?.cancel()
-        panelsJob = null
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        cancelCurrentJob()
-        Log.d(TAG, "ViewModel cleared")
-    }
-
-    companion object {
-        private const val TAG = "DashboardViewModel"
-    }
-
-    data class DashboardUiState(
-        val isLoading: Boolean = true,
-        val panels: List<Panel> = emptyList(),
-        val groupedPanels: Map<String, List<Panel>> = emptyMap(),
-        val error: String? = null,
-        val lastUpdate: Long = System.currentTimeMillis()
-    ) {
-        override fun toString(): String {
-            return "DashboardUiState(" +
-                    "isLoading=$isLoading, " +
-                    "panels=${panels.size}, " +
-                    "groupedPanels=${groupedPanels.keys}, " +
-                    "error=$error, " +
-                    "lastUpdate=$lastUpdate" +
-                    ")"
-        }
-    }
-}
-
-==================================================
-
-### viewmodel\EventViewModel.kt ###
+### presentation\viewmodel\EventViewModel.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.viewmodel
 
@@ -5244,642 +2617,7 @@ class EventViewModel @Inject constructor(
 
 ==================================================
 
-### viewmodel\MainViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import com.google.firebase.messaging.FirebaseMessaging
-import com.pqsolutions.hdd_monitor.data.AuthRepository
-import com.pqsolutions.hdd_monitor.data.EventRepository
-import com.pqsolutions.hdd_monitor.data.PanelRepository
-import com.pqsolutions.hdd_monitor.data.UserData
-import com.pqsolutions.hdd_monitor.data.UserPreferences
-import com.pqsolutions.hdd_monitor.data.UserRepository
-import com.pqsolutions.hdd_monitor.presentation.state.MainUiEvent
-import com.pqsolutions.hdd_monitor.presentation.state.MainUiState
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import javax.inject.Inject
-
-@HiltViewModel
-class MainViewModel @Inject constructor(
-    private val authRepository: AuthRepository,
-    private val userRepository: UserRepository,
-    private val userPreferences: UserPreferences,
-    private val eventRepository: EventRepository,
-    private val panelRepository: PanelRepository,
-    @ApplicationContext private val context: Context
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(MainUiState())
-    val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
-
-    private val _hasPendingNotifications = MutableStateFlow(false)
-    val hasPendingNotifications: StateFlow<Boolean> = _hasPendingNotifications.asStateFlow()
-
-    private var sessionCheckJob: Job? = null
-
-    companion object {
-        private const val TAG = "MainViewModel"
-        const val PANEL_UPDATE_ACTION = "com.pqsolutions.hdd_monitor.PANEL_UPDATE"
-        const val CLIENT_MANAGEMENT_ROUTE = "client_management" // Nueva constante
-    }
-
-    private val panelUpdateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == PANEL_UPDATE_ACTION) {
-                val clientDocName = intent.getStringExtra("clientDocName")
-                val panelDocName = intent.getStringExtra("panelDocName")
-                val relayName = intent.getStringExtra("relayName")
-                val relayStatus = intent.getStringExtra("relayStatus")
-                if (clientDocName != null && panelDocName != null && relayName != null && relayStatus != null) {
-                    updateRelay(clientDocName, panelDocName, relayName, relayStatus)
-                }
-            }
-        }
-    }
-
-    init {
-        initializeViewModel()
-    }
-
-    private fun initializeViewModel() {
-        viewModelScope.launch {
-            val savedUser = userPreferences.getUserData()
-            if (savedUser != null && authRepository.isUserLoggedIn()) {
-                _uiState.value = _uiState.value.copy(
-                    isLoggedIn = true,
-                    userData = savedUser,
-                    currentRoute = "dashboard"
-                )
-                startSessionCheck()
-                checkPendingNotifications()
-            }
-
-            combineUserPreferences().collect { state ->
-                _uiState.value = state
-                Log.d(TAG, "UI State updated: $state")
-                if (state.isLoggedIn) {
-                    checkPendingNotifications()
-                }
-            }
-        }
-
-        registerPanelUpdateReceiver()
-        subscribeToTopic()
-    }
-
-    private fun startSessionCheck() {
-        sessionCheckJob?.cancel()
-        sessionCheckJob = viewModelScope.launch {
-            while (true) {
-                if (!authRepository.isUserLoggedIn()) {
-                    handleLogout()
-                    break
-                }
-                kotlinx.coroutines.delay(60000) // Verificar cada minuto
-            }
-        }
-    }
-
-    private fun combineUserPreferences() = combine(
-        userPreferences.isFirstLaunchFlow,
-        userPreferences.userDataFlow,
-        userPreferences.themeFlow,
-        userPreferences.languageFlow,
-        userPreferences.notificationsEnabledFlow
-    ) { isFirstLaunch, userData, theme, language, notificationsEnabled ->
-        MainUiState(
-            isFirstLaunch = isFirstLaunch,
-            isLoggedIn = userData != null,
-            userData = userData,
-            theme = theme,
-            language = language,
-            notificationsEnabled = notificationsEnabled,
-            currentRoute = determineRoute(isFirstLaunch, userData)
-        )
-    }
-
-    private fun determineRoute(isFirstLaunch: Boolean, userData: UserData?): String =
-        when {
-            isFirstLaunch -> "onboarding"
-            userData != null -> "dashboard"
-            else -> "login"
-        }
-
-    private fun registerPanelUpdateReceiver() {
-        LocalBroadcastManager.getInstance(context).registerReceiver(
-            panelUpdateReceiver,
-            IntentFilter(PANEL_UPDATE_ACTION)
-        )
-    }
-
-    private fun subscribeToTopic() {
-        viewModelScope.launch {
-            try {
-                FirebaseMessaging.getInstance().subscribeToTopic("relay-status").await()
-                Log.d(TAG, "Subscribed to relay-status topic")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to subscribe to relay-status topic", e)
-            }
-        }
-    }
-
-    fun updateRelay(clientDocName: String, panelDocName: String, relayName: String, relayStatus: String) {
-        viewModelScope.launch {
-            try {
-                panelRepository.updateRelayStatus(clientDocName, panelDocName, relayName, relayStatus)
-                Log.d(TAG, "Relay updated successfully: Panel=$panelDocName, Relay=$relayName, Status=$relayStatus")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating relay: ${e.message}", e)
-            }
-        }
-    }
-
-    fun onEvent(event: MainUiEvent) {
-        when (event) {
-            is MainUiEvent.Login -> login(event.email, event.password)
-            is MainUiEvent.Logout -> logout()
-            is MainUiEvent.FinishOnboarding -> finishOnboarding()
-            is MainUiEvent.SetTheme -> setTheme(event.theme)
-            is MainUiEvent.SetLanguage -> setLanguage(event.language)
-            is MainUiEvent.SetNotificationsEnabled -> setNotificationsEnabled(event.enabled)
-        }
-    }
-
-    private fun login(email: String, password: String) {
-        viewModelScope.launch {
-            try {
-                Log.d(TAG, "Attempting login for email: $email")
-                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-
-                authRepository.login(email, password).fold(
-                    onSuccess = { user ->
-                        handleLoginSuccess(user)
-                    },
-                    onFailure = { e ->
-                        handleLoginFailure(e)
-                    }
-                )
-            } catch (e: Exception) {
-                handleNetworkError(e)
-            }
-        }
-    }
-
-    private suspend fun handleLoginSuccess(user: UserData) {
-        userPreferences.setUserData(user)
-        updateFCMToken()
-        startSessionCheck()
-        _uiState.value = _uiState.value.copy(
-            isLoading = false,
-            isLoggedIn = true,
-            userData = user,
-            error = null,
-            currentRoute = "dashboard"
-        )
-        Log.d(TAG, "Login successful for user: ${user.name}")
-        checkPendingNotifications()
-    }
-
-    private fun handleLoginFailure(e: Throwable) {
-        Log.e(TAG, "Login failed: ${e.message}", e)
-        _uiState.value = _uiState.value.copy(
-            isLoading = false,
-            error = e.message ?: "Unknown error occurred"
-        )
-    }
-
-    private fun handleNetworkError(e: Exception) {
-        Log.e(TAG, "Network error during login: ${e.message}", e)
-        _uiState.value = _uiState.value.copy(
-            isLoading = false,
-            error = "Network error: ${e.message}"
-        )
-    }
-
-    private fun logout() {
-        viewModelScope.launch {
-            Log.d(TAG, "Attempting logout")
-            try {
-                authRepository.logout()
-                handleLogout()
-                Log.d(TAG, "Logout successful")
-            } catch (e: Exception) {
-                Log.e(TAG, "Logout failed: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
-            }
-        }
-    }
-
-    private fun handleLogout() {
-        viewModelScope.launch {
-            userPreferences.clearUserData()
-            sessionCheckJob?.cancel()
-            _uiState.value = _uiState.value.copy(
-                isLoggedIn = false,
-                userData = null,
-                error = null,
-                currentRoute = "login"
-            )
-            _hasPendingNotifications.value = false
-        }
-    }
-
-    private fun checkPendingNotifications() {
-        viewModelScope.launch {
-            uiState.value.userData?.let { user ->
-                eventRepository.getEventsFlow(user.clientDocName)
-                    .distinctUntilChanged()
-                    .collect { events ->
-                        val hasPending = events.any { it.status == "PROGRAMADO" }
-                        if (hasPending != _hasPendingNotifications.value) {
-                            _hasPendingNotifications.value = hasPending
-                            Log.d(TAG, "Pending notifications updated: $hasPending")
-                        }
-                    }
-            }
-        }
-    }
-
-    private fun finishOnboarding() {
-        viewModelScope.launch {
-            userPreferences.setFirstLaunch(false)
-        }
-    }
-
-    private fun setTheme(theme: String) {
-        viewModelScope.launch {
-            userPreferences.setTheme(theme)
-        }
-    }
-
-    private fun setLanguage(language: String) {
-        viewModelScope.launch {
-            userPreferences.setLanguage(language)
-        }
-    }
-
-    private fun setNotificationsEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            userPreferences.setNotificationsEnabled(enabled)
-        }
-    }
-
-    private suspend fun updateFCMToken() {
-        try {
-            val token = FirebaseMessaging.getInstance().token.await()
-            val currentUser = userRepository.getCurrentUser()
-            if (currentUser != null) {
-                userRepository.updateFcmToken(currentUser.documentName, token)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating FCM token: ${e.message}")
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        sessionCheckJob?.cancel()
-        LocalBroadcastManager.getInstance(context).unregisterReceiver(panelUpdateReceiver)
-    }
-}
-
-==================================================
-
-### viewmodel\NotificationHistoryViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.Notification
-import com.pqsolutions.hdd_monitor.data.NotificationRepository
-import com.pqsolutions.hdd_monitor.data.UserRepository
-import com.pqsolutions.hdd_monitor.domain.model.UserRole
-import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-private const val TAG = "NotificationHistoryVM"
-
-data class NotificationHistoryUiState(
-    val notifications: List<Notification> = emptyList(),
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val lastUpdate: Long = System.currentTimeMillis()
-)
-
-@HiltViewModel
-class NotificationHistoryViewModel @Inject constructor(
-    private val notificationRepository: NotificationRepository,
-    private val userRepository: UserRepository
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(NotificationHistoryUiState())
-    val uiState: StateFlow<NotificationHistoryUiState> = _uiState.asStateFlow()
-
-    init {
-        loadNotifications()
-    }
-
-    private fun loadNotifications() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            try {
-                val currentUser = userRepository.getCurrentUser()
-                if (currentUser != null) {
-                    val notificationsFlow = when (currentUser.role) {
-                        UserRole.ADMIN -> notificationRepository.getNotificationsFlow()
-                        else -> notificationRepository.getNotificationsFlow(currentUser.clientDocName)
-                    }
-
-                    notificationsFlow
-                        .catch { e ->
-                            Log.e(TAG, "Error loading notifications", e)
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    error = e.message ?: "Error al cargar notificaciones"
-                                )
-                            }
-                        }
-                        .collect { notifications ->
-                            // Verificar que todas las notificaciones tengan nombres de documento válidos
-                            val validNotifications = notifications.all { notification ->
-                                notification.documentName.startsWith(DocumentPrefixes.NOTIFICATION) &&
-                                        notification.documentName.contains(notification.clientDocName)
-                            }
-
-                            if (!validNotifications) {
-                                Log.w(TAG, "Se encontraron notificaciones con nombres de documento inválidos")
-                            }
-
-                            // Ordenar las notificaciones por fecha, las más recientes primero
-                            val sortedNotifications = notifications
-                                .sortedByDescending { it.date_time }
-                                .distinctBy { "${it.clientDocName}_${it.documentName}" }
-
-                            _uiState.update {
-                                it.copy(
-                                    notifications = sortedNotifications,
-                                    isLoading = false,
-                                    error = null,
-                                    lastUpdate = System.currentTimeMillis()
-                                )
-                            }
-                            Log.d(TAG, "Notifications loaded: ${sortedNotifications.size}")
-                            sortedNotifications.forEach { notification ->
-                                Log.d(
-                                    TAG, "Notification loaded - " +
-                                            "Doc: ${notification.documentName}, " +
-                                            "Client: ${notification.clientDocName}, " +
-                                            "Panel: ${notification.panelDocName}"
-                                )
-                            }
-                        }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            error = "No se encontró usuario actual"
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in loadNotifications", e)
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Error desconocido al cargar notificaciones"
-                    )
-                }
-            }
-        }
-    }
-
-    fun refreshNotifications() {
-        Log.d(TAG, "Refreshing notifications")
-        loadNotifications()
-    }
-
-    fun clearError() {
-        _uiState.update { it.copy(error = null) }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        Log.d(TAG, "ViewModel cleared")
-    }
-}
-
-==================================================
-
-### viewmodel\NotificationViewModel.kt ###
-
-package com.pqsolutions.hdd_monitor.presentation.viewmodel
-
-import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.pqsolutions.hdd_monitor.data.Event
-import com.pqsolutions.hdd_monitor.data.EventRepository
-import com.pqsolutions.hdd_monitor.data.UserRepository
-import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-private const val TAG = "NotificationViewModel"
-
-sealed class NotificationStatus {
-    object PROGRAMADO : NotificationStatus()
-    object ACEPTADO : NotificationStatus()
-
-    override fun toString(): String = when (this) {
-        is PROGRAMADO -> "PROGRAMADO"
-        is ACEPTADO -> "ACEPTADO"
-    }
-
-    companion object {
-        fun fromString(status: String): NotificationStatus = when (status.uppercase()) {
-            "PROGRAMADO" -> PROGRAMADO
-            "ACEPTADO" -> ACEPTADO
-            else -> PROGRAMADO
-        }
-    }
-}
-
-data class NotificationItem(
-    val documentName: String = "",
-    val clientDocName: String = "",
-    val title: String = "",
-    val text: String = "",
-    val date_time: String = "",
-    val status: NotificationStatus,
-    val panelDocName: String? = null
-) {
-    fun isValid(): Boolean {
-        return documentName.startsWith(DocumentPrefixes.NOTIFICATION) &&
-                clientDocName.startsWith(DocumentPrefixes.CLIENT) &&
-                title.isNotBlank() &&
-                text.isNotBlank() &&
-                date_time.isNotBlank() &&
-                (panelDocName?.startsWith(DocumentPrefixes.PANEL) ?: true)
-    }
-}
-
-data class NotificationUiState(
-    val notifications: List<NotificationItem> = emptyList(),
-    val hasNewNotifications: Boolean = false,
-    val pendingCount: Int = 0,
-    val error: String? = null,
-    val isLoading: Boolean = false,
-    val lastUpdate: Long = System.currentTimeMillis()
-)
-
-@HiltViewModel
-class NotificationViewModel @Inject constructor(
-    private val eventRepository: EventRepository,
-    private val userRepository: UserRepository
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(NotificationUiState())
-    val uiState: StateFlow<NotificationUiState> = _uiState.asStateFlow()
-
-    init {
-        initializeNotifications()
-    }
-
-    private fun initializeNotifications() {
-        viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(isLoading = true) }
-                val currentUser = userRepository.getCurrentUser()
-                if (currentUser != null) {
-                    eventRepository.getEventsFlow(currentUser.clientDocName)
-                        .catch { e ->
-                            Log.e(TAG, "Error collecting events", e)
-                            _uiState.update { it.copy(
-                                error = e.message,
-                                isLoading = false
-                            ) }
-                        }
-                        .collect { events ->
-                            val notifications = events
-                                .map { it.toNotificationItem() }
-                                .filter { it.isValid() }
-
-                            val pendingCount = notifications.count {
-                                it.status == NotificationStatus.PROGRAMADO
-                            }
-                            Log.d(TAG, "Received ${notifications.size} notifications, $pendingCount pending")
-                            _uiState.update { currentState ->
-                                currentState.copy(
-                                    notifications = notifications,
-                                    hasNewNotifications = pendingCount > 0,
-                                    pendingCount = pendingCount,
-                                    error = null,
-                                    isLoading = false,
-                                    lastUpdate = System.currentTimeMillis()
-                                )
-                            }
-                        }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            error = "Usuario no encontrado",
-                            isLoading = false
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error initializing notifications", e)
-                _uiState.update {
-                    it.copy(
-                        error = e.message,
-                        isLoading = false
-                    )
-                }
-            }
-        }
-    }
-
-    fun refresh() {
-        _uiState.update { it.copy(isLoading = true) }
-        initializeNotifications()
-    }
-
-    fun clearError() {
-        _uiState.update { it.copy(error = null) }
-    }
-
-    fun markAllAsRead() {
-        viewModelScope.launch {
-            try {
-                val currentUser = userRepository.getCurrentUser()
-                if (currentUser != null) {
-                    _uiState.update { currentState ->
-                        currentState.copy(
-                            hasNewNotifications = false,
-                            pendingCount = 0
-                        )
-                    }
-                    Log.d(TAG, "All notifications marked as read for user: ${currentUser.documentName}")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error marking notifications as read", e)
-            }
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        Log.d(TAG, "ViewModel cleared")
-    }
-}
-
-private fun Event.toNotificationItem() = NotificationItem(
-    documentName = this.documentName,
-    clientDocName = this.clientDocName,
-    title = this.title,
-    text = this.text,
-    date_time = this.date_time,
-    status = NotificationStatus.fromString(this.status),
-    panelDocName = this.panelDocName
-)
-
-==================================================
-
-### viewmodel\UserManagementViewModel.kt ###
+### presentation\viewmodel\UserManagementViewModel.kt ###
 
 package com.pqsolutions.hdd_monitor.presentation.viewmodel
 

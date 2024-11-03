@@ -3,6 +3,7 @@ package com.pqsolutions.hdd_monitor.presentation.state
 import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.UserData
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -23,12 +24,14 @@ sealed class EventFilter {
     object Programmed : EventFilter()
     object Accepted : EventFilter()
     data class ByClient(val clientDocName: String) : EventFilter()
+    data class ByType(val eventType: String) : EventFilter()
 
     override fun toString(): String = when (this) {
         is All -> "Todos"
         is Programmed -> "Programados"
         is Accepted -> "Aceptados"
         is ByClient -> "Cliente: $clientDocName"
+        is ByType -> "Tipo: $eventType"
     }
 }
 
@@ -39,7 +42,8 @@ data class EventSortOption(
     enum class SortField {
         DATE,
         STATUS,
-        TITLE
+        TITLE,
+        TYPE
     }
 
     enum class SortDirection {
@@ -56,6 +60,7 @@ data class EventSortOption(
             SortField.DATE -> "Fecha"
             SortField.STATUS -> "Estado"
             SortField.TITLE -> "Título"
+            SortField.TYPE -> "Tipo"
         }
         val dirStr = when (direction) {
             SortDirection.ASC -> "↑"
@@ -84,6 +89,7 @@ sealed class EventDialogEvent {
     data class ClientSelected(val clientDocName: String) : EventDialogEvent()
     data class PanelSelected(val panelDocName: String?) : EventDialogEvent()
     data class MultipleClientsSelected(val clientDocNames: List<String>) : EventDialogEvent()
+    data class EventTypeSelected(val eventType: String) : EventDialogEvent()
     object ShowDatePicker : EventDialogEvent()
     object ShowTimePicker : EventDialogEvent()
     object Confirm : EventDialogEvent()
@@ -97,6 +103,8 @@ data class EventViewState(
     // Datos relacionados
     val clients: List<Client> = emptyList(),
     val availablePanels: List<Panel> = emptyList(),
+    val eventTypes: List<String> = emptyList(),
+    val users: List<UserData> = emptyList(),
 
     // Estados de carga y error
     val isLoading: Boolean = false,
@@ -107,9 +115,10 @@ data class EventViewState(
     // Estados del diálogo
     val showDialog: Boolean = false,
     val selectedEvent: Event? = null,
-    val selectedClients: List<String> = emptyList(), // Lista de nombres de documentos de clientes
-    val selectedClientForPanels: String? = null, // Nombre del documento del cliente seleccionado
+    val selectedClients: List<String> = emptyList(),
+    val selectedClientForPanels: String? = null,
     val selectedPanelDocName: String? = null,
+    val selectedEventType: String? = null,
 
     // Estados de fecha y hora
     val currentDate: LocalDate? = null,
@@ -154,10 +163,14 @@ data class EventViewState(
             .filter { it.documentName in selectedClients }
             .map { it.name }
 
+    val hasValidEventType: Boolean
+        get() = selectedEventType != null
+
     fun isValid(): Boolean {
         return !isLoading &&
                 error == null &&
-                currentOperation !is EventOperation.Error
+                currentOperation !is EventOperation.Error &&
+                hasValidEventType
     }
 
     companion object {
@@ -182,6 +195,8 @@ data class EventViewState(
                 "events=${events.size}, " +
                 "clients=${clients.size}, " +
                 "panels=${availablePanels.size}, " +
+                "eventTypes=${eventTypes.size}, " +
+                "users=${users.size}, " +
                 "loading=$isLoading, " +
                 "refreshing=$isRefreshing, " +
                 "error=$error, " +
@@ -189,6 +204,7 @@ data class EventViewState(
                 "dialog=$showDialog, " +
                 "selectedClients=${selectedClients.size}, " +
                 "selectedClient=$selectedClientForPanels, " +
+                "selectedEventType=$selectedEventType, " +
                 "hasDateTime=$hasDateTime, " +
                 "lastUpdate=$lastUpdate" +
                 ")"

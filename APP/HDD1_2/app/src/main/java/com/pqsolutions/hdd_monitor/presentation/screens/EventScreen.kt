@@ -29,7 +29,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
+import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 import com.pqsolutions.hdd_monitor.presentation.components.EventCard
 import com.pqsolutions.hdd_monitor.presentation.components.EventDialog
@@ -108,50 +110,35 @@ fun EventScreen(
                     onRetry = { viewModel.loadEvents() },
                     emptyContent = { EmptyEventsContent() }
                 ) {
-                    LazyColumn(
-                        state = listState,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(16.dp)
-                    ) {
-                        items(
-                            items = state.events,
-                            key = { event -> "${event.clientDocName}_${event.documentName}" }
-                        ) { event ->
-                            val client = state.clients.find { client ->
-                                client.documentName == event.clientDocName
-                            }
-                            EventCard(
-                                event = event,
-                                client = client,
-                                isAdmin = isAdmin,
-                                onEditClick = {
-                                    performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
-                                    viewModel.showEditDialog(event)
-                                },
-                                onDeleteClick = {
-                                    performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
-                                    viewModel.deleteEvent(event.clientDocName, event.documentName)
-                                },
-                                onAcceptClick = {
-                                    performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
-                                    viewModel.updateEventStatus(
-                                        event.clientDocName,
-                                        event.documentName,
-                                        "ACEPTADO"
-                                    )
-                                    notificationViewModel.refresh()
-                                },
-                                onContactAdmin = {
-                                    performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
-                                    launchWhatsApp(context, event)
-                                }
+                    EventList(
+                        events = state.events,
+                        clients = state.clients,
+                        users = state.users,
+                        isAdmin = isAdmin,
+                        onEditClick = { event ->
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            viewModel.showEditDialog(event)
+                        },
+                        onDeleteClick = { event ->
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            viewModel.deleteEvent(event.clientDocName, event.documentName)
+                        },
+                        onAcceptClick = { event ->
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            viewModel.updateEventStatus(
+                                event.clientDocName,
+                                event.documentName,
+                                "ACEPTADO"
                             )
+                            notificationViewModel.refresh()
+                        },
+                        onContactWhatsApp = { phone, name, event ->
+                            launchWhatsApp(context, phone, name, event)
                         }
-                    }
+                    )
                 }
             }
 
@@ -166,6 +153,8 @@ fun EventScreen(
                     selectedPanelDocName = state.selectedPanelDocName,
                     newEventTitle = state.newEventTitle,
                     newEventDescription = state.newEventDescription,
+                    eventTypes = state.eventTypes,
+                    selectedEventType = state.selectedEventType,
                     isAdmin = isAdmin,
                     onEvent = viewModel::onDialogEvent,
                     onDismiss = { viewModel.onDialogEvent(EventDialogEvent.Dismiss) }
@@ -190,46 +179,51 @@ private fun EmptyEventsContent() {
 }
 
 @Composable
-private fun EventsList(
+private fun EventList(
     events: List<Event>,
-    clients: List<com.pqsolutions.hdd_monitor.data.Client>,
+    clients: List<Client>,
+    users: List<UserData>,
     isAdmin: Boolean,
-    listState: androidx.compose.foundation.lazy.LazyListState,
     onEditClick: (Event) -> Unit,
     onDeleteClick: (Event) -> Unit,
     onAcceptClick: (Event) -> Unit,
-    onContactAdmin: (Event) -> Unit
+    onContactWhatsApp: (String, String, Event) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     LazyColumn(
-        state = listState,
+        state = rememberLazyListState(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(16.dp),
+        modifier = modifier
     ) {
         items(
             items = events,
             key = { event -> "${event.clientDocName}_${event.documentName}" }
         ) { event ->
-            val client = clients.find { client ->
-                client.documentName == event.clientDocName
+            val client = clients.find { it.documentName == event.clientDocName }
+            val eventUser = event.createdByUserId?.let { userId ->
+                users.find { it.documentName == userId }
             }
+
             EventCard(
                 event = event,
                 client = client,
+                user = eventUser,
                 isAdmin = isAdmin,
                 onEditClick = { onEditClick(event) },
                 onDeleteClick = { onDeleteClick(event) },
                 onAcceptClick = { onAcceptClick(event) },
-                onContactAdmin = { onContactAdmin(event) }
+                onContactWhatsApp = onContactWhatsApp
             )
         }
     }
 }
 
-private fun launchWhatsApp(context: android.content.Context, event: Event) {
+private fun launchWhatsApp(context: android.content.Context, phone: String, name: String, event: Event) {
     val message = context.getString(R.string.whatsapp_event_message, event.title)
     val encodedMessage = URLEncoder.encode(message, StandardCharsets.UTF_8.toString())
     val intent = Intent(Intent.ACTION_VIEW).apply {
-        data = Uri.parse("https://wa.me/+51993533004?text=$encodedMessage")
+        data = Uri.parse("https://wa.me/$phone?text=$encodedMessage")
     }
     context.startActivity(intent)
 }

@@ -3,6 +3,7 @@ package com.pqsolutions.hdd_monitor.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.firestore.FirebaseFirestore
 import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.EventRepository
 import com.pqsolutions.hdd_monitor.data.PanelRepository
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.time.LocalDateTime
 import javax.inject.Inject
 
@@ -32,7 +34,8 @@ import javax.inject.Inject
 class EventViewModel @Inject constructor(
     private val eventRepository: EventRepository,
     private val userRepository: UserRepository,
-    private val panelRepository: PanelRepository
+    private val panelRepository: PanelRepository,
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
     companion object {
@@ -50,6 +53,7 @@ class EventViewModel @Inject constructor(
 
     init {
         loadEvents()
+        loadEventTypes()
     }
 
     fun loadEvents() {
@@ -97,7 +101,6 @@ class EventViewModel @Inject constructor(
                                 )
                             }
 
-                            // Iniciar observación para eventos con panel asociado
                             validEvents.filter { it.panelDocName != null }.forEach { event ->
                                 startPanelObservation(event)
                             }
@@ -118,6 +121,25 @@ class EventViewModel @Inject constructor(
                         error = e.toUserFriendlyMessage()
                     )
                 }
+            }
+        }
+    }
+
+    private fun loadEventTypes() {
+        viewModelScope.launch {
+            try {
+                val documentSnapshot = firestore.collection("hdd-monitor")
+                    .document("event_types")
+                    .get()
+                    .await()
+
+                val typesString = documentSnapshot.getString("types")
+                val types = typesString?.split(",")?.map { it.trim() } ?: emptyList()
+
+                _state.update { it.copy(eventTypes = types) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading event types", e)
+                _uiEvent.send(EventUIEvent.ShowSnackbar("Error al cargar tipos de eventos"))
             }
         }
     }
@@ -158,7 +180,8 @@ class EventViewModel @Inject constructor(
                 selectedClientForPanels = null,
                 newEventTitle = "",
                 newEventDescription = "",
-                selectedPanelDocName = null
+                selectedPanelDocName = null,
+                selectedEventType = null
             )
         }
     }
@@ -179,7 +202,8 @@ class EventViewModel @Inject constructor(
                     selectedEvent = event,
                     currentDate = event.dateTime?.toLocalDate(),
                     currentTime = event.dateTime?.toLocalTime(),
-                    selectedClientForPanels = event.clientDocName
+                    selectedClientForPanels = event.clientDocName,
+                    selectedEventType = event.type
                 )
             }
             loadPanelsForClient(event.clientDocName)
@@ -255,17 +279,26 @@ class EventViewModel @Inject constructor(
                     }
                 }
             }
+            is EventDialogEvent.EventTypeSelected -> {
+                _state.update { currentState ->
+                    if (currentState.selectedEvent != null) {
+                        currentState.copy(
+                            selectedEvent = currentState.selectedEvent.copy(type = event.eventType)
+                        )
+                    } else {
+                        currentState.copy(selectedEventType = event.eventType)
+                    }
+                }
+            }
             is EventDialogEvent.Confirm -> {
                 Log.d(TAG, "Evento de confirmación recibido")
                 handleConfirmDialog()
             }
             is EventDialogEvent.Dismiss -> clearDialogState()
+            is EventDialogEvent.ClientSelected,
             EventDialogEvent.ShowDatePicker,
             EventDialogEvent.ShowTimePicker -> {
                 // Manejado por la UI
-            }
-            is EventDialogEvent.ClientSelected -> {
-                // Implementación pendiente si es necesaria
             }
         }
     }
@@ -281,6 +314,9 @@ class EventViewModel @Inject constructor(
                         currentState.currentTime!!
                     )
 
+                    val currentUser = userRepository.getCurrentUser()
+                        ?: throw IllegalStateException("No hay usuario autenticado")
+
                     if (currentState.selectedEvent != null) {
                         // Manejo de evento existente (edición)
                         val updatedEvent = currentState.selectedEvent.update(
@@ -288,7 +324,8 @@ class EventViewModel @Inject constructor(
                             text = currentState.selectedEvent.text,
                             dateTime = dateTime,
                             panelDocName = currentState.selectedEvent.panelDocName,
-                            panelName = currentState.selectedEvent.panelName
+                            panelName = currentState.selectedEvent.panelName,
+                            type = currentState.selectedEventType
                         )
 
                         if (updatedEvent == null) {
@@ -317,7 +354,13 @@ class EventViewModel @Inject constructor(
                             panelName = currentState.selectedPanelName,
                             title = currentState.newEventTitle,
                             text = currentState.newEventDescription,
-                            dateTime = dateTime
+                            dateTime = dateTime,
+                            type = currentState.selectedEventType ?: run {
+                                _uiEvent.send(EventUIEvent.ShowSnackbar("Debe seleccionar un tipo de evento"))
+                                return@launch
+                            },
+                            createdByUserId = currentUser.documentName,
+                            createdByUserRole = currentUser.role.toString()
                         )
 
                         if (!newEvent.isValid()) {
@@ -574,6 +617,11 @@ class EventViewModel @Inject constructor(
         loadEvents()
     }
 
+    fun filterByType(eventType: String) {
+        currentFilter = EventFilter.ByType(eventType)
+        loadEvents()
+    }
+
     fun refresh() {
         _state.update { it.copy(isRefreshing = true) }
         loadEvents()
@@ -615,6 +663,7 @@ class EventViewModel @Inject constructor(
                     is EventFilter.Programmed -> event.isProgramado
                     is EventFilter.Accepted -> event.isAceptado
                     is EventFilter.ByClient -> event.clientDocName == (currentFilter as EventFilter.ByClient).clientDocName
+                    is EventFilter.ByType -> event.type == (currentFilter as EventFilter.ByType).eventType
                 }
             }
             .sortedWith { a, b ->
@@ -635,6 +684,11 @@ class EventViewModel @Inject constructor(
                         if (currentSort.direction == EventSortOption.SortDirection.DESC)
                             comparison * -1 else comparison
                     }
+                    EventSortOption.SortField.TYPE -> {
+                        val comparison = (a.type ?: "").compareTo(b.type ?: "")
+                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
+                            comparison * -1 else comparison
+                    }
                 }
             }
     }
@@ -651,7 +705,8 @@ class EventViewModel @Inject constructor(
                 selectedClientForPanels = null,
                 newEventTitle = "",
                 newEventDescription = "",
-                selectedPanelDocName = null
+                selectedPanelDocName = null,
+                selectedEventType = null
             )
         }
     }

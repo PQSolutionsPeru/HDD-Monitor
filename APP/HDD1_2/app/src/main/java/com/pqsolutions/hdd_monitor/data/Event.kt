@@ -11,14 +11,17 @@ data class Event(
     val documentName: String = "",
     val clientDocName: String = "",
     val panelDocName: String? = null,
-    val panelName: String? = null, // Nuevo campo
+    val panelName: String? = null,
     val title: String = "",
     val text: String = "",
     @get:PropertyName("status")
     @set:PropertyName("status")
     var status: String = EventStatus.STATUS_PROGRAMADO,
     val date_time: String = "",
-    val userAcceptDocName: String? = null
+    val userAcceptDocName: String? = null,
+    val type: String? = null,
+    val createdByUserId: String? = null,
+    val createdByUserRole: String? = null
 ) {
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
@@ -26,20 +29,26 @@ data class Event(
         fun createNew(
             clientDocName: String,
             panelDocName: String?,
-            panelName: String?, // Nuevo parámetro
+            panelName: String?,
             title: String,
             text: String,
-            dateTime: LocalDateTime
+            dateTime: LocalDateTime,
+            type: String,
+            createdByUserId: String,
+            createdByUserRole: String
         ): Event {
             return Event(
-                documentName = "",  // Se generará en el Repository
+                documentName = "",
                 clientDocName = clientDocName,
                 panelDocName = panelDocName,
                 panelName = panelName,
                 title = title.trim(),
                 text = text.trim(),
                 date_time = dateTime.format(DATE_FORMATTER),
-                status = EventStatus.STATUS_PROGRAMADO
+                status = EventStatus.STATUS_PROGRAMADO,
+                type = type,
+                createdByUserId = createdByUserId,
+                createdByUserRole = createdByUserRole
             )
         }
 
@@ -53,11 +62,15 @@ data class Event(
                 text = map["text"] as? String ?: "",
                 status = map["status"] as? String ?: EventStatus.STATUS_PROGRAMADO,
                 date_time = map["date_time"] as? String ?: "",
-                userAcceptDocName = map["userAcceptDocName"] as? String
+                userAcceptDocName = map["userAcceptDocName"] as? String,
+                type = map["type"] as? String,
+                createdByUserId = map["createdByUserId"] as? String,
+                createdByUserRole = map["createdByUserRole"] as? String
             )
         }
     }
 
+    // Propiedades y métodos computados
     val isProgramado: Boolean
         get() = status == EventStatus.STATUS_PROGRAMADO
 
@@ -78,6 +91,8 @@ data class Event(
         return title.isNotBlank() &&
                 text.isNotBlank() &&
                 date_time.isNotBlank() &&
+                type != null &&
+                type.isNotBlank() &&
                 EventStatus.isValidStatus(status) &&
                 validateDocumentNames()
     }
@@ -103,7 +118,8 @@ data class Event(
         text: String,
         dateTime: LocalDateTime,
         panelDocName: String? = this.panelDocName,
-        panelName: String? = this.panelName // Nuevo parámetro
+        panelName: String? = this.panelName,
+        type: String? = this.type
     ): Event? {
         if (!isProgramado) return null
 
@@ -112,7 +128,8 @@ data class Event(
             text = text.trim(),
             date_time = dateTime.format(DATE_FORMATTER),
             panelDocName = panelDocName,
-            panelName = panelName
+            panelName = panelName,
+            type = type
         )
     }
 
@@ -126,7 +143,10 @@ data class Event(
             "text" to text,
             "status" to status,
             "date_time" to date_time,
-            "userAcceptDocName" to userAcceptDocName
+            "userAcceptDocName" to userAcceptDocName,
+            "type" to type,
+            "createdByUserId" to createdByUserId,
+            "createdByUserRole" to createdByUserRole
         )
     }
 
@@ -138,32 +158,12 @@ data class Event(
         append("status='$status', ")
         append("isProgramado=$isProgramado, ")
         append("date_time='$date_time', ")
+        append("type='$type', ")
         if (panelDocName != null) append("panelDocName='$panelDocName', ")
         if (panelName != null) append("panelName='$panelName', ")
         if (userAcceptDocName != null) append("userAcceptDocName='$userAcceptDocName', ")
+        if (createdByUserId != null) append("createdByUserId='$createdByUserId', ")
+        if (createdByUserRole != null) append("createdByUserRole='$createdByUserRole', ")
         append(")")
-    }
-
-    // Constructor para migración de datos antiguos
-    fun fromLegacy(
-        ID: String,
-        ID_CLIENT: String,
-        ID_PANEL: String?,
-        title: String,
-        text: String,
-        status: String,
-        date_time: String,
-        ID_USER_ACCEPT: String?
-    ): Event {
-        return Event(
-            documentName = if (ID.startsWith(DocumentPrefixes.EVENT)) ID else "${DocumentPrefixes.EVENT}$ID",
-            clientDocName = if (ID_CLIENT.startsWith(DocumentPrefixes.CLIENT)) ID_CLIENT else "${DocumentPrefixes.CLIENT}$ID_CLIENT",
-            panelDocName = ID_PANEL?.let { if (it.startsWith(DocumentPrefixes.PANEL)) it else "${DocumentPrefixes.PANEL}$it" },
-            title = title,
-            text = text,
-            status = status,
-            date_time = date_time,
-            userAcceptDocName = ID_USER_ACCEPT?.let { if (it.startsWith(DocumentPrefixes.USER)) it else "${DocumentPrefixes.USER}$it" }
-        )
     }
 }

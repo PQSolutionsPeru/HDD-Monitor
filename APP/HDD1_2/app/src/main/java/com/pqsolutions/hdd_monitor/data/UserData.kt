@@ -12,9 +12,10 @@ data class UserData(
     @set:PropertyName("role")
     private var roleString: String = "user",
     val clientDocName: String = "",
-    val clientName: String = "", // Nuevo campo para el nombre del cliente
+    val clientName: String = "",
     @get:PropertyName("fcmToken")
-    val fcmToken: String? = null
+    val fcmToken: String? = null,
+    val phone: String = "" // Nuevo campo para teléfono
 ) {
     var role: UserRole
         get() = UserRole.fromString(roleString)
@@ -23,6 +24,7 @@ data class UserData(
     fun isValid(): Boolean {
         return email.isNotBlank() &&
                 name.isNotBlank() &&
+                (phone.isEmpty() || (phone.startsWith("+51") && phone.length == 12 && phone.substring(3).all { it.isDigit() })) &&
                 when (role) {
                     UserRole.ADMIN -> isValidAdminDocument()
                     UserRole.USER -> isValidUserDocument() && isValidClientDocument()
@@ -49,7 +51,8 @@ data class UserData(
             "role" to roleString,
             "clientDocName" to clientDocName,
             "clientName" to clientName,
-            "fcmToken" to fcmToken
+            "fcmToken" to fcmToken,
+            "phone" to phone
         )
     }
 
@@ -57,11 +60,13 @@ data class UserData(
         fun createAdmin(
             email: String,
             name: String,
+            phone: String = "",
             fcmToken: String? = null
         ): UserData = UserData(
             email = email,
             name = name,
             roleString = "admin",
+            phone = phone,
             fcmToken = fcmToken
         )
 
@@ -70,6 +75,7 @@ data class UserData(
             name: String,
             clientDocName: String,
             clientName: String,
+            phone: String = "",
             fcmToken: String? = null
         ): UserData = UserData(
             email = email,
@@ -77,6 +83,7 @@ data class UserData(
             roleString = "user",
             clientDocName = clientDocName,
             clientName = clientName,
+            phone = phone,
             fcmToken = fcmToken
         )
 
@@ -88,7 +95,8 @@ data class UserData(
                 roleString = map["role"] as? String ?: "user",
                 clientDocName = map["clientDocName"] as? String ?: "",
                 clientName = map["clientName"] as? String ?: "",
-                fcmToken = map["fcmToken"] as? String
+                fcmToken = map["fcmToken"] as? String,
+                phone = map["phone"] as? String ?: ""
             )
         }
     }
@@ -99,6 +107,7 @@ data class UserData(
                 "name='$name', " +
                 "role=${role.name}, " +
                 "clientDocName='$clientDocName', " +
-                "clientName='$clientName')" // No incluimos fcmToken por seguridad
+                "clientName='$clientName', " +
+                "phone='$phone')" // No incluimos fcmToken por seguridad
     }
 }

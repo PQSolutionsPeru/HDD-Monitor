@@ -166,7 +166,6 @@
 
     <!-- Mensajes WhatsApp -->
     <string name="whatsapp_event_message">Buen día, quisiera conversar sobre el evento \"%1$s\"</string>
-    <string name="whatsapp_notification_message">Buen día, quisiera conversar sobre la notificación: \"%1$s\"</string>
 
     <!-- Contact -->
     <string name="contact_admin">Contactar Administrador</string>

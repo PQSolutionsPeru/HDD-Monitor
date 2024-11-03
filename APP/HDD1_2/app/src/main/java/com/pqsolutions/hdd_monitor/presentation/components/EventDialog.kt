@@ -41,6 +41,8 @@ fun EventDialog(
     selectedPanelDocName: String?,
     newEventTitle: String,
     newEventDescription: String,
+    eventTypes: List<String>,
+    selectedEventType: String?,
     isAdmin: Boolean,
     onEvent: (EventDialogEvent) -> Unit,
     onDismiss: () -> Unit
@@ -52,6 +54,7 @@ fun EventDialog(
     val title = if (isEditing) event?.title ?: "" else newEventTitle
     val description = if (isEditing) event?.text ?: "" else newEventDescription
     var selectedClients by remember { mutableStateOf(setOf<String>()) }
+    var expandedTypeDropdown by remember { mutableStateOf(false) }
 
     val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -85,6 +88,7 @@ fun EventDialog(
             isTimeValid &&
             title.length <= maxTitleLength &&
             description.length <= maxDescriptionLength &&
+            selectedEventType != null &&
             (isEditing || selectedClients.isNotEmpty())
 
     // Date Picker
@@ -144,6 +148,43 @@ fun EventDialog(
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
+
+                    // Selector de tipo de evento
+                    ExposedDropdownMenuBox(
+                        expanded = expandedTypeDropdown,
+                        onExpandedChange = { if (canEdit) expandedTypeDropdown = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedEventType ?: "Seleccione tipo de evento",
+                            onValueChange = { },
+                            label = { Text("Tipo de Evento") },
+                            readOnly = true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTypeDropdown)
+                            },
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth(),
+                            enabled = canEdit
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = expandedTypeDropdown,
+                            onDismissRequest = { expandedTypeDropdown = false }
+                        ) {
+                            eventTypes.forEach { eventType ->
+                                DropdownMenuItem(
+                                    text = { Text(eventType) },
+                                    onClick = {
+                                        onEvent(EventDialogEvent.EventTypeSelected(eventType))
+                                        expandedTypeDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = title,

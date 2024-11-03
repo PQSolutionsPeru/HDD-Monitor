@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -101,6 +103,17 @@ fun UserCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
                 )
+
+                if (user.phone.isNotEmpty()) {
+                    Text(
+                        text = "Celular: ${user.phone}",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 16.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
             Row {
                 IconButton(
@@ -146,6 +159,7 @@ fun UserDialog(
     var name by remember { mutableStateOf(user?.name ?: "") }
     var email by remember { mutableStateOf(user?.email ?: "") }
     var password by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf(user?.phone?.removePrefix("+51") ?: "") }
     var roleString by remember { mutableStateOf(user?.role?.let { UserRole.toFirestoreValue(it) } ?: "user") }
     var selectedClient by remember { mutableStateOf<Client?>(
         user?.clientDocName?.let { docName ->
@@ -153,6 +167,17 @@ fun UserDialog(
         }
     ) }
     var showClientDropdown by remember { mutableStateOf(false) }
+
+    // Validaciones
+    val isPhoneValid = phone.isEmpty() || (phone.length == 9 && phone.all { it.isDigit() })
+    val isEmailValid = email.contains("@") && email.contains(".")
+    val isPasswordValid = user != null || password.length >= 6
+    val isFormValid = when (UserRole.fromString(roleString)) {
+        UserRole.ADMIN -> name.isNotBlank() && email.isNotBlank() && isEmailValid &&
+                isPhoneValid && isPasswordValid
+        UserRole.USER -> name.isNotBlank() && email.isNotBlank() && isEmailValid &&
+                isPhoneValid && isPasswordValid && selectedClient != null
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -253,7 +278,8 @@ fun UserDialog(
                     onValueChange = { name = it },
                     label = { Text("Nombre") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    isError = name.isBlank()
                 )
 
                 TextField(
@@ -261,7 +287,33 @@ fun UserDialog(
                     onValueChange = { email = it },
                     label = { Text(stringResource(R.string.email)) },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    isError = !isEmailValid && email.isNotBlank(),
+                    supportingText = {
+                        if (!isEmailValid && email.isNotBlank()) {
+                            Text("Email inválido")
+                        }
+                    }
+                )
+
+                TextField(
+                    value = phone,
+                    onValueChange = { newValue ->
+                        if (newValue.length <= 9 && newValue.all { it.isDigit() }) {
+                            phone = newValue
+                        }
+                    },
+                    label = { Text("Celular") },
+                    placeholder = { Text("Ingrese 9 dígitos") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = !isPhoneValid,
+                    supportingText = {
+                        if (!isPhoneValid) {
+                            Text("Debe ingresar 9 dígitos")
+                        }
+                    }
                 )
 
                 if (user == null) {
@@ -271,7 +323,13 @@ fun UserDialog(
                         label = { Text(stringResource(R.string.password)) },
                         modifier = Modifier.fillMaxWidth(),
                         visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true
+                        singleLine = true,
+                        isError = !isPasswordValid,
+                        supportingText = {
+                            if (!isPasswordValid) {
+                                Text("La contraseña debe tener al menos 6 caracteres")
+                            }
+                        }
                     )
                 }
             }
@@ -287,16 +345,12 @@ fun UserDialog(
                             roleString = roleString,
                             clientDocName = selectedClient?.documentName ?: "",
                             clientName = selectedClient?.name ?: "",
-                            fcmToken = user?.fcmToken
+                            fcmToken = user?.fcmToken,
+                            phone = if (phone.isNotBlank()) "+51$phone" else ""
                         )
                     )
                 },
-                enabled = when (UserRole.fromString(roleString)) {
-                    UserRole.ADMIN -> name.isNotBlank() && email.isNotBlank() &&
-                            (user != null || password.isNotBlank())
-                    UserRole.USER -> name.isNotBlank() && email.isNotBlank() &&
-                            selectedClient != null && (user != null || password.isNotBlank())
-                }
+                enabled = isFormValid
             ) {
                 Text(stringResource(R.string.confirm))
             }

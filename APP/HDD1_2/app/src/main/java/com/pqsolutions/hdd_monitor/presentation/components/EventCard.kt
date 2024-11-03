@@ -29,17 +29,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
+import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
 
 @Composable
 fun EventCard(
     event: Event,
     client: Client?,
+    user: UserData?,
     isAdmin: Boolean,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onAcceptClick: () -> Unit,
-    onContactAdmin: () -> Unit,
+    onContactWhatsApp: (String, String, Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -76,6 +78,17 @@ fun EventCard(
             )
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            // Tipo de evento
+            event.type?.let { type ->
+                Text(
+                    text = "Tipo: $type",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // Fecha y hora
             Column {
@@ -128,6 +141,24 @@ fun EventCard(
                 }
             }
 
+            // Creado por (si hay información del usuario)
+            user?.let { userData ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Column {
+                    Text(
+                        text = "Creado por:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = userData.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // Estado del evento
             Spacer(modifier = Modifier.height(8.dp))
             Row(
@@ -166,6 +197,19 @@ fun EventCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isAdmin) {
+                    // Botón de contacto al usuario si hay teléfono disponible
+                    if (user?.phone?.isNotEmpty() == true) {
+                        Button(
+                            onClick = { onContactWhatsApp(user.phone, user.name, event) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Text("Contactar Usuario")
+                        }
+                        Spacer(modifier = Modifier.padding(horizontal = 8.dp))
+                    }
+
                     IconButton(
                         onClick = onEditClick,
                         enabled = event.isProgramado
@@ -192,22 +236,24 @@ fun EventCard(
                                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                     }
-                } else if (event.isProgramado) {
-                    Button(
-                        onClick = onAcceptClick,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text("Aceptar")
-                    }
-                    Button(
-                        onClick = onContactAdmin,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary
-                        )
-                    ) {
-                        Text("Contactar Admin")
+                } else {
+                    if (event.isProgramado) {
+                        Button(
+                            onClick = onAcceptClick,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Text("Aceptar")
+                        }
+                        Button(
+                            onClick = { onContactWhatsApp("+51993533004", "Administrador", event) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Text("Contactar Admin")
+                        }
                     }
                 }
             }
@@ -219,11 +265,12 @@ fun EventCard(
 fun EventList(
     events: List<Event>,
     clients: List<Client>,
+    users: Map<String, UserData>,
     isAdmin: Boolean,
     onEditClick: (Event) -> Unit,
     onDeleteClick: (Event) -> Unit,
     onAcceptClick: (Event) -> Unit,
-    onContactAdmin: (Event) -> Unit,
+    onContactWhatsApp: (String, String, Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -231,20 +278,18 @@ fun EventList(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         events.forEach { event ->
-            val client = if (isAdmin) {
-                clients.find { client ->
-                    event.clientDocName == client.documentName
-                }
-            } else null
+            val client = clients.find { it.documentName == event.clientDocName }
+            val user = users[event.createdByUserId]
 
             EventCard(
                 event = event,
                 client = client,
+                user = user,
                 isAdmin = isAdmin,
                 onEditClick = { onEditClick(event) },
                 onDeleteClick = { onDeleteClick(event) },
                 onAcceptClick = { onAcceptClick(event) },
-                onContactAdmin = { onContactAdmin(event) }
+                onContactWhatsApp = onContactWhatsApp
             )
         }
     }

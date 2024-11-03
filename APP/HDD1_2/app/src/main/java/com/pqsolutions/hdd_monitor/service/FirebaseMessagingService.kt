@@ -16,13 +16,14 @@ import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.data.NotificationRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
 import com.pqsolutions.hdd_monitor.presentation.MainActivity
-import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
+@AndroidEntryPoint
 class MessagingService : FirebaseMessagingService() {
 
     @Inject
@@ -34,12 +35,8 @@ class MessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var firestore: FirebaseFirestore
 
-    @Inject
-    @ApplicationContext
-    lateinit var appContext: Context
-
     companion object {
-        private const val TAG = "HddMessaging"
+        private const val TAG = "MessagingService"
         private const val CHANNEL_ID = "relay_status"
     }
 
@@ -50,33 +47,55 @@ class MessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
-        Log.d(TAG, "Mensaje recibido")
+        Log.d(TAG, "Mensaje recibido: ${remoteMessage.data}")
 
-        // Obtener datos del mensaje
-        val title = remoteMessage.notification?.title ?: "Alerta de Panel"
-        val message = remoteMessage.notification?.body ?: "Se ha producido un cambio en el sistema"
-        val clientDocName = remoteMessage.data["clientDocName"]
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Obtener el nombre del cliente
+                val clientDocName = remoteMessage.data["clientDocName"]
+                val clientName = if (clientDocName != null) {
+                    getClientName(clientDocName)
+                } else "Cliente"
 
-        // Si tenemos el clientDocName, obtenemos el nombre real del cliente
-        if (clientDocName != null) {
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val clientName = getClientName(clientDocName)
-                    showNotification("$clientName - $title", message)
+                // Obtener el nombre del panel
+                val panelDocName = remoteMessage.data["panelDocName"]
+                val panelName = if (panelDocName != null && clientDocName != null) {
+                    getPanelName(clientDocName, panelDocName)
+                } else "Panel"
 
-                    // Guardar en Firestore si es necesario
-                    remoteMessage.data["panelDocName"]?.let { panelDocName ->
-                        remoteMessage.data["relayName"]?.let { relayName ->
-                            saveNotification(clientDocName, panelDocName, relayName, message)
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error obteniendo nombre del cliente", e)
-                    showNotification(title, message)
+                // Construir el mensaje
+                val relayName = remoteMessage.data["relayName"] ?: "Relay"
+                val oldStatus = remoteMessage.data["oldStatus"] ?: ""
+                val newStatus = remoteMessage.data["newStatus"] ?: ""
+
+                val message = if (oldStatus.isNotEmpty() && newStatus.isNotEmpty()) {
+                    "El relay $relayName del panel $panelName ha cambiado de $oldStatus a $newStatus"
+                } else {
+                    remoteMessage.notification?.body ?: "Se ha producido un cambio en el sistema"
                 }
+
+                val title = "$clientName - Cambio de Estado"
+
+                // Mostrar la notificación
+                showNotification(title, message)
+
+                // Guardar la notificación si es necesario
+                if (clientDocName != null && panelDocName != null) {
+                    saveNotification(
+                        clientDocName = clientDocName,
+                        panelDocName = panelDocName,
+                        relayName = relayName,
+                        message = message
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error procesando notificación", e)
+                // Fallback a mensaje básico si hay error
+                showNotification(
+                    remoteMessage.notification?.title ?: "Alerta de Panel",
+                    remoteMessage.notification?.body ?: "Se ha producido un cambio en el sistema"
+                )
             }
-        } else {
-            showNotification(title, message)
         }
     }
 
@@ -89,10 +108,28 @@ class MessagingService : FirebaseMessagingService() {
                 .get()
                 .await()
 
-            clientDoc.getString("name") ?: clientDocName
+            clientDoc.getString("name") ?: "Cliente"
         } catch (e: Exception) {
             Log.e(TAG, "Error obteniendo nombre del cliente", e)
-            clientDocName
+            "Cliente"
+        }
+    }
+
+    private suspend fun getPanelName(clientDocName: String, panelDocName: String): String {
+        return try {
+            val panelDoc = firestore.collection("hdd-monitor")
+                .document("accounts")
+                .collection("clients")
+                .document(clientDocName)
+                .collection("panels")
+                .document(panelDocName)
+                .get()
+                .await()
+
+            panelDoc.getString("name") ?: "Panel"
+        } catch (e: Exception) {
+            Log.e(TAG, "Error obteniendo nombre del panel", e)
+            "Panel"
         }
     }
 
