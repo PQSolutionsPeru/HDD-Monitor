@@ -1,0 +1,174 @@
+Te explicaré detalladamente todo el sistema, paso a paso:
+
+1. **INICIALIZACIÓN DEL SISTEMA**
+El programa comienza con main.py, que es el punto de entrada principal. Aquí se inicializan varios "managers" (administradores) que controlan diferentes aspectos del sistema:
+
+```python
+# Inicialización de los managers principales
+wifi_manager = WiFiManager()         # Maneja la conexión WiFi
+mqtt_manager = MQTTManager()         # Maneja la comunicación MQTT
+relay_manager = RelayManager()       # Maneja los relés
+watchdog_manager = WatchdogManager() # Supervisa el sistema
+```
+
+2. **PROCESO DE CONFIGURACIÓN INICIAL**
+Cuando el ESP32 arranca, sigue este proceso:
+
+a) Primero intenta cargar una configuración existente:
+```python
+def load_config():
+    try:
+        with open(CONFIG_FILE, 'r') as file:
+            config = ujson.load(file)
+    except:
+        config = {}
+    return config
+```
+
+b) Si no hay configuración (primer arranque o archivo corrupto), entra en modo de configuración Bluetooth:
+- Activa el Bluetooth y espera conexiones
+- Espera recibir datos de configuración en el formato:
+  ```
+  ssid:nombre_wifi,password:clave_wifi,panel_name:nombre,panel_location:ubicacion
+  ```
+- Una vez recibidos los datos, los guarda y reinicia el dispositivo
+
+3. **CONEXIÓN A LA RED**
+Después de tener la configuración:
+- Intenta conectarse a la red WiFi usando los datos guardados
+- Si no puede conectarse, reintenta periódicamente
+- Una vez conectado, establece la conexión con el broker MQTT
+
+4. **CONFIGURACIÓN DE LOS RELÉS**
+El sistema configura tres relés en pines específicos:
+```python
+RELAY_PINS = [32, 33, 25]
+RELAY_NAMES = {32: "Alarma", 33: "Problema", 25: "Supervision"}
+```
+
+Cada relé:
+- Se configura como entrada con pull-up
+- Tiene un sistema de debounce para evitar falsos disparos
+- Cuando cambia de estado, genera un evento
+
+5. **CICLO PRINCIPAL DE OPERACIÓN**
+
+Una vez configurado todo, el sistema entra en su ciclo principal de operación:
+
+```python
+while True:
+    # Alimentar el watchdog
+    watchdog_manager.feed()
+    
+    # Verificar conexión WiFi
+    wifi_manager.ensure_wifi_connected()
+    
+    # Verificar conexión MQTT
+    mqtt_manager.ensure_client()
+    
+    # Dormir un poco
+    utime.sleep(1)
+```
+
+6. **MANEJO DE EVENTOS DE RELÉ**
+
+Cuando un relé cambia de estado:
+```python
+def relay_callback(pin, pin_num):
+    # Obtener hora actual
+    current_datetime = get_current_datetime()
+    
+    # Determinar estado
+    status = "DISC" if pin.value() else "OK"
+    
+    # Crear mensaje
+    message = {
+        "date_time": current_datetime,
+        "name": RELAY_NAMES.get(pin_num, "Relay Desconocido"),
+        "status": status
+    }
+    
+    # Publicar por MQTT
+    mqtt_manager.publish_event(f"EMPRESA_TEST/{mqtt_manager.MQTT_CLIENT_ID}/eventos", 
+                             ujson.dumps(message))
+```
+
+7. **SISTEMA DE RESPALDO Y SEGURIDAD**
+
+El sistema incluye varias características de seguridad:
+
+a) Watchdog Timer:
+- Reinicia el ESP32 si el programa se bloquea
+- Se debe "alimentar" periódicamente
+
+b) Cola de mensajes MQTT:
+- Si no se puede publicar un mensaje, se guarda en una cola
+- Se intenta reenviar más tarde
+
+c) Monitoreo de memoria:
+- Reporta periódicamente el uso de memoria
+- Ejecuta el recolector de basura cuando es necesario
+
+8. **ESTRUCTURA DE ARCHIVOS**
+
+El sistema se divide en varios módulos:
+
+- `main.py`: Archivo principal y punto de entrada
+- `wifi_manager.py`: Maneja la conexión WiFi
+- `mqtt_manager.py`: Maneja la comunicación MQTT
+- `relay_manager.py`: Maneja los relés
+- `watchdog_manager.py`: Supervisa el sistema
+- `bluetooth_manager.py`: Maneja la configuración Bluetooth
+- `ble_advertising.py`: Manejo de publicidad Bluetooth
+- `ble_uart_peripheral.py`: Implementación del servicio UART sobre Bluetooth
+- `performance_monitor.py`: Monitoreo de rendimiento
+
+9. **FLUJO DE DATOS**
+
+El flujo de datos en el sistema es así:
+
+```
+[Relés] → [RelayManager] → [MQTTManager] → [Broker MQTT] → [Servidor/Cliente MQTT]
+```
+
+Con el soporte de:
+```
+[WiFiManager] ← → [Internet]
+[WatchdogManager] → [Sistema]
+[BluetoothManager] ← → [App de Configuración]
+```
+
+10. **FORMATO DE MENSAJES MQTT**
+
+Los mensajes enviados tienen este formato:
+```json
+{
+    "date_time": "21-11-2024 a las 15:30:00",
+    "name": "Alarma",
+    "status": "DISC"
+}
+```
+
+11. **CARACTERÍSTICAS DE DEPURACIÓN**
+
+El sistema incluye varias herramientas de depuración:
+
+- Reportes de memoria periódicos
+- Mensajes de estado en la consola serial
+- Monitoreo de rendimiento de funciones específicas
+
+12. **REINICIO Y RECUPERACIÓN**
+
+El sistema puede reiniciarse en varios casos:
+- Después de recibir nueva configuración por Bluetooth
+- Si el watchdog detecta un bloqueo
+- Si ocurre un error crítico
+
+
+
+
+
+
+
+
+ssid:MiWiFi,password:MiPassword,panel_name:Panel1,panel_location:Sala

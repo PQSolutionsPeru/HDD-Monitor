@@ -10,18 +10,23 @@ import java.time.format.DateTimeParseException
 data class Event(
     val documentName: String = "",
     val clientDocName: String = "",
-    val panelDocName: String? = null,
-    val panelName: String? = null,
     val title: String = "",
     val text: String = "",
     @get:PropertyName("status")
     @set:PropertyName("status")
     var status: String = EventStatus.STATUS_PROGRAMADO,
     val date_time: String = "",
-    val userAcceptDocName: String? = null,
+    val lastUpdate: String = "",
     val type: String? = null,
     val createdByUserId: String? = null,
-    val createdByUserRole: String? = null
+    val createdByUserRole: String? = null,
+    val panelDocName: String? = null,
+    val panelName: String? = null,
+    val userAcceptDocName: String? = null,
+    val adminAcceptDocName: String? = null,
+    val acceptedAt: String? = null,
+    val finalizedAt: String? = null,
+    val isRead: Boolean = false
 ) {
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
@@ -37,6 +42,7 @@ data class Event(
             createdByUserId: String,
             createdByUserRole: String
         ): Event {
+            val now = LocalDateTime.now().format(DATE_FORMATTER)
             return Event(
                 documentName = "",
                 clientDocName = clientDocName,
@@ -45,10 +51,12 @@ data class Event(
                 title = title.trim(),
                 text = text.trim(),
                 date_time = dateTime.format(DATE_FORMATTER),
+                lastUpdate = now,
                 status = EventStatus.STATUS_PROGRAMADO,
                 type = type,
                 createdByUserId = createdByUserId,
-                createdByUserRole = createdByUserRole
+                createdByUserRole = createdByUserRole,
+                isRead = false
             )
         }
 
@@ -56,26 +64,34 @@ data class Event(
             return Event(
                 documentName = map["documentName"] as? String ?: "",
                 clientDocName = map["clientDocName"] as? String ?: "",
-                panelDocName = map["panelDocName"] as? String,
-                panelName = map["panelName"] as? String,
                 title = map["title"] as? String ?: "",
                 text = map["text"] as? String ?: "",
                 status = map["status"] as? String ?: EventStatus.STATUS_PROGRAMADO,
                 date_time = map["date_time"] as? String ?: "",
-                userAcceptDocName = map["userAcceptDocName"] as? String,
+                lastUpdate = map["lastUpdate"] as? String ?: "",
                 type = map["type"] as? String,
                 createdByUserId = map["createdByUserId"] as? String,
-                createdByUserRole = map["createdByUserRole"] as? String
+                createdByUserRole = map["createdByUserRole"] as? String,
+                panelDocName = map["panelDocName"] as? String,
+                panelName = map["panelName"] as? String,
+                userAcceptDocName = map["userAcceptDocName"] as? String,
+                adminAcceptDocName = map["adminAcceptDocName"] as? String,
+                acceptedAt = map["acceptedAt"] as? String,
+                finalizedAt = map["finalizedAt"] as? String,
+                isRead = map["isRead"] as? Boolean ?: false
             )
         }
     }
 
-    // Propiedades y métodos computados
+    // Propiedades computadas
     val isProgramado: Boolean
         get() = status == EventStatus.STATUS_PROGRAMADO
 
     val isAceptado: Boolean
         get() = status == EventStatus.STATUS_ACEPTADO
+
+    val isFinalizado: Boolean
+        get() = status == EventStatus.STATUS_FINALIZADO
 
     val isEditable: Boolean
         get() = isProgramado
@@ -101,16 +117,34 @@ data class Event(
         return (documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.EVENT)) &&
                 clientDocName.startsWith(DocumentPrefixes.CLIENT) &&
                 (panelDocName == null || panelDocName.startsWith(DocumentPrefixes.PANEL)) &&
-                (userAcceptDocName == null || userAcceptDocName.startsWith(DocumentPrefixes.USER))
+                (userAcceptDocName == null || userAcceptDocName.startsWith(DocumentPrefixes.USER)) &&
+                (adminAcceptDocName == null || adminAcceptDocName.startsWith(DocumentPrefixes.ADMIN))
     }
 
     fun getFormattedDateTime(): String = date_time
 
-    fun accept(userDocName: String): Event {
+    fun accept(userDocName: String, isAdmin: Boolean, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
         return copy(
             status = EventStatus.STATUS_ACEPTADO,
-            userAcceptDocName = userDocName
+            lastUpdate = timestamp,
+            acceptedAt = timestamp,
+            adminAcceptDocName = if (isAdmin) userDocName else null,
+            userAcceptDocName = if (!isAdmin) userDocName else null,
+            isRead = false
         )
+    }
+
+    fun finalize(userDocName: String, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
+        return copy(
+            status = EventStatus.STATUS_FINALIZADO,
+            lastUpdate = timestamp,
+            finalizedAt = timestamp,
+            isRead = false
+        )
+    }
+
+    fun markAsRead(): Event {
+        return copy(isRead = true)
     }
 
     fun update(
@@ -123,19 +157,16 @@ data class Event(
     ): Event? {
         if (!isProgramado) return null
 
+        val now = LocalDateTime.now().format(DATE_FORMATTER)
         return copy(
             title = title.trim(),
             text = text.trim(),
             date_time = dateTime.format(DATE_FORMATTER),
+            lastUpdate = now,
             panelDocName = panelDocName,
             panelName = panelName,
             type = type,
-            documentName = this.documentName,
-            clientDocName = this.clientDocName,
-            status = this.status,
-            userAcceptDocName = this.userAcceptDocName,
-            createdByUserId = this.createdByUserId,
-            createdByUserRole = this.createdByUserRole
+            isRead = false
         )
     }
 
@@ -143,17 +174,22 @@ data class Event(
         return mapOf(
             "documentName" to documentName,
             "clientDocName" to clientDocName,
-            "panelDocName" to panelDocName,
-            "panelName" to panelName,
             "title" to title,
             "text" to text,
             "status" to status,
             "date_time" to date_time,
-            "userAcceptDocName" to userAcceptDocName,
+            "lastUpdate" to lastUpdate,
             "type" to type,
             "createdByUserId" to createdByUserId,
-            "createdByUserRole" to createdByUserRole
-        )
+            "createdByUserRole" to createdByUserRole,
+            "panelDocName" to panelDocName,
+            "panelName" to panelName,
+            "userAcceptDocName" to userAcceptDocName,
+            "adminAcceptDocName" to adminAcceptDocName,
+            "acceptedAt" to acceptedAt,
+            "finalizedAt" to finalizedAt,
+            "isRead" to isRead
+        ).filterValues { it != null }
     }
 
     fun toLogString(): String = buildString {
@@ -164,10 +200,15 @@ data class Event(
         append("status='$status', ")
         append("isProgramado=$isProgramado, ")
         append("date_time='$date_time', ")
+        append("lastUpdate='$lastUpdate', ")
         append("type='$type', ")
         if (panelDocName != null) append("panelDocName='$panelDocName', ")
         if (panelName != null) append("panelName='$panelName', ")
         if (userAcceptDocName != null) append("userAcceptDocName='$userAcceptDocName', ")
+        if (adminAcceptDocName != null) append("adminAcceptDocName='$adminAcceptDocName', ")
+        if (acceptedAt != null) append("acceptedAt='$acceptedAt', ")
+        if (finalizedAt != null) append("finalizedAt='$finalizedAt', ")
+        append("isRead=$isRead, ")
         if (createdByUserId != null) append("createdByUserId='$createdByUserId', ")
         if (createdByUserRole != null) append("createdByUserRole='$createdByUserRole', ")
         append(")")

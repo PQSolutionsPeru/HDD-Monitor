@@ -1,0 +1,965 @@
+--- Contenido de ble_advertising.py ---
+
+# Helpers for generating BLE advertising payloads.
+
+# A more fully-featured (and easier to use) version of this is implemented in
+# aioble. This code is provided just as a basic example. See
+# https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble
+
+from micropython import const
+import struct
+import bluetooth
+
+# Advertising payloads are repeated packets of the following form:
+#   1 byte data length (N + 1)
+#   1 byte type (see constants below)
+#   N bytes type-specific data
+
+_ADV_TYPE_FLAGS = const(0x01)
+_ADV_TYPE_NAME = const(0x09)
+_ADV_TYPE_UUID16_COMPLETE = const(0x3)
+_ADV_TYPE_UUID32_COMPLETE = const(0x5)
+_ADV_TYPE_UUID128_COMPLETE = const(0x7)
+_ADV_TYPE_UUID16_MORE = const(0x2)
+_ADV_TYPE_UUID32_MORE = const(0x4)
+_ADV_TYPE_UUID128_MORE = const(0x6)
+_ADV_TYPE_APPEARANCE = const(0x19)
+
+_ADV_MAX_PAYLOAD = const(31)
+
+
+# Generate a payload to be passed to gap_advertise(adv_data=...).
+def advertising_payload(limited_disc=False, br_edr=False, name=None, services=None, appearance=0):
+    payload = bytearray()
+
+    def _append(adv_type, value):
+        nonlocal payload
+        payload += struct.pack("BB", len(value) + 1, adv_type) + value
+
+    _append(
+        _ADV_TYPE_FLAGS,
+        struct.pack("B", (0x01 if limited_disc else 0x02) + (0x18 if br_edr else 0x04)),
+    )
+
+    if name:
+        _append(_ADV_TYPE_NAME, name)
+
+    if services:
+        for uuid in services:
+            b = bytes(uuid)
+            if len(b) == 2:
+                _append(_ADV_TYPE_UUID16_COMPLETE, b)
+            elif len(b) == 4:
+                _append(_ADV_TYPE_UUID32_COMPLETE, b)
+            elif len(b) == 16:
+                _append(_ADV_TYPE_UUID128_COMPLETE, b)
+
+    # See org.bluetooth.characteristic.gap.appearance.xml
+    if appearance:
+        _append(_ADV_TYPE_APPEARANCE, struct.pack("<h", appearance))
+
+    if len(payload) > _ADV_MAX_PAYLOAD:
+        raise ValueError("advertising payload too large")
+
+    return payload
+
+
+def decode_field(payload, adv_type):
+    i = 0
+    result = []
+    while i + 1 < len(payload):
+        if payload[i + 1] == adv_type:
+            result.append(payload[i + 2 : i + payload[i] + 1])
+        i += 1 + payload[i]
+    return result
+
+
+def decode_name(payload):
+    n = decode_field(payload, _ADV_TYPE_NAME)
+    return str(n[0], "utf-8") if n else ""
+
+
+def decode_services(payload):
+    services = []
+    for u in decode_field(payload, _ADV_TYPE_UUID16_COMPLETE):
+        services.append(bluetooth.UUID(struct.unpack("<h", u)[0]))
+    for u in decode_field(payload, _ADV_TYPE_UUID32_COMPLETE):
+        services.append(bluetooth.UUID(struct.unpack("<d", u)[0]))
+    for u in decode_field(payload, _ADV_TYPE_UUID128_COMPLETE):
+        services.append(bluetooth.UUID(u))
+    return services
+
+
+def demo():
+    payload = advertising_payload(
+        name="micropython",
+        services=[bluetooth.UUID(0x181A), bluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")],
+    )
+    print(payload)
+    print(decode_name(payload))
+    print(decode_services(payload))
+
+
+if __name__ == "__main__":
+    demo()
+
+
+
+--- Contenido de ble_uart_peripheral.py ---
+
+# This example demonstrates a peripheral implementing the Nordic UART Service (NUS).
+
+# This example demonstrates the low-level bluetooth module. For most
+# applications, we recommend using the higher-level aioble library which takes
+# care of all IRQ handling and connection management. See
+# https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble
+
+import bluetooth
+from ble_advertising import advertising_payload
+
+from micropython import const
+
+_IRQ_CENTRAL_CONNECT = const(1)
+_IRQ_CENTRAL_DISCONNECT = const(2)
+_IRQ_GATTS_WRITE = const(3)
+
+_FLAG_WRITE = const(0x0008)
+_FLAG_NOTIFY = const(0x0010)
+
+_UART_UUID = bluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
+_UART_TX = (
+    bluetooth.UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E"),
+    _FLAG_NOTIFY,
+)
+_UART_RX = (
+    bluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E"),
+    _FLAG_WRITE,
+)
+_UART_SERVICE = (
+    _UART_UUID,
+    (_UART_TX, _UART_RX),
+)
+
+# org.bluetooth.characteristic.gap.appearance.xml
+_ADV_APPEARANCE_GENERIC_COMPUTER = const(128)
+
+
+class BLEUART:
+    def __init__(self, ble, name="mpy-uart", rxbuf=100):
+        self._ble = ble
+        self._ble.active(True)
+        self._ble.irq(self._irq)
+        ((self._tx_handle, self._rx_handle),) = self._ble.gatts_register_services((_UART_SERVICE,))
+        # Increase the size of the rx buffer and enable append mode.
+        self._ble.gatts_set_buffer(self._rx_handle, rxbuf, True)
+        self._connections = set()
+        self._rx_buffer = bytearray()
+        self._handler = None
+        # Optionally add services=[_UART_UUID], but this is likely to make the payload too large.
+        self._payload = advertising_payload(name=name, appearance=_ADV_APPEARANCE_GENERIC_COMPUTER)
+        self._advertise()
+
+    def irq(self, handler):
+        self._handler = handler
+
+    def _irq(self, event, data):
+        # Track connections so we can send notifications.
+        if event == _IRQ_CENTRAL_CONNECT:
+            conn_handle, _, _ = data
+            self._connections.add(conn_handle)
+        elif event == _IRQ_CENTRAL_DISCONNECT:
+            conn_handle, _, _ = data
+            if conn_handle in self._connections:
+                self._connections.remove(conn_handle)
+            # Start advertising again to allow a new connection.
+            self._advertise()
+        elif event == _IRQ_GATTS_WRITE:
+            conn_handle, value_handle = data
+            if conn_handle in self._connections and value_handle == self._rx_handle:
+                self._rx_buffer += self._ble.gatts_read(self._rx_handle)
+                if self._handler:
+                    self._handler()
+
+    def any(self):
+        return len(self._rx_buffer)
+
+    def read(self, sz=None):
+        if not sz:
+            sz = len(self._rx_buffer)
+        result = self._rx_buffer[0:sz]
+        self._rx_buffer = self._rx_buffer[sz:]
+        return result
+
+    def write(self, data):
+        for conn_handle in self._connections:
+            self._ble.gatts_notify(conn_handle, self._tx_handle, data)
+
+    def close(self):
+        for conn_handle in self._connections:
+            self._ble.gap_disconnect(conn_handle)
+        self._connections.clear()
+
+    def _advertise(self, interval_us=500000):
+        self._ble.gap_advertise(interval_us, adv_data=self._payload)
+
+
+def demo():
+    import time
+
+    ble = bluetooth.BLE()
+    uart = BLEUART(ble)
+
+    def on_rx():
+        print("rx: ", uart.read().decode().strip())
+
+    uart.irq(handler=on_rx)
+    nums = [4, 8, 15, 16, 23, 42]
+    i = 0
+
+    try:
+        while True:
+            uart.write(str(nums[i]) + "\n")
+            i = (i + 1) % len(nums)
+            time.sleep_ms(1000)
+    except KeyboardInterrupt:
+        pass
+
+    uart.close()
+
+
+if __name__ == "__main__":
+    demo()
+
+
+
+--- Contenido de bluetooth_manager.py ---
+
+from micropython import const
+import bluetooth
+import json
+import utime
+from ble_uart_peripheral import BLEUART
+
+# Constantes BLE
+_IRQ_CENTRAL_CONNECT = const(1)
+_IRQ_CENTRAL_DISCONNECT = const(2)
+_IRQ_GATTS_WRITE = const(3)
+
+class BluetoothManager:
+    def __init__(self, name="ESP32-Monitor"):
+        print("[BT] Iniciando BLE...")
+        self.ble = bluetooth.BLE()
+        self.ble.active(True)
+        
+        # Crear UART con nuestro manejador de IRQ personalizado
+        self.uart = BLEUART(self.ble, name=name, rxbuf=100)
+        self.uart.irq(self._on_uart_rx)
+        
+        self._connected = False
+        self.last_parsed_data = None
+        print("[BT] BLE activo y listo - Nombre:", name)
+        print("[BT] Esperando conexión BLE...")
+
+    def _on_uart_rx(self):
+        """Callback cuando se reciben datos por UART"""
+        try:
+            # Leer datos disponibles
+            data = self.uart.read().decode().strip()
+            print(f"[BT] Datos recibidos: '{data}'")
+            
+            if data:
+                # Intentar parsear los datos
+                parsed = self.parse_simple_format(data)
+                if parsed:
+                    print(f"[BT] Datos parseados: {parsed}")
+                    self.last_parsed_data = parsed
+                    # Enviar confirmación
+                    self.write_data("status:received")
+        except Exception as e:
+            print(f"[BT] Error en rx callback: {e}")
+            import sys
+            sys.print_exception(e)
+
+    def parse_simple_format(self, text):
+        """Parsea el formato simple key:value,key:value"""
+        try:
+            if not text:
+                return None
+                
+            text = text.strip()
+            pairs = [pair.strip() for pair in text.split(',') if ':' in pair]
+            result = {}
+            
+            for pair in pairs:
+                key, value = pair.split(':', 1)
+                key = key.strip()
+                value = value.strip()
+                if key and value:
+                    result[key] = value
+                    
+            return result if result else None
+            
+        except Exception as e:
+            print(f"[BT] Error parseando: {e}")
+            return None
+
+    def write_data(self, data):
+        """Envía datos a través de BLE"""
+        try:
+            if isinstance(data, dict):
+                text = ','.join(f"{k}:{v}" for k, v in data.items())
+            else:
+                text = str(data)
+            print(f"[BT] Enviando: {text}")
+            self.uart.write(text + "\n")
+            return True
+        except Exception as e:
+            print(f"[BT] Error enviando datos: {e}")
+            return False
+
+    def wait_for_data(self, timeout=1):
+        """Espera y retorna datos si están disponibles"""
+        if self.last_parsed_data is not None:
+            data = self.last_parsed_data
+            self.last_parsed_data = None
+            return data
+        return None
+
+    def close(self):
+        """Cierra la conexión BLE"""
+        try:
+            self.uart.close()
+        except:
+            pass
+
+
+--- Contenido de main.py ---
+
+import ujson
+import machine
+import utime
+from wifi_manager import WiFiManager
+from mqtt_manager import MQTTManager
+from relay_manager import RelayManager
+from watchdog_manager import WatchdogManager
+from bluetooth_manager import BluetoothManager
+import gc
+import os
+
+# Configuración
+RELAY_PINS = [32, 33, 25]
+RELAY_NAMES = {32: "Alarma", 33: "Problema", 25: "Supervision"}
+CONFIG_FILE = "config.json"
+
+# Managers
+wifi_manager = WiFiManager()
+mqtt_manager = MQTTManager(wifi_manager)
+relay_manager = RelayManager()
+watchdog_manager = WatchdogManager()
+
+cached_datetime = None
+last_datetime_update = utime.ticks_ms()
+memory_report_enabled = True
+
+def load_config():
+    try:
+        with open(CONFIG_FILE, 'r') as file:
+            config = ujson.load(file)
+    except (OSError, ValueError):
+        config = {}
+    return config
+
+def save_config(config):
+    with open(CONFIG_FILE, 'w') as file:
+        ujson.dump(config, file)
+
+def delete_config():
+    """Elimina el archivo de configuración si existe"""
+    try:
+        os.remove(CONFIG_FILE)
+        print("Configuración eliminada")
+    except:
+        print("No se encontró archivo de configuración para eliminar")
+
+def try_wifi_connection(max_attempts=5, timeout_per_attempt=20):
+    """
+    Intenta conectar al WiFi con múltiples reintentos
+    max_attempts: número máximo de intentos
+    timeout_per_attempt: tiempo máximo por intento en segundos
+    """
+    for attempt in range(max_attempts):
+        print(f"Intento de conexión WiFi {attempt + 1}/{max_attempts}")
+        try:
+            start_time = utime.ticks_ms()
+            wifi_manager.connect_wifi()
+            
+            # Esperar hasta timeout_per_attempt segundos por intento
+            while not wifi_manager.sta_if.isconnected():
+                if utime.ticks_diff(utime.ticks_ms(), start_time) > timeout_per_attempt * 1000:
+                    print(f"Timeout después de {timeout_per_attempt} segundos")
+                    break
+                print("Esperando conexión...")
+                utime.sleep(1)
+                
+            if wifi_manager.sta_if.isconnected():
+                print("Conexión WiFi exitosa!")
+                print(f"IP asignada: {wifi_manager.sta_if.ifconfig()[0]}")
+                return True
+                
+            print(f"No se pudo conectar en el intento {attempt + 1}")
+            
+        except Exception as e:
+            print(f"Error en intento de conexión: {e}")
+        
+        if attempt < max_attempts - 1:  # Si no es el último intento
+            wait_time = (attempt + 1) * 5  # Aumenta el tiempo de espera progresivamente
+            print(f"Esperando {wait_time} segundos antes del siguiente intento...")
+            utime.sleep(wait_time)
+    
+    return False
+
+def bluetooth_config():
+    """Espera indefinidamente por una configuración Bluetooth válida"""
+    print("\n[CONFIG] Iniciando modo configuración BLE")
+    print("[CONFIG] Formato: ssid:nombre_red,password:contraseña,panel_name:nombre,panel_location:ubicacion")
+    print("[CONFIG] Esperando conexión bluetooth...")
+    
+    bluetooth_manager = None
+    last_status_time = utime.ticks_ms()
+    status_interval = 5000  # 5 segundos entre mensajes de estado
+    last_gc_time = utime.ticks_ms()
+    gc_interval = 30000  # 30 segundos entre limpiezas de memoria
+
+    try:
+        bluetooth_manager = BluetoothManager()
+        
+        while True:  # Loop infinito esperando configuración válida
+            try:
+                # Alimentar watchdog
+                watchdog_manager.feed()
+                
+                # Limpieza periódica de memoria
+                current_time = utime.ticks_ms()
+                if utime.ticks_diff(current_time, last_gc_time) >= gc_interval:
+                    gc.collect()
+                    print(f"[MEMORY] Memoria libre: {gc.mem_free()} bytes")
+                    last_gc_time = current_time
+
+                # Verificar datos bluetooth
+                data = bluetooth_manager.wait_for_data()
+                if data is not None and 'ssid' in data and 'password' in data:
+                    print("[CONFIG] Datos recibidos, verificando...")
+                    
+                    # Crear configuración
+                    config = {
+                        'wifi_ssid': data['ssid'].strip(),
+                        'wifi_password': data['password'].strip(),
+                        'panel_name': data.get('panel_name', 'Panel_Default').strip(),
+                        'panel_location': data.get('panel_location', 'Location_Default').strip()
+                    }
+                    print(f"[CONFIG] Configuración a probar: {config}")
+                    
+                    # Intentar conexión WiFi con la nueva configuración
+                    wifi_manager.SSID = config['wifi_ssid']
+                    wifi_manager.PASSWORD = config['wifi_password']
+                    
+                    print("[CONFIG] Probando conexión WiFi...")
+                    if try_wifi_connection(max_attempts=2, timeout_per_attempt=15):  # Prueba rápida
+                        print("[CONFIG] ¡Conexión WiFi exitosa!")
+                        try:
+                            save_config(config)
+                            print("[CONFIG] Configuración guardada exitosamente")
+                            bluetooth_manager.write_data("status:success")
+                            print("[CONFIG] Reiniciando sistema para aplicar configuración...")
+                            utime.sleep(2)
+                            machine.reset()
+                        except Exception as e:
+                            print(f"[CONFIG] Error guardando configuración: {e}")
+                            bluetooth_manager.write_data("status:error,message:save_failed")
+                    else:
+                        print("[CONFIG] No se pudo conectar con las credenciales proporcionadas")
+                        bluetooth_manager.write_data("status:error,message:wifi_connection_failed")
+                
+                # Mensaje de estado periódico
+                if utime.ticks_diff(current_time, last_status_time) >= status_interval:
+                    print("[CONFIG] Esperando datos de configuración bluetooth...")
+                    last_status_time = current_time
+                
+                utime.sleep_ms(100)  # Pequeña pausa para no saturar el CPU
+                
+            except Exception as e:
+                print(f"[CONFIG] Error en bucle bluetooth: {e}")
+                gc.collect()  # Limpiar memoria en caso de error
+                utime.sleep(1)
+                
+    except Exception as e:
+        print(f"[CONFIG] Error crítico en bluetooth_config: {e}")
+    finally:
+        if bluetooth_manager:
+            try:
+                bluetooth_manager.close()
+            except:
+                pass
+        gc.collect()
+
+def get_current_datetime():
+    global cached_datetime, last_datetime_update
+    current_ticks = utime.ticks_ms()
+    if utime.ticks_diff(current_ticks, last_datetime_update) > 600000 or cached_datetime is None:
+        update_datetime()
+    return cached_datetime
+
+def update_datetime():
+    global cached_datetime, last_datetime_update
+    try:
+        cached_datetime = wifi_manager.get_current_time()
+        print(f"Fecha y hora actuales actualizadas a: {cached_datetime}")
+    except Exception as e:
+        print(f"Error al obtener fecha y hora, usando última conocida o 'unknown': {e}")
+        cached_datetime = cached_datetime if cached_datetime else "unknown"
+    last_datetime_update = utime.ticks_ms()
+
+def relay_callback(pin, pin_num):
+    gc.collect()
+    print(f"Callback de relay activado para el pin {pin_num}.")
+    wifi_manager.ensure_wifi_connected()
+    current_datetime = get_current_datetime()
+    status = "DISC" if pin.value() else "OK"
+    message = {
+        "date_time": current_datetime,
+        "name": RELAY_NAMES.get(pin_num, "Relay Desconocido"),
+        "status": status
+    }
+    print(f"Enviando mensaje MQTT: {message}")
+    mqtt_manager.publish_event(f"EMPRESA_TEST/{mqtt_manager.MQTT_CLIENT_ID}/eventos", ujson.dumps(message))
+
+def main():
+    """Función principal del programa"""
+    print("\nIniciando sistema...")
+    
+    while True:  # Loop principal infinito
+        try:
+            config = load_config()
+            print(f"Configuración cargada: {config}")
+            
+            if not config or 'wifi_ssid' not in config or 'wifi_password' not in config:
+                print("No se encontró configuración válida")
+                print("Iniciando modo configuración bluetooth permanente...")
+                bluetooth_config()  # Esta función ahora espera indefinidamente
+                continue
+            
+            print("Configuración encontrada, probando conexión WiFi...")
+            wifi_manager.SSID = config['wifi_ssid']
+            wifi_manager.PASSWORD = config['wifi_password']
+            
+            if not try_wifi_connection():
+                print("No se pudo conectar al WiFi - Borrando configuración...")
+                delete_config()
+                gc.collect()  # Limpiar memoria
+                print("Iniciando modo configuración bluetooth...")
+                bluetooth_config()
+                continue
+            
+            # Si llegamos aquí, WiFi está conectado
+            print("Iniciando sistema principal...")
+            
+            try:
+                print("Configurando MQTT...")
+                mqtt_manager.ensure_client()
+                
+                print("Configurando relés...")
+                for relay_pin in RELAY_PINS:
+                    pin = relay_manager.setup_relay(relay_pin, relay_callback)
+                    print(f"Relé configurado en pin {relay_pin}")
+                
+                print("Sistema iniciado completamente")
+                print("Iniciando bucle principal...")
+                
+                # Bucle de operación normal
+                last_memory_report_time = utime.ticks_ms()
+                last_gc_time = utime.ticks_ms()
+                
+                while True:
+                    watchdog_manager.feed()
+                    current_time = utime.ticks_ms()
+                    
+                    # Limpieza periódica de memoria
+                    if utime.ticks_diff(current_time, last_gc_time) >= 30000:  # Cada 30 segundos
+                        gc.collect()
+                        last_gc_time = current_time
+                    
+                    # Verificar conexión WiFi
+                    if not wifi_manager.sta_if.isconnected():
+                        print("Conexión WiFi perdida")
+                        raise Exception("WiFi disconnected")
+                    
+                    # Reporte de memoria si está habilitado
+                    if memory_report_enabled and utime.ticks_diff(current_time, last_memory_report_time) > 60000:
+                        free_memory = gc.mem_free()
+                        print(f"[MEMORY] Memoria libre: {free_memory} bytes")
+                        last_memory_report_time = current_time
+                    
+                    utime.sleep_ms(100)
+                    
+            except Exception as e:
+                print(f"Error en operación normal: {e}")
+                raise  # Re-lanzar excepción para reiniciar el ciclo principal
+                
+        except Exception as e:
+            print(f"Error en sistema principal: {e}")
+            delete_config()
+            gc.collect()
+            print("Volviendo a modo configuración bluetooth...")
+            bluetooth_config()
+
+if __name__ == "__main__":
+    main()
+
+
+--- Contenido de mqtt_manager.py ---
+
+from umqtt.robust import MQTTClient
+import time
+import gc
+import ssl
+
+class MQTTManager:
+    def __init__(self, wifi_manager):
+        self.wifi_manager = wifi_manager
+        self.client = None
+        self.message_queue = []
+        self.MQTT_BROKER = "node02.myqtthub.com"
+        self.MQTT_PORT = 8883
+        self.MQTT_CLIENT_ID = "ESP32-PQ1"
+        self.MQTT_USER = "ESP32-1"
+        self.MQTT_PASSWORD = "esp32"
+        self.MQTT_KEEPALIVE = 60
+        self.connected = False
+        self.last_connection_attempt = 0
+        self.connection_retry_delay = 5000  # 5 segundos entre intentos
+
+    def reinitialize_client(self):
+        """Reinicializa el cliente MQTT"""
+        try:
+            # Limpiar cliente anterior si existe
+            if self.client:
+                try:
+                    self.client.disconnect()
+                except:
+                    pass
+                self.client = None
+                gc.collect()
+
+            self.last_connection_attempt = time.ticks_ms()
+            print("Creando cliente MQTT con SSL...")
+            
+            # Crear nuevo cliente usando ssl directamente
+            ssl_params = {'cert_reqs': ssl.CERT_NONE}  # No verificar certificado del servidor
+            
+            self.client = MQTTClient(
+                self.MQTT_CLIENT_ID,
+                self.MQTT_BROKER,
+                port=self.MQTT_PORT,
+                user=self.MQTT_USER,
+                password=self.MQTT_PASSWORD,
+                keepalive=self.MQTT_KEEPALIVE,
+                ssl=ssl_params
+            )
+            
+            print("Conectando al broker MQTT...")
+            self.client.connect()
+            self.connected = True
+            print("Conectado al broker MQTT exitosamente")
+            return True
+            
+        except Exception as e:
+            print(f"Error conectando al broker MQTT: {e}")
+            import sys
+            sys.print_exception(e)
+            self.client = None
+            self.connected = False
+            gc.collect()
+            return False
+
+    def ensure_client(self):
+        """Asegura que el cliente MQTT está conectado"""
+        try:
+            self.wifi_manager.ensure_wifi_connected()
+            
+            current_time = time.ticks_ms()
+            if self.client is None or not self.connected:
+                if time.ticks_diff(current_time, self.last_connection_attempt) > self.connection_retry_delay:
+                    print("Reinicializando cliente MQTT...")
+                    return self.reinitialize_client()
+            return self.connected
+            
+        except Exception as e:
+            print(f"Error en ensure_client: {e}")
+            self.connected = False
+            return False
+
+    def publish_event(self, topic, message):
+        """Publica un evento en el broker MQTT con reintentos"""
+        max_retries = 3
+        retry_delay = 1  # segundos
+        
+        for attempt in range(max_retries):
+            try:
+                if self.ensure_client():
+                    print(f"Publicando en {topic}: {message}")
+                    self.client.publish(
+                        topic.encode('utf-8'), 
+                        message.encode('utf-8'), 
+                        qos=1
+                    )
+                    print("Mensaje publicado exitosamente")
+                    
+                    # Intentar publicar mensajes en cola si hay éxito
+                    self._process_message_queue()
+                    return True
+                    
+            except Exception as e:
+                print(f"Error publicando (intento {attempt + 1}): {e}")
+                self.connected = False
+                self.client = None
+                gc.collect()
+                
+                if attempt < max_retries - 1:
+                    print(f"Reintentando en {retry_delay} segundos...")
+                    time.sleep(retry_delay)
+        
+        print(f"No se pudo publicar después de {max_retries} intentos")
+        self.message_queue.append({'topic': topic, 'message': message})
+        return False
+
+    def _process_message_queue(self):
+        """Procesa los mensajes en cola"""
+        if not self.message_queue:
+            return
+            
+        print(f"Procesando {len(self.message_queue)} mensajes en cola...")
+        remaining_messages = []
+        
+        for msg in self.message_queue:
+            try:
+                if self.ensure_client():
+                    self.client.publish(
+                        msg['topic'].encode('utf-8'),
+                        msg['message'].encode('utf-8'),
+                        qos=1
+                    )
+                    print(f"Mensaje en cola publicado: {msg['topic']}")
+                else:
+                    remaining_messages.append(msg)
+            except Exception as e:
+                print(f"Error publicando mensaje en cola: {e}")
+                remaining_messages.append(msg)
+                
+        self.message_queue = remaining_messages
+        if remaining_messages:
+            print(f"Quedan {len(remaining_messages)} mensajes en cola")
+
+    def disconnect(self):
+        """Desconecta el cliente MQTT de forma segura"""
+        try:
+            if self.client:
+                self.client.disconnect()
+            self.client = None
+            self.connected = False
+            gc.collect()
+        except Exception as e:
+            print(f"Error al desconectar: {e}")
+
+
+--- Contenido de performance_monitor.py ---
+
+import gc
+import utime
+
+def check_performance(func, *args, **kwargs):
+    gc.collect()  # Collect garbage and measure free memory before execution
+    free_memory_before = gc.mem_free()
+    print("Memoria libre antes de la ejecución:", free_memory_before)
+
+    start_time = utime.ticks_ms()  # Start time in milliseconds
+    func(*args, **kwargs)  # Execute the function with provided arguments
+    end_time = utime.ticks_ms()  # End time in milliseconds
+    execution_time = utime.ticks_diff(end_time, start_time)  # Calculate the time difference
+
+    gc.collect()  # Collect garbage and measure free memory after execution
+    free_memory_after = gc.mem_free()
+    print(f"Tiempo de ejecución de {func.__name__}: {execution_time} ms")
+    print("Memoria libre después de la ejecución:", free_memory_after)
+
+    memory_change = free_memory_before - free_memory_after
+    print(f"Cambio en la memoria usada: {memory_change} bytes")
+
+
+
+--- Contenido de py_1carpeta_contenido_combinado.py ---
+
+import os
+
+# Establece el directorio donde se encuentran tus archivos .py
+directorio = r'E:\PQSolutions\HDD-Monitor\HDD-Monitor-GitHub\ESP32_MQTT_PYTHON_VSCODE\11-2024 Bluetooth ESP32'  # Cambia esto por la ruta de tu carpeta
+
+# Nombre del archivo de salida donde se guardará todo el contenido
+archivo_salida = 'contenido_combinado.txt'
+
+# Crea una lista para almacenar todo el contenido
+contenido_total = []
+
+# Recorre todos los archivos en el directorio especificado
+for archivo in os.listdir(directorio):
+    if archivo.endswith('.py'):
+        ruta_completa = os.path.join(directorio, archivo)
+        # Añade el nombre del archivo al contenido
+        contenido_total.append(f"--- Contenido de {archivo} ---\n")
+        # Abre el archivo y lee su contenido
+        with open(ruta_completa, 'r', encoding='utf-8') as f:
+            contenido_total.append(f.read() + '\n\n')
+
+# Escribe todo el contenido recopilado en el archivo de salida
+with open(os.path.join(directorio, archivo_salida), 'w', encoding='utf-8') as f:
+    f.write('\n'.join(contenido_total))
+
+print(f"Todo el contenido de los archivos .py ha sido combinado en {archivo_salida}")
+
+
+
+--- Contenido de relay_manager.py ---
+
+from machine import Pin
+import time
+
+class RelayManager:
+    def __init__(self):
+        self.relays = {}
+        self.relay_states = {}
+        self.last_trigger_time = {}
+
+    def setup_relay(self, pin_num, callback):
+        pin = Pin(pin_num, Pin.IN, Pin.PULL_UP)
+        self.relays[pin_num] = pin
+        self.relay_states[pin_num] = pin.value()
+        pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=lambda p: self.debounce(pin_num, p, callback))
+        return pin
+
+    def debounce(self, pin_num, pin, callback):
+        current_time = time.ticks_ms()
+        if current_time - self.last_trigger_time.get(pin_num, 0) > 300 and self.relay_states[pin_num] != pin.value():  # 300 ms debounce period
+            self.relay_states[pin_num] = pin.value()  # Actualizar el estado del relay
+            callback(pin, pin_num)
+            self.last_trigger_time[pin_num] = current_time
+
+
+
+--- Contenido de watchdog_manager.py ---
+
+from machine import WDT
+
+class WatchdogManager:
+    def __init__(self, timeout=120000):
+        # Configura el watchdog con un timeout de 120 segundos por defecto
+        self.watchdog = WDT(timeout=timeout)
+    
+    def feed(self):
+        # Alimenta al watchdog para resetear el timer y evitar un reset del sistema
+        self.watchdog.feed()
+
+
+
+--- Contenido de wifi_manager.py ---
+
+import network
+import utime
+import urequests
+
+class WiFiManager:
+    def __init__(self):
+        self.SSID = None
+        self.PASSWORD = None
+        self.sta_if = network.WLAN(network.STA_IF)
+        self.sta_if.active(True)
+        
+    def connect_wifi(self):
+        if not self.SSID or not self.PASSWORD:
+            raise Exception("SSID y PASSWORD no configurados")
+            
+        if not self.sta_if.isconnected():
+            print(f"Intentando conectar a red: {self.SSID}")
+            
+            # Desconectar si ya estaba intentando conectarse
+            try:
+                self.sta_if.disconnect()
+            except:
+                pass
+                
+            # Esperar un momento antes de intentar nueva conexión
+            utime.sleep(1)
+            
+            # Intentar conexión
+            try:
+                self.sta_if.connect(self.SSID, self.PASSWORD)
+            except Exception as e:
+                print(f"Error al intentar conexión: {e}")
+                return False
+                
+            print("Esperando respuesta del router...")
+            
+        return self.sta_if.isconnected()
+
+    def ensure_wifi_connected(self):
+        if not self.sta_if.isconnected():
+            return self.connect_wifi()
+        return True
+
+    def disconnect(self):
+        """Desconecta del WiFi actual"""
+        if self.sta_if.isconnected():
+            self.sta_if.disconnect()
+            while self.sta_if.isconnected():
+                utime.sleep_ms(100)
+                
+    def get_status(self):
+        """Obtiene el estado actual de la conexión"""
+        if not self.sta_if.active():
+            return "DISABLED"
+        if self.sta_if.isconnected():
+            return "CONNECTED"
+        return "DISCONNECTED"
+
+    def get_signal_strength(self):
+        """Obtiene la fuerza de la señal si está conectado"""
+        if self.sta_if.isconnected():
+            try:
+                return self.sta_if.status('rssi')
+            except:
+                return None
+        return None
+
+    def check_connection(self):
+        self.ensure_wifi_connected()
+
+    def get_current_time(self):
+        self.check_connection()
+        current_time = self._get_world_time()
+        return current_time
+
+    def _get_world_time(self):
+        try:
+            response = urequests.get("http://worldtimeapi.org/api/timezone/America/Lima")
+            data = response.json()
+            current_datetime = data["datetime"]
+            response.close()
+            return self._format_datetime(current_datetime)
+        except Exception as e:
+            print("Error al obtener la fecha y hora:", e)
+            return None
+
+    def _format_datetime(self, datetime_str):
+        # Formatear la fecha y hora según los requisitos
+        year, month, day = datetime_str[:10].split("-")
+        time_str = datetime_str[11:19]
+        return f"el {day}-{month}-{year} a las {time_str}"
+

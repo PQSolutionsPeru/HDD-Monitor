@@ -18,6 +18,7 @@ import com.pqsolutions.hdd_monitor.presentation.state.EventViewState
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import com.pqsolutions.hdd_monitor.util.toUserFriendlyMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -601,13 +602,17 @@ class EventViewModel @Inject constructor(
                 }
 
                 _state.update { it.copy(currentOperation = EventOperation.Loading) }
-                val currentUser = userRepository.getCurrentUser()
+                val currentUser = userRepository.getCurrentUser() ?:
+                throw IllegalStateException("No hay usuario autenticado")
+
+                val isAdmin = currentUser.role == UserRole.ADMIN
 
                 eventRepository.updateEventStatus(
-                    clientDocName,
-                    eventDocName,
-                    newStatus,
-                    currentUser?.documentName
+                    clientDocName = clientDocName,
+                    eventDocName = eventDocName,
+                    newStatus = newStatus,
+                    updatedByUserId = currentUser.documentName,  // Cambio aquí: se usaba documentName en vez de userDocName
+                    isAdmin = isAdmin  // Agregamos este parámetro que faltaba
                 ).onSuccess {
                     _state.update {
                         it.copy(currentOperation = EventOperation.Success("Estado actualizado exitosamente"))
@@ -705,6 +710,22 @@ class EventViewModel @Inject constructor(
         }
     }
 
+    fun clearListeners() {
+        viewModelScope.launch {
+            try {
+                // Cancelar el Job actual si existe
+                viewModelScope.coroutineContext.cancelChildren()
+
+                // Limpiar el estado
+                _state.update {
+                    EventViewState.initial()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error clearing listeners", e)
+            }
+        }
+    }
+
     private fun clearDialogState() {
         _state.update {
             it.copy(
@@ -734,6 +755,7 @@ class EventViewModel @Inject constructor(
                     is EventFilter.Accepted -> event.isAceptado
                     is EventFilter.ByClient -> event.clientDocName == (currentFilter as EventFilter.ByClient).clientDocName
                     is EventFilter.ByType -> event.type == (currentFilter as EventFilter.ByType).eventType
+                    is EventFilter.Completed -> event.isFinalizado // Agregar este caso
                 }
             }
             .sortedWith { a, b ->
@@ -759,7 +781,17 @@ class EventViewModel @Inject constructor(
                         if (currentSort.direction == EventSortOption.SortDirection.DESC)
                             comparison * -1 else comparison
                     }
+                    EventSortOption.SortField.LAST_UPDATE -> { // Agregar este caso
+                        val comparison = a.lastUpdate.compareTo(b.lastUpdate)
+                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
+                            comparison * -1 else comparison
+                    }
                 }
             }
+    }
+
+    override fun onCleared() {
+        clearListeners()
+        super.onCleared()
     }
 }

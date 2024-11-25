@@ -230,9 +230,20 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "Attempting logout")
             try {
-                authRepository.logout()
-                handleLogout()
-                Log.d(TAG, "Logout successful")
+                // Primero limpiamos los listeners
+                eventRepository.clearListeners()
+
+                // Luego procedemos con el logout
+                authRepository.logout().fold(
+                    onSuccess = {
+                        handleLogout()
+                        Log.d(TAG, "Logout successful")
+                    },
+                    onFailure = { e ->
+                        Log.e(TAG, "Logout failed: ${e.message}", e)
+                        _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
+                    }
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "Logout failed: ${e.message}", e)
                 _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
@@ -252,6 +263,13 @@ class MainViewModel @Inject constructor(
             )
             _hasPendingNotifications.value = false
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        sessionCheckJob?.cancel()
+        eventRepository.clearListeners()
+        LocalBroadcastManager.getInstance(context).unregisterReceiver(panelUpdateReceiver)
     }
 
     private fun checkPendingNotifications() {
@@ -304,11 +322,5 @@ class MainViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error updating FCM token: ${e.message}")
         }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        sessionCheckJob?.cancel()
-        LocalBroadcastManager.getInstance(context).unregisterReceiver(panelUpdateReceiver)
     }
 }

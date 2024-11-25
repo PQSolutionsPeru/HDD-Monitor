@@ -52,8 +52,11 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideEventRepository(firestore: FirebaseFirestore): EventRepository {
-        return EventRepository(firestore)
+    fun provideEventRepository(
+        firestore: FirebaseFirestore,
+        auth: FirebaseAuth
+    ): EventRepository {
+        return EventRepository(firestore, auth)
     }
 
     @Provides

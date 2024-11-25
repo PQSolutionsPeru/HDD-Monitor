@@ -1,0 +1,2019 @@
+### settings.gradle.kts ###
+
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+    versionCatalogs {
+        create("libs") {
+            version("compose-compiler", "1.5.8")
+            version("compose-bom", "2024.01.00")
+
+            plugin("android-application", "com.android.application").version("8.2.2")
+            plugin("kotlin-android", "org.jetbrains.kotlin.android").version("1.9.22")
+            plugin("hilt-android", "com.google.dagger.hilt.android").version("2.50")
+            plugin("google-services", "com.google.gms.google-services").version("4.4.2")
+
+            library("androidx-compose-bom", "androidx.compose", "compose-bom").versionRef("compose-bom")
+            library("androidx-compose-ui", "androidx.compose.ui", "ui").withoutVersion()
+            library("androidx-compose-ui-graphics", "androidx.compose.ui", "ui-graphics").withoutVersion()
+            library("androidx-compose-ui-tooling-preview", "androidx.compose.ui", "ui-tooling-preview").withoutVersion()
+            library("androidx-compose-material3", "androidx.compose.material3", "material3").version("1.2.0")
+            library("androidx-compose-runtime", "androidx.compose.runtime", "runtime").withoutVersion()
+
+            library("androidx-compose-animation", "androidx.compose.animation", "animation").version("1.5.4")
+            library("androidx-compose-foundation", "androidx.compose.foundation", "foundation").withoutVersion()
+            library("androidx-compose-material-icons-extended", "androidx.compose.material", "material-icons-extended").withoutVersion()
+
+            library("androidx-core-ktx", "androidx.core", "core-ktx").version("1.12.0")
+            library("androidx-lifecycle-runtime-ktx", "androidx.lifecycle", "lifecycle-runtime-ktx").version("2.7.0")
+            library("androidx-activity-compose", "androidx.activity", "activity-compose").version("1.8.2")
+            library("androidx-room-ktx", "androidx.room", "room-ktx").version("2.6.1")
+
+            // Firebase
+            library("firebase-bom-v3280", "com.google.firebase", "firebase-bom").version("32.8.0")
+            library("firebase-analytics-ktx", "com.google.firebase", "firebase-analytics-ktx")
+            library("com-google-firebase-firebase-auth-ktx", "com.google.firebase", "firebase-auth-ktx")
+            library("com-google-firebase-firebase-firestore-ktx", "com.google.firebase", "firebase-firestore-ktx")
+            library("com-google-firebase-firebase-messaging-ktx", "com.google.firebase", "firebase-messaging-ktx")
+            library("firebase-functions-ktx", "com.google.firebase", "firebase-functions-ktx")
+            library("firebase-crashlytics-ktx", "com.google.firebase", "firebase-crashlytics-ktx")
+
+            // Hilt
+            library("hilt-android", "com.google.dagger", "hilt-android").version("2.50")
+            library("hilt-android-compiler", "com.google.dagger", "hilt-android-compiler").version("2.50")
+            library("androidx-hilt-navigation-compose", "androidx.hilt", "hilt-navigation-compose").version("1.2.0")
+            library("androidx-hilt-work", "androidx.hilt", "hilt-work").version("1.2.0")
+            library("androidx-hilt-compiler", "androidx.hilt", "hilt-compiler").version("1.2.0")
+
+            // Navigation & Paging
+            library("androidx-navigation-compose-v281", "androidx.navigation", "navigation-compose").version("2.8.1")
+            library("androidx-paging-compose", "androidx.paging", "paging-compose").version("3.3.2")
+
+            // Coroutines
+            library("kotlinx-coroutines-android", "org.jetbrains.kotlinx", "kotlinx-coroutines-android").version("1.7.3")
+            library("kotlinx-coroutines-play-services", "org.jetbrains.kotlinx", "kotlinx-coroutines-play-services").version("1.7.3")
+
+            // Testing
+            library("junit", "junit", "junit").version("4.13.2")
+            library("mockito-core", "org.mockito", "mockito-core").version("5.7.0")
+            library("kotlinx-coroutines-test", "org.jetbrains.kotlinx", "kotlinx-coroutines-test").version("1.7.3")
+            library("androidx-test-ext-junit", "androidx.test.ext", "junit").version("1.1.5")
+            library("androidx-test-espresso-core", "androidx.test.espresso", "espresso-core").version("3.5.1")
+
+            // Google Play Services
+            library("play-services-base", "com.google.android.gms", "play-services-base").version("18.5.0")
+            library("play-services-auth", "com.google.android.gms", "play-services-auth").version("21.2.0")
+
+            // WorkManager
+            library("androidx-work-runtime-ktx", "androidx.work", "work-runtime-ktx").version("2.9.1")
+
+            // Lifecycle
+            library("androidx-lifecycle-viewmodel-ktx", "androidx.lifecycle", "lifecycle-viewmodel-ktx").version("2.8.6")
+            library("androidx-lifecycle-runtime-ktx-v286", "androidx.lifecycle", "lifecycle-runtime-ktx").version("2.8.6")
+            library("androidx-activity-ktx", "androidx.activity", "activity-ktx").version("1.9.2")
+
+            // Date & Time Pickers
+            library("core", "com.maxkeppeler.sheets-compose-dialogs", "core").version("1.2.0")
+            library("calendar", "com.maxkeppeler.sheets-compose-dialogs", "calendar").version("1.2.0")
+            library("clock", "com.maxkeppeler.sheets-compose-dialogs", "clock").version("1.2.0")
+            library("state", "com.maxkeppeler.sheets-compose-dialogs", "state").version("1.2.0")
+
+            // DataStore
+            library("androidx-datastore-preferences", "androidx.datastore", "datastore-preferences").version("1.1.1")
+
+            // Multidex
+            library("androidx-multidex", "androidx.multidex", "multidex").version("2.0.1")
+        }
+    }
+}
+
+rootProject.name = "HDD1_2"
+include(":app")
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\di\AppModule.kt ###
+
+package com.pqsolutions.hdd_monitor.di
+
+import android.content.Context
+import android.content.SharedPreferences
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.messaging.FirebaseMessaging
+import com.pqsolutions.hdd_monitor.data.EventRepository
+import com.pqsolutions.hdd_monitor.data.NotificationRepository
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.presentation.managers.NotificationManager
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Named
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideApplicationContext(@ApplicationContext context: Context): Context {
+        return context
+    }
+
+    @Provides
+    @Singleton
+    fun providePanelRepository(
+        firestore: FirebaseFirestore,
+        firebaseMessaging: FirebaseMessaging,
+        @ApplicationContext context: Context,
+        @Named("HddMonitorPrefs") sharedPreferences: SharedPreferences
+    ): PanelRepository = PanelRepository(firestore, firebaseMessaging, context, sharedPreferences)
+
+    @Provides
+    @Singleton
+    fun provideUserPreferences(@ApplicationContext context: Context): UserPreferences {
+        return UserPreferences(context)
+    }
+
+    @Provides
+    @Singleton
+    @Named("HddMonitorPrefs")
+    fun provideSharedPreferences(@ApplicationContext context: Context): SharedPreferences {
+        return context.getSharedPreferences("HddMonitorPrefs", Context.MODE_PRIVATE)
+    }
+
+    @Provides
+    @Singleton
+    fun provideEventRepository(firestore: FirebaseFirestore): EventRepository {
+        return EventRepository(firestore)
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserRepository(
+        firestore: FirebaseFirestore,
+        auth: FirebaseAuth
+    ): UserRepository {
+        return UserRepository(firestore, auth)
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationRepository(
+        firestore: FirebaseFirestore,
+        userRepository: UserRepository
+    ): NotificationRepository {
+        return NotificationRepository(firestore, userRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationManager(
+        eventRepository: EventRepository,
+        userRepository: UserRepository,
+        panelRepository: PanelRepository,
+        @ApplicationContext context: Context  // Agregado el contexto
+    ): NotificationManager {
+        return NotificationManager(
+            eventRepository = eventRepository,
+            userRepository = userRepository,
+            panelRepository = panelRepository,
+            context = context
+        )
+    }
+}
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\di\FirebaseModule.kt ###
+
+package com.pqsolutions.hdd_monitor.di
+
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.messaging.FirebaseMessaging
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object FirebaseModule {
+    @Provides
+    @Singleton
+    fun provideFirebaseAuth(): FirebaseAuth = FirebaseAuth.getInstance()
+
+    @Provides
+    @Singleton
+    fun provideFirebaseFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
+
+    @Provides
+    @Singleton
+    fun provideFirebaseMessaging(): FirebaseMessaging = FirebaseMessaging.getInstance()
+}
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\EventViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import android.util.Log
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.firebase.firestore.FirebaseFirestore
+import com.pqsolutions.hdd_monitor.data.Event
+import com.pqsolutions.hdd_monitor.data.EventRepository
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserData
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.domain.model.EventStatus
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.presentation.managers.EventDialogManager
+import com.pqsolutions.hdd_monitor.presentation.managers.EventFilterManager
+import com.pqsolutions.hdd_monitor.presentation.managers.EventManager
+import com.pqsolutions.hdd_monitor.presentation.managers.EventTypeManager
+import com.pqsolutions.hdd_monitor.presentation.state.EventDialogEvent
+import com.pqsolutions.hdd_monitor.presentation.state.EventFilter
+import com.pqsolutions.hdd_monitor.presentation.state.EventSortOption
+import com.pqsolutions.hdd_monitor.presentation.state.EventUIEvent
+import com.pqsolutions.hdd_monitor.presentation.state.EventViewState
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import kotlin.coroutines.cancellation.CancellationException
+
+@HiltViewModel
+class EventViewModel @Inject constructor(
+    private val eventRepository: EventRepository,
+    private val userRepository: UserRepository,
+    private val panelRepository: PanelRepository,
+    private val firestore: FirebaseFirestore,
+    private val savedStateHandle: SavedStateHandle
+) : ViewModel() {
+
+    companion object {
+        private const val TAG = "EventViewModel"
+        private const val USER_CACHE_DURATION = 30_000L // 30 segundos
+        private const val REFRESH_INTERVAL = 60_000L    // 1 minuto
+    }
+
+    private val supervisor = SupervisorJob()
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+
+    private val _state = MutableStateFlow(EventViewState.initial())
+    val state: StateFlow<EventViewState> = _state.asStateFlow()
+
+    private val _uiEvent = Channel<EventUIEvent>()
+    val uiEvent = _uiEvent.receiveAsFlow()
+
+    private var currentFilter: EventFilter = EventFilter.All
+    private var currentSort = EventSortOption.DEFAULT
+
+    private var currentUser: UserData? = null
+    private var lastUserFetch = 0L
+    private var refreshJob: Job? = null
+    private var loadEventsJob: Job? = null
+
+    // Managers
+    private val eventTypeManager = EventTypeManager(
+        firestore = firestore,
+        viewModelScope = viewModelScope,
+        onError = { message -> sendSnackbar(message) },
+        onMessage = { message -> sendSnackbar(message) }
+    )
+
+    private val eventManager = EventManager(
+        eventRepository = eventRepository,
+        panelRepository = panelRepository,
+        viewModelScope = viewModelScope,
+        onError = { message -> sendSnackbar(message) },
+        onMessage = { message -> sendSnackbar(message) }
+    )
+
+    private val filterManager = EventFilterManager()
+
+    private val dialogManager = EventDialogManager(
+        panelRepository = panelRepository,
+        eventManager = eventManager,
+        viewModelScope = viewModelScope,
+        onError = { message -> sendSnackbar(message) },
+        _state = _state,
+        loadEvents = { loadEvents(false) }
+    )
+
+    init {
+        initializeViewModel()
+    }
+
+    private fun initializeViewModel() {
+        viewModelScope.launch(supervisor) {
+            try {
+                loadInitialData()
+                startPeriodicRefresh()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing ViewModel", e)
+                sendSnackbar("Error iniciando la aplicación")
+            }
+        }
+    }
+
+    private fun startPeriodicRefresh() {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch(supervisor) {
+            while (true) {
+                delay(REFRESH_INTERVAL)
+                refreshSilently()
+            }
+        }
+    }
+
+    private suspend fun loadInitialData() = withContext(ioDispatcher) {
+        getCurrentUser()?.let { user ->
+            loadEventTypes()
+            if (user.role == UserRole.ADMIN) {
+                loadUsers()
+                loadClients()
+            }
+            loadEvents()
+        }
+    }
+
+    private suspend fun getCurrentUser(): UserData? = withContext(ioDispatcher) {
+        val currentTime = System.currentTimeMillis()
+        if (currentUser != null && currentTime - lastUserFetch < USER_CACHE_DURATION) {
+            currentUser
+        } else {
+            userRepository.getCurrentUser()?.also {
+                currentUser = it
+                lastUserFetch = currentTime
+            }
+        }
+    }
+
+    private suspend fun refreshSilently() {
+        try {
+            withContext(ioDispatcher) {
+                getCurrentUser()?.let { user ->
+                    loadEventTypes()
+                    if (user.role == UserRole.ADMIN) {
+                        loadUsers()
+                        loadClients()
+                    }
+                    loadEvents(showLoading = false)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in silent refresh", e)
+        }
+    }
+
+    private fun loadEventTypes() {
+        viewModelScope.launch(supervisor + ioDispatcher) {
+            try {
+                val types = eventTypeManager.loadEventTypes()
+                _state.value = _state.value.copy(eventTypes = types)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading events types", e)
+            }
+        }
+    }
+
+    private fun loadUsers() {
+        viewModelScope.launch(supervisor + ioDispatcher) {
+            try {
+                userRepository.getAllUsers()
+                    .onSuccess { usersList ->
+                        _state.value = _state.value.copy(users = usersList)
+                    }
+                    .onFailure { error ->
+                        Log.e(TAG, "Error loading users", error)
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in loadUsers", e)
+            }
+        }
+    }
+
+    fun loadEvents(showLoading: Boolean = true) {
+        loadEventsJob?.cancel()
+        loadEventsJob = viewModelScope.launch(supervisor + ioDispatcher) {
+            try {
+                _state.value = _state.value.copy(isLoading = true)
+
+                val user = getCurrentUser() ?: run {
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        error = "No se encontró usuario actual"
+                    )
+                    return@launch
+                }
+
+                // Usar el Flow existente según el rol del usuario
+                val eventsFlow = if (user.role == UserRole.ADMIN) {
+                    eventRepository.getAllEventsFlow()
+                } else {
+                    eventRepository.getEventsFlow(user.clientDocName ?: "")
+                }
+
+                eventsFlow.collect { events ->
+                    // Ordenar eventos por fecha descendente
+                    val sortedEvents = events.sortedByDescending { event ->
+                        event.date_time // Ya es string en tu BD
+                    }
+
+                    _state.value = _state.value.copy(
+                        events = sortedEvents,
+                        isLoading = false,
+                        error = null,
+                        lastUpdate = System.currentTimeMillis()
+                    )
+                }
+
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error desconocido"
+                )
+            }
+        }
+    }
+
+    fun loadClients() {
+        viewModelScope.launch(supervisor + ioDispatcher) {
+            try {
+                eventRepository.getClients()
+                    .onSuccess { clients ->
+                        _state.value = _state.value.copy(clients = clients)
+                    }
+                    .onFailure { error ->
+                        Log.e(TAG, "Error loading clients", error)
+                        sendSnackbar(error.message ?: "Error al cargar clientes")
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading clients", e)
+                sendSnackbar(e.message ?: "Error al cargar clientes")
+            }
+        }
+    }
+
+    private fun loadPanelsForClient(clientDocName: String) {
+        viewModelScope.launch(supervisor + ioDispatcher) {
+            try {
+                _state.value = _state.value.copy(
+                    selectedClientForPanels = clientDocName,
+                    availablePanels = emptyList()
+                )
+
+                panelRepository.getPanels(clientDocName)
+                    .distinctUntilChanged()
+                    .flowOn(ioDispatcher)
+                    .collect { panels ->
+                        _state.value = _state.value.copy(availablePanels = panels)
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading panels", e)
+                sendSnackbar(e.message ?: "Error al cargar paneles")
+            }
+        }
+    }
+
+    fun showCreateDialog() {
+        dialogManager.showCreateDialog()
+    }
+
+    fun showEditDialog(event: Event) {
+        viewModelScope.launch(supervisor) {
+            try {
+                val user = getCurrentUser() ?: return@launch
+                val isAdmin = user.role == UserRole.ADMIN
+
+                if (event.isFinalizado && isAdmin) {
+                    updateEventStatus(
+                        event.clientDocName,
+                        event.documentName,
+                        EventStatus.STATUS_PROGRAMADO
+                    )
+                    sendSnackbar("Evento reabierto exitosamente")
+                    loadEvents(showLoading = false)
+                    return@launch
+                }
+
+                if (!event.isProgramado && !isAdmin) {
+                    sendSnackbar("Solo se pueden editar eventos en estado PROGRAMADO")
+                    return@launch
+                }
+
+                Log.d(TAG, "Opening edit dialog for events: ${event.toLogString()}")
+                _state.value = _state.value.copy(
+                    showDialog = true,
+                    selectedEvent = event,
+                    currentDate = event.dateTime?.toLocalDate(),
+                    currentTime = event.dateTime?.toLocalTime(),
+                    selectedClientForPanels = event.clientDocName,
+                    selectedPanelDocName = event.panelDocName,
+                    selectedPanelName = event.panelName,
+                    selectedEventType = event.type,
+                    newEventTitle = event.title,
+                    newEventDescription = event.text
+                )
+                loadPanelsForClient(event.clientDocName)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error showing edit dialog", e)
+                sendSnackbar("Error al abrir el diálogo de edición")
+            }
+        }
+    }
+
+    fun deleteEvent(clientDocName: String, eventDocName: String) {
+        viewModelScope.launch(supervisor + ioDispatcher) {
+            try {
+                eventManager.deleteEvent(
+                    clientDocName = clientDocName,
+                    eventDocName = eventDocName,
+                    onSuccess = { loadEvents(showLoading = false) }
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error deleting events", e)
+                sendSnackbar("Error al eliminar el evento")
+            }
+        }
+    }
+
+    fun updateEventStatus(clientDocName: String, eventDocName: String, newStatus: String) {
+        viewModelScope.launch(supervisor + ioDispatcher) {
+            try {
+                val user = getCurrentUser()
+                if (user == null) {
+                    sendSnackbar("Usuario no encontrado")
+                    return@launch
+                }
+
+                val event = _state.value.events.find {
+                    it.clientDocName == clientDocName && it.documentName == eventDocName
+                }
+                if (event == null) {
+                    Log.w(TAG, "Evento no encontrado: $eventDocName")
+                    sendSnackbar("Evento no encontrado")
+                    return@launch
+                }
+
+                val isAdmin = user.role == UserRole.ADMIN
+                if (!EventStatus.isValidTransition(event.status, newStatus, isAdmin)) {
+                    Log.w(TAG, "Transición inválida: ${event.status} -> $newStatus (isAdmin: $isAdmin)")
+                    sendSnackbar("Transición de estado no permitida")
+                    return@launch
+                }
+
+                eventManager.updateEventStatus(
+                    clientDocName = clientDocName,
+                    eventDocName = eventDocName,
+                    newStatus = newStatus,
+                    acceptorDocName = user.documentName,
+                    isAdmin = isAdmin,
+                    onSuccess = {
+                        loadEvents(showLoading = false)
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating events status", e)
+                sendSnackbar(e.message ?: "Error al actualizar estado")
+            }
+        }
+    }
+
+    fun setFilter(filter: EventFilter) {
+        if (currentFilter != filter) {
+            currentFilter = filter
+            loadEvents(showLoading = false)
+        }
+    }
+
+    fun setSortOption(sortOption: EventSortOption) {
+        if (currentSort != sortOption) {
+            currentSort = sortOption
+            loadEvents(showLoading = false)
+        }
+    }
+
+    fun filterByType(eventType: String) {
+        val newFilter = EventFilter.ByType(eventType)
+        if (currentFilter != newFilter) {
+            currentFilter = newFilter
+            loadEvents(showLoading = false)
+        }
+    }
+
+    fun refresh() {
+        viewModelScope.launch(supervisor) {
+            _state.value = _state.value.copy(isRefreshing = true)
+            try {
+                getCurrentUser()?.let { user ->
+                    loadEventTypes()
+                    if (user.role == UserRole.ADMIN) {
+                        loadUsers()
+                        loadClients()
+                    }
+                    loadEvents(showLoading = false)
+                }
+            } finally {
+                _state.value = _state.value.copy(isRefreshing = false)
+            }
+        }
+    }
+
+    fun onDialogEvent(event: EventDialogEvent) {
+        viewModelScope.launch(supervisor) {
+            try {
+                val user = getCurrentUser() ?: return@launch
+
+                when (event) {
+                    is EventDialogEvent.CreateNewEventType -> {
+                        eventTypeManager.createNewEventType(
+                            newType = event.type,
+                            currentUser = user,
+                            onSuccess = { loadEventTypes() }
+                        )
+                    }
+                    is EventDialogEvent.DeleteEventType -> {
+                        eventTypeManager.deleteEventType(
+                            eventType = event.type,
+                            currentUser = user,
+                            onSuccess = { loadEventTypes() }
+                        )
+                    }
+                    else -> {
+                        dialogManager.handleDialogEvent(event, user)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling dialog events: ${event::class.simpleName}", e)
+                sendSnackbar(e.message ?: "Error procesando el evento")
+            }
+        }
+    }
+
+    fun loadEventsForAgenda() {
+        loadEventsJob?.cancel()
+        loadEventsJob = viewModelScope.launch(supervisor + ioDispatcher) {
+            try {
+                _state.value = _state.value.copy(isLoading = true, error = null)
+
+                val user = getCurrentUser() ?: run {
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        error = "No se encontró usuario actual"
+                    )
+                    return@launch
+                }
+
+                withContext(Dispatchers.Main) {
+                    eventManager.loadEvents(
+                        isAdmin = user.role == UserRole.ADMIN,
+                        clientDocName = user.clientDocName,
+                        onSuccess = { events ->
+                            // Filtrar eventos para mostrar solo los relevantes para la agenda
+                            val agendaEvents = events.filter { event ->
+                                // Aquí puedes definir tus criterios de filtrado para la agenda
+                                !event.isFinalizado && event.isProgramado
+                            }
+
+                            _state.value = _state.value.copy(
+                                events = agendaEvents,
+                                isLoading = false,
+                                error = null,
+                                isRefreshing = false,
+                                lastUpdate = System.currentTimeMillis()
+                            )
+                        }
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error desconocido"
+                )
+            }
+        }
+    }
+
+    private fun sendSnackbar(message: String) {
+        viewModelScope.launch(supervisor) {
+            _uiEvent.send(EventUIEvent.ShowSnackbar(message))
+        }
+    }
+
+    override fun onCleared() {
+        supervisor.cancel()
+        refreshJob?.cancel()
+        loadEventsJob?.cancel()
+        super.onCleared()
+    }
+}
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\LoginViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.pqsolutions.hdd_monitor.domain.LoginUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class LoginViewModel @Inject constructor(
+    private val loginUseCase: LoginUseCase
+) : ViewModel() {
+
+    private val _loginState = MutableStateFlow<LoginState>(LoginState.Idle)
+    val loginState: StateFlow<LoginState> = _loginState
+
+    fun login(email: String, password: String) {
+        viewModelScope.launch {
+            _loginState.value = LoginState.Loading
+            val result = loginUseCase(LoginUseCase.Params(email, password))
+            _loginState.value = result.fold(
+                onSuccess = { LoginState.Success },
+                onFailure = { LoginState.Error(it.message ?: "Unknown error") }
+            )
+        }
+    }
+}
+
+sealed class LoginState {
+    object Idle : LoginState()
+    object Loading : LoginState()
+    object Success : LoginState()
+    data class Error(val message: String) : LoginState()
+}
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\MainViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.google.firebase.messaging.FirebaseMessaging
+import com.pqsolutions.hdd_monitor.data.AuthRepository
+import com.pqsolutions.hdd_monitor.data.EventRepository
+import com.pqsolutions.hdd_monitor.presentation.managers.NotificationManager
+import com.pqsolutions.hdd_monitor.data.PanelRepository
+import com.pqsolutions.hdd_monitor.data.UserData
+import com.pqsolutions.hdd_monitor.data.UserPreferences
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.presentation.state.MainUiEvent
+import com.pqsolutions.hdd_monitor.presentation.state.MainUiState
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import javax.inject.Inject
+
+@HiltViewModel
+class MainViewModel @Inject constructor(
+    private val authRepository: AuthRepository,
+    private val userRepository: UserRepository,
+    private val userPreferences: UserPreferences,
+    private val eventRepository: EventRepository,
+    private val panelRepository: PanelRepository,
+    val notificationManager: NotificationManager,
+    @ApplicationContext private val context: Context
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(MainUiState())
+    val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    val notificationState = notificationManager.notificationState
+
+    private var sessionCheckJob: Job? = null
+
+    companion object {
+        private const val TAG = "MainViewModel"
+        const val PANEL_UPDATE_ACTION = "com.pqsolutions.hdd_monitor.PANEL_UPDATE"
+        const val CLIENT_MANAGEMENT_ROUTE = "client_management"
+    }
+
+    private val panelUpdateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == PANEL_UPDATE_ACTION) {
+                val clientDocName = intent.getStringExtra("clientDocName")
+                val panelDocName = intent.getStringExtra("panelDocName")
+                val relayName = intent.getStringExtra("relayName")
+                val relayStatus = intent.getStringExtra("relayStatus")
+                if (clientDocName != null && panelDocName != null && relayName != null && relayStatus != null) {
+                    updateRelay(clientDocName, panelDocName, relayName, relayStatus)
+                }
+            }
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            initializeViewModel()
+            // Observar cambios en el estado de notificaciones
+            notificationManager.notificationState
+                .collect { notificationState ->
+                    _uiState.value = _uiState.value.copy(
+                        hasNewNotifications = notificationState.hasUnread,
+                        notificationCount = notificationState.totalCount
+                    )
+                }
+        }
+    }
+
+    private fun initializeViewModel() {
+        viewModelScope.launch {
+            val savedUser = userPreferences.getUserData()
+            if (savedUser != null && authRepository.isUserLoggedIn()) {
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = true,
+                    userData = savedUser,
+                    currentRoute = "dashboard"
+                )
+                startSessionCheck()
+                initializeNotifications(savedUser.clientDocName)
+            }
+
+            combineUserPreferences().collect { state ->
+                _uiState.value = state
+                Log.d(TAG, "UI State updated: $state")
+                if (state.isLoggedIn) {
+                    state.userData?.let { user ->
+                        initializeNotifications(user.clientDocName)
+                    }
+                }
+            }
+        }
+
+        registerPanelUpdateReceiver()
+        subscribeToTopic()
+    }
+
+    private fun initializeNotifications(clientDocName: String) {
+        viewModelScope.launch {
+            notificationManager.updateNotificationState(clientDocName)
+        }
+    }
+
+    private fun startSessionCheck() {
+        sessionCheckJob?.cancel()
+        sessionCheckJob = viewModelScope.launch {
+            while (true) {
+                if (!authRepository.isUserLoggedIn()) {
+                    handleLogout()
+                    break
+                }
+                kotlinx.coroutines.delay(60000) // Verificar cada minuto
+            }
+        }
+    }
+
+    private fun combineUserPreferences() = combine(
+        userPreferences.isFirstLaunchFlow,
+        userPreferences.userDataFlow,
+        userPreferences.themeFlow,
+        userPreferences.languageFlow,
+        userPreferences.notificationsEnabledFlow
+    ) { isFirstLaunch, userData, theme, language, notificationsEnabled ->
+        MainUiState(
+            isFirstLaunch = isFirstLaunch,
+            isLoggedIn = userData != null,
+            userData = userData,
+            theme = theme,
+            language = language,
+            notificationsEnabled = notificationsEnabled,
+            currentRoute = determineRoute(isFirstLaunch, userData)
+        )
+    }
+
+    private fun determineRoute(isFirstLaunch: Boolean, userData: UserData?): String =
+        when {
+            isFirstLaunch -> "onboarding"
+            userData != null -> "dashboard"
+            else -> "login"
+        }
+
+    private fun registerPanelUpdateReceiver() {
+        LocalBroadcastManager.getInstance(context).registerReceiver(
+            panelUpdateReceiver,
+            IntentFilter(PANEL_UPDATE_ACTION)
+        )
+    }
+
+    private fun subscribeToTopic() {
+        viewModelScope.launch {
+            try {
+                FirebaseMessaging.getInstance().subscribeToTopic("relay-status").await()
+                Log.d(TAG, "Subscribed to relay-status topic")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to subscribe to relay-status topic", e)
+            }
+        }
+    }
+
+    fun updateRelay(clientDocName: String, panelDocName: String, relayName: String, relayStatus: String) {
+        viewModelScope.launch {
+            try {
+                panelRepository.updateRelayStatus(clientDocName, panelDocName, relayName, relayStatus)
+                notificationManager.updateNotificationState(clientDocName)
+                Log.d(TAG, "Relay updated successfully: Panel=$panelDocName, Relay=$relayName, Status=$relayStatus")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating relay: ${e.message}", e)
+            }
+        }
+    }
+
+    fun onEvent(event: MainUiEvent) {
+        when (event) {
+            is MainUiEvent.Login -> login(event.email, event.password)
+            is MainUiEvent.Logout -> logout()
+            is MainUiEvent.FinishOnboarding -> finishOnboarding()
+            is MainUiEvent.SetTheme -> setTheme(event.theme)
+            is MainUiEvent.SetLanguage -> setLanguage(event.language)
+            is MainUiEvent.SetNotificationsEnabled -> setNotificationsEnabled(event.enabled)
+        }
+    }
+
+    private fun login(email: String, password: String) {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Attempting login for email: $email")
+                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+                authRepository.login(email, password).fold(
+                    onSuccess = { user ->
+                        handleLoginSuccess(user)
+                    },
+                    onFailure = { e ->
+                        handleLoginFailure(e)
+                    }
+                )
+            } catch (e: Exception) {
+                handleNetworkError(e)
+            }
+        }
+    }
+
+    private suspend fun handleLoginSuccess(user: UserData) {
+        userPreferences.setUserData(user)
+        updateFCMToken()
+        startSessionCheck()
+        initializeNotifications(user.clientDocName)
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            isLoggedIn = true,
+            userData = user,
+            error = null,
+            currentRoute = "dashboard"
+        )
+        Log.d(TAG, "Login successful for user: ${user.name}")
+    }
+
+    private fun handleLoginFailure(e: Throwable) {
+        Log.e(TAG, "Login failed: ${e.message}", e)
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            error = e.message ?: "Unknown error occurred"
+        )
+    }
+
+    private fun handleNetworkError(e: Exception) {
+        Log.e(TAG, "Network error during login: ${e.message}", e)
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            error = "Network error: ${e.message}"
+        )
+    }
+
+    private fun logout() {
+        viewModelScope.launch {
+            Log.d(TAG, "Attempting logout")
+            try {
+                authRepository.logout()
+                handleLogout()
+                Log.d(TAG, "Logout successful")
+            } catch (e: Exception) {
+                Log.e(TAG, "Logout failed: ${e.message}", e)
+                _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
+            }
+        }
+    }
+
+    private fun handleLogout() {
+        viewModelScope.launch {
+            userPreferences.clearUserData()
+            sessionCheckJob?.cancel()
+            _uiState.value = _uiState.value.copy(
+                isLoggedIn = false,
+                userData = null,
+                error = null,
+                currentRoute = "login"
+            )
+        }
+    }
+
+    private fun finishOnboarding() {
+        viewModelScope.launch {
+            userPreferences.setFirstLaunch(false)
+        }
+    }
+
+    private fun setTheme(theme: String) {
+        viewModelScope.launch {
+            userPreferences.setTheme(theme)
+        }
+    }
+
+    private fun setLanguage(language: String) {
+        viewModelScope.launch {
+            userPreferences.setLanguage(language)
+        }
+    }
+
+    private fun setNotificationsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferences.setNotificationsEnabled(enabled)
+        }
+    }
+
+    private suspend fun updateFCMToken() {
+        try {
+            val token = FirebaseMessaging.getInstance().token.await()
+            val currentUser = userRepository.getCurrentUser()
+            if (currentUser != null) {
+                userRepository.updateFcmToken(currentUser.documentName, token)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating FCM token: ${e.message}")
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        sessionCheckJob?.cancel()
+        LocalBroadcastManager.getInstance(context).unregisterReceiver(panelUpdateReceiver)
+    }
+}
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\NotificationHistoryViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.pqsolutions.hdd_monitor.data.Notification
+import com.pqsolutions.hdd_monitor.data.NotificationRepository
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+private const val TAG = "NotificationHistoryVM"
+
+data class NotificationHistoryUiState(
+    val notifications: List<Notification> = emptyList(),
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val lastUpdate: Long = System.currentTimeMillis()
+)
+
+@HiltViewModel
+class NotificationHistoryViewModel @Inject constructor(
+    private val notificationRepository: NotificationRepository,
+    private val userRepository: UserRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(NotificationHistoryUiState())
+    val uiState: StateFlow<NotificationHistoryUiState> = _uiState.asStateFlow()
+
+    init {
+        loadNotifications()
+    }
+
+    private fun loadNotifications() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
+                    val notificationsFlow = when (currentUser.role) {
+                        UserRole.ADMIN -> notificationRepository.getNotificationsFlow()
+                        else -> notificationRepository.getNotificationsFlow(currentUser.clientDocName)
+                    }
+
+                    notificationsFlow
+                        .catch { e ->
+                            Log.e(TAG, "Error loading notifications", e)
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    error = e.message ?: "Error al cargar notificaciones"
+                                )
+                            }
+                        }
+                        .collect { notifications ->
+                            // Verificar que todas las notificaciones tengan nombres de documento válidos
+                            val validNotifications = notifications.all { notification ->
+                                notification.documentName.startsWith(DocumentPrefixes.NOTIFICATION) &&
+                                        notification.documentName.contains(notification.clientDocName)
+                            }
+
+                            if (!validNotifications) {
+                                Log.w(TAG, "Se encontraron notificaciones con nombres de documento inválidos")
+                            }
+
+                            // Ordenar las notificaciones por fecha, las más recientes primero
+                            val sortedNotifications = notifications
+                                .sortedByDescending { it.date_time }
+                                .distinctBy { "${it.clientDocName}_${it.documentName}" }
+
+                            _uiState.update {
+                                it.copy(
+                                    notifications = sortedNotifications,
+                                    isLoading = false,
+                                    error = null,
+                                    lastUpdate = System.currentTimeMillis()
+                                )
+                            }
+                            Log.d(TAG, "Notifications loaded: ${sortedNotifications.size}")
+                            sortedNotifications.forEach { notification ->
+                                Log.d(
+                                    TAG, "Notification loaded - " +
+                                            "Doc: ${notification.documentName}, " +
+                                            "Client: ${notification.clientDocName}, " +
+                                            "Panel: ${notification.panelDocName}"
+                                )
+                            }
+                        }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "No se encontró usuario actual"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in loadNotifications", e)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = e.message ?: "Error desconocido al cargar notificaciones"
+                    )
+                }
+            }
+        }
+    }
+
+    fun refreshNotifications() {
+        Log.d(TAG, "Refreshing notifications")
+        loadNotifications()
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        Log.d(TAG, "ViewModel cleared")
+    }
+}
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\NotificationViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.pqsolutions.hdd_monitor.data.Event
+import com.pqsolutions.hdd_monitor.data.EventRepository
+import com.pqsolutions.hdd_monitor.data.Panel
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.presentation.state.CombinedNotificationState
+import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import javax.inject.Inject
+
+private const val TAG = "NotificationViewModel"
+
+sealed class NotificationStatus {
+    object PROGRAMADO : NotificationStatus()
+    object ACEPTADO : NotificationStatus()
+
+    override fun toString(): String = when (this) {
+        is PROGRAMADO -> "PROGRAMADO"
+        is ACEPTADO -> "ACEPTADO"
+    }
+
+    companion object {
+        fun fromString(status: String): NotificationStatus = when (status.uppercase()) {
+            "PROGRAMADO" -> PROGRAMADO
+            "ACEPTADO" -> ACEPTADO
+            else -> PROGRAMADO
+        }
+    }
+}
+
+data class NotificationItem(
+    val documentName: String = "",
+    val clientDocName: String = "",
+    val title: String = "",
+    val text: String = "",
+    val date_time: String = "",
+    val status: NotificationStatus,
+    val panelDocName: String? = null,
+    val isRead: Boolean = false
+) {
+    fun isValid(): Boolean {
+        return documentName.startsWith(DocumentPrefixes.NOTIFICATION) &&
+                clientDocName.startsWith(DocumentPrefixes.CLIENT) &&
+                title.isNotBlank() &&
+                text.isNotBlank() &&
+                date_time.isNotBlank() &&
+                (panelDocName?.startsWith(DocumentPrefixes.PANEL) ?: true)
+    }
+}
+
+data class NotificationUiState(
+    val notifications: List<NotificationItem> = emptyList(),
+    val hasNewNotifications: Boolean = false,
+    val pendingCount: Int = 0,
+    val error: String? = null,
+    val isLoading: Boolean = false,
+    val lastUpdate: Long = System.currentTimeMillis()
+)
+
+@HiltViewModel
+class NotificationViewModel @Inject constructor(
+    private val eventRepository: EventRepository,
+    private val userRepository: UserRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(NotificationUiState())
+    val uiState: StateFlow<NotificationUiState> = _uiState.asStateFlow()
+
+    private val _combinedNotificationState = MutableStateFlow(CombinedNotificationState())
+    val combinedNotificationState: StateFlow<CombinedNotificationState> = _combinedNotificationState.asStateFlow()
+
+    private val mutex = Mutex()
+    private val notificationScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
+            Log.e(TAG, "Error en NotificationViewModel", throwable)
+            _uiState.update {
+                it.copy(
+                    error = throwable.message,
+                    isLoading = false
+                )
+            }
+        }
+    )
+
+    private var notificationJob: Job? = null
+
+    init {
+        initializeNotifications()
+    }
+
+    private fun initializeNotifications() {
+        notificationJob?.cancel()
+        notificationJob = notificationScope.launch {
+            mutex.withLock {
+                try {
+                    _uiState.update { it.copy(isLoading = true) }
+
+                    val currentUser = userRepository.getCurrentUser() ?: run {
+                        _uiState.update {
+                            it.copy(
+                                error = "Usuario no encontrado",
+                                isLoading = false
+                            )
+                        }
+                        return@withLock
+                    }
+
+                    Log.d(TAG, "Initializing notifications for user: ${currentUser.documentName}")
+
+                    combine(
+                        eventRepository.getEventsFlow(currentUser.clientDocName)
+                            .distinctUntilChanged()
+                            .debounce(300),
+                        eventRepository.getPanelStatusFlow(currentUser.clientDocName)
+                            .distinctUntilChanged()
+                            .debounce(300)
+                    ) { events, panels ->
+                        processNotificationUpdate(events, panels)
+                    }
+                        .flowOn(Dispatchers.Default)
+                        .catch { e ->
+                            Log.e(TAG, "Error processing notifications", e)
+                            _uiState.update {
+                                it.copy(
+                                    error = e.message,
+                                    isLoading = false
+                                )
+                            }
+                        }
+                        .collect { (notifications, combinedState) ->
+                            mutex.withLock {
+                                _uiState.value = _uiState.value.copy(
+                                    notifications = notifications,
+                                    hasNewNotifications = combinedState.hasUnread,
+                                    pendingCount = combinedState.eventsCount,
+                                    error = null,
+                                    isLoading = false,
+                                    lastUpdate = System.currentTimeMillis()
+                                )
+                                _combinedNotificationState.value = combinedState
+                            }
+                            Log.d(TAG, "Notification state updated: ${notifications.size} notifications")
+                        }
+                }
+                catch (e: Exception) {
+                    Log.e(TAG, "Error in initializeNotifications", e)
+                    _uiState.update {
+                        it.copy(
+                            error = e.message,
+                            isLoading = false
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun processNotificationUpdate(
+        events: List<Event>,
+        panels: List<Panel>
+    ): Pair<List<NotificationItem>, CombinedNotificationState> {
+        val notifications = events
+            .asSequence()
+            .map { it.toNotificationItem() }
+            .filter { it.isValid() }
+            .toList()
+
+        val unreadEvents = events.count { event ->
+            event.status == "PROGRAMADO" && !(event.isRead ?: false)
+        }
+
+        val panelAlerts = panels.count { panel ->
+            panel.relays.any { it.status != "OK" }
+        }
+
+        return notifications to CombinedNotificationState(
+            totalCount = unreadEvents + panelAlerts,
+            hasUnread = unreadEvents > 0 || panelAlerts > 0,
+            eventsCount = unreadEvents,
+            panelAlertsCount = panelAlerts,
+            lastUpdate = System.currentTimeMillis()
+        )
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            notificationJob?.cancel()
+            initializeNotifications()
+        }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
+
+    fun markAsRead(notificationId: String) {
+        viewModelScope.launch(Dispatchers.IO + notificationScope.coroutineContext[CoroutineExceptionHandler]!!) {
+            mutex.withLock {
+                try {
+                    val currentUser = userRepository.getCurrentUser() ?: return@withLock
+                    val notification = _uiState.value.notifications.find { it.documentName == notificationId }
+
+                    notification?.let {
+                        eventRepository.updateEvent(
+                            clientDocName = currentUser.clientDocName,
+                            event = Event(
+                                documentName = it.documentName,
+                                clientDocName = it.clientDocName,
+                                title = it.title,
+                                text = it.text,
+                                date_time = it.date_time,
+                                status = it.status.toString(),
+                                isRead = true
+                            )
+                        )
+                        Log.d(TAG, "Notification marked as read: $notificationId")
+                        refresh()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error marking notification as read", e)
+                    throw e
+                }
+            }
+        }
+    }
+
+    fun markAllAsRead() {
+        viewModelScope.launch(Dispatchers.IO + notificationScope.coroutineContext[CoroutineExceptionHandler]!!) {
+            mutex.withLock {
+                try {
+                    val currentUser = userRepository.getCurrentUser() ?: return@withLock
+
+                    val unreadNotifications = _uiState.value.notifications
+                        .filter { !it.isRead }
+                        .map { notification ->
+                            async {
+                                eventRepository.updateEvent(
+                                    clientDocName = currentUser.clientDocName,
+                                    event = Event(
+                                        documentName = notification.documentName,
+                                        clientDocName = notification.clientDocName,
+                                        title = notification.title,
+                                        text = notification.text,
+                                        date_time = notification.date_time,
+                                        status = notification.status.toString(),
+                                        isRead = true
+                                    )
+                                )
+                            }
+                        }
+
+                    unreadNotifications.awaitAll()
+                    refresh()
+                    Log.d(TAG, "All notifications marked as read")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error marking all notifications as read", e)
+                    throw e
+                }
+            }
+        }
+    }
+
+    private fun Event.toNotificationItem() = NotificationItem(
+        documentName = this.documentName,
+        clientDocName = this.clientDocName,
+        title = this.title,
+        text = this.text,
+        date_time = this.date_time,
+        status = NotificationStatus.fromString(this.status),
+        panelDocName = this.panelDocName,
+        isRead = this.isRead ?: false
+    )
+
+    override fun onCleared() {
+        super.onCleared()
+        notificationJob?.cancel()
+        notificationScope.cancel()
+        Log.d(TAG, "ViewModel cleared")
+    }
+}
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\presentation\viewmodel\UserManagementViewModel.kt ###
+
+package com.pqsolutions.hdd_monitor.presentation.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.pqsolutions.hdd_monitor.data.Client
+import com.pqsolutions.hdd_monitor.data.UserData
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class UserManagementViewModel @Inject constructor(
+    private val userRepository: UserRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(UserManagementUiState())
+    val uiState: StateFlow<UserManagementUiState> = _uiState.asStateFlow()
+
+    init {
+        loadUsers()
+        loadClients()
+    }
+
+    private fun loadUsers() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val result = userRepository.getUsers()
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    users = result.getOrNull() ?: emptyList(),
+                    error = result.exceptionOrNull()?.message
+                )
+            }
+        }
+    }
+
+    private fun loadClients() {
+        viewModelScope.launch {
+            val result = userRepository.getClients()
+            _uiState.update { currentState ->
+                currentState.copy(
+                    clients = result.getOrNull() ?: emptyList(),
+                    error = if (currentState.error == null && result.isFailure) {
+                        result.exceptionOrNull()?.message
+                    } else currentState.error
+                )
+            }
+        }
+    }
+
+    fun showCreateUserDialog() {
+        _uiState.update { it.copy(showUserDialog = true, selectedUser = null) }
+    }
+
+    fun showEditUserDialog(user: UserData) {
+        _uiState.update { it.copy(showUserDialog = true, selectedUser = user) }
+    }
+
+    fun dismissUserDialog() {
+        _uiState.update { it.copy(showUserDialog = false, selectedUser = null) }
+    }
+
+    fun showNewClientDialog() {
+        _uiState.update { it.copy(showClientDialog = true) }
+    }
+
+    fun dismissClientDialog() {
+        _uiState.update { it.copy(showClientDialog = false) }
+    }
+
+    fun createUser(userData: UserData) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showUserDialog = false) }
+            val result = userRepository.createUser(userData)
+            handleOperationResult(result) {
+                loadUsers()
+            }
+        }
+    }
+
+    fun updateUser(userData: UserData) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showUserDialog = false) }
+            val result = userRepository.updateUser(userData)
+            handleOperationResult(result) {
+                loadUsers()
+            }
+        }
+    }
+
+    fun deleteUser(userData: UserData) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val result = userRepository.deleteUser(userData.documentName, userData.clientDocName)
+            handleOperationResult(result) {
+                loadUsers()
+            }
+        }
+    }
+
+    fun createClient(clientName: String) {
+        if (clientName.isBlank()) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showClientDialog = false) }
+            val result = userRepository.createClient(Client(name = clientName))
+            handleOperationResult(result) {
+                loadClients()
+            }
+        }
+    }
+
+    private fun handleOperationResult(result: Result<Unit>, onSuccess: suspend () -> Unit) {
+        viewModelScope.launch {
+            if (result.isSuccess) {
+                onSuccess()
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = result.exceptionOrNull()?.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
+}
+
+data class UserManagementUiState(
+    val isLoading: Boolean = false,
+    val users: List<UserData> = emptyList(),
+    val clients: List<Client> = emptyList(),
+    val error: String? = null,
+    val showUserDialog: Boolean = false,
+    val showClientDialog: Boolean = false,
+    val selectedUser: UserData? = null
+)
+
+==================================================
+
+### app\src\main\java\com\pqsolutions\hdd_monitor\service\FirebaseMessagingService.kt ###
+
+package com.pqsolutions.hdd_monitor.service
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.NotificationManager.IMPORTANCE_HIGH
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.media.RingtoneManager
+import android.os.Build
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
+import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.NotificationRepository
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.presentation.MainActivity
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import javax.inject.Inject
+import com.pqsolutions.hdd_monitor.presentation.managers.NotificationManager as AppNotificationManager
+
+@AndroidEntryPoint
+class MessagingService : FirebaseMessagingService() {
+
+    @Inject
+    lateinit var notificationRepository: NotificationRepository
+
+    @Inject
+    lateinit var userRepository: UserRepository
+
+    @Inject
+    lateinit var firestore: FirebaseFirestore
+
+    @Inject
+    lateinit var notificationManager: AppNotificationManager
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val processedMessageIds = mutableSetOf<String>()
+
+    companion object {
+        private const val TAG = "MessagingService"
+        private const val CHANNEL_ID_RELAY = "relay_status"
+        private const val CHANNEL_ID_EVENT = "event_status"
+        private const val MAX_PROCESSED_IDS = 100
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(TAG, "MessagingService onCreate")
+        createNotificationChannels()
+    }
+
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        Log.d(TAG, "FCM Message received - Data: ${remoteMessage.data}")
+
+        // Generar un ID único para este mensaje
+        val messageId = generateMessageId(remoteMessage)
+
+        // Evitar procesar mensajes duplicados
+        if (processedMessageIds.contains(messageId)) {
+            Log.d(TAG, "Skipping duplicate message: $messageId")
+            return
+        }
+
+        serviceScope.launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser == null) {
+                    Log.w(TAG, "No user logged in")
+                    return@launch
+                }
+
+                val isAdmin = currentUser.role == UserRole.ADMIN
+                val messageType = remoteMessage.data["type"]
+                val clientDocName = remoteMessage.data["clientDocName"]
+
+                // Verificar si el mensaje es relevante para el usuario actual
+                if (!isAdmin && clientDocName != currentUser.clientDocName) {
+                    Log.d(TAG, "Skipping notification - not for this user")
+                    return@launch
+                }
+
+                when (messageType) {
+                    "EVENT_UPDATE" -> handleEventUpdate(remoteMessage, isAdmin)
+                    "RELAY_UPDATE" -> handleRelayUpdate(remoteMessage, isAdmin)
+                }
+
+                // Agregar el ID del mensaje a los procesados
+                processedMessageIds.add(messageId)
+
+                // Limpiar IDs antiguos si se supera el límite
+                if (processedMessageIds.size > MAX_PROCESSED_IDS) {
+                    processedMessageIds.clear()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing FCM message", e)
+            }
+        }
+    }
+
+    private fun generateMessageId(message: RemoteMessage): String {
+        val data = message.data.toString()
+        val notification = message.notification?.toString() ?: ""
+        return "${data}:${notification}:${System.currentTimeMillis()}".hashCode().toString()
+    }
+
+    private suspend fun handleEventUpdate(message: RemoteMessage, isAdmin: Boolean) {
+        // Actualizar estado de notificaciones a través del NotificationManager
+        notificationManager.refresh()
+
+        // Obtener detalles del cliente si es necesario
+        val clientName = if (!isAdmin) {
+            message.data["clientDocName"]?.let { getClientName(it) } ?: "Cliente"
+        } else {
+            "Dashboard HDD"
+        }
+
+        // Mostrar notificación
+        showNotification(
+            title = message.notification?.title ?: "$clientName - Actualización de Evento",
+            message = message.notification?.body ?: "Se ha actualizado un evento",
+            channelId = CHANNEL_ID_EVENT,
+            isAdmin = isAdmin
+        )
+    }
+
+    private suspend fun saveNotification(
+        clientDocName: String,
+        panelDocName: String,
+        relayName: String,
+        message: String
+    ) {
+        try {
+            Log.d(TAG, """
+            Saving notification:
+            Client: $clientDocName
+            Panel: $panelDocName
+            Relay: $relayName
+            Message: $message
+        """.trimIndent())
+
+            notificationRepository.createNotification(
+                clientDocName = clientDocName,
+                panelDocName = panelDocName,
+                relayName = relayName,
+                message = message
+            )
+
+            Log.d(TAG, "Notification saved successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving notification: ${e.message}")
+        }
+    }
+
+    private suspend fun handleRelayUpdate(message: RemoteMessage, isAdmin: Boolean) {
+        // Actualizar estado de notificaciones
+        notificationManager.refresh()
+
+        // Obtener información adicional si está disponible
+        val clientDocName = message.data["clientDocName"] ?: ""
+        val panelDocName = message.data["panelDocName"] ?: ""
+        val relayName = message.data["relayName"] ?: ""
+        val clientName = if (!isAdmin) getClientName(clientDocName) else "Dashboard HDD"
+
+        showNotification(
+            title = message.notification?.title ?: "$clientName - Estado de Panel",
+            message = message.notification?.body ?: "Ha cambiado el estado de un relay",
+            channelId = CHANNEL_ID_RELAY,
+            isAdmin = isAdmin
+        )
+
+        // Guardar la notificación si hay suficiente información
+        if (clientDocName.isNotEmpty() && panelDocName.isNotEmpty() && relayName.isNotEmpty()) {
+            saveNotification(
+                clientDocName = clientDocName,
+                panelDocName = panelDocName,
+                relayName = relayName,
+                message = message.notification?.body ?: "Cambio de estado en relay $relayName"
+            )
+        }
+    }
+
+    private fun showNotification(
+        title: String,
+        message: String,
+        channelId: String,
+        isAdmin: Boolean
+    ) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            putExtra("isAdminNotification", isAdmin)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            System.currentTimeMillis().toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setAutoCancel(true)
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(pendingIntent)
+            .setOnlyAlertOnce(true)
+            .build()
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationId = "${title}:${message}:${System.currentTimeMillis()}".hashCode()
+
+        Log.d(TAG, """
+            FCM Notification shown:
+            ID: $notificationId
+            Title: $title
+            Message: $message
+            Channel: $channelId
+            IsAdmin: $isAdmin
+        """.trimIndent())
+
+        notificationManager.notify(notificationId, notification)
+    }
+
+    private suspend fun getClientName(clientDocName: String): String {
+        return try {
+            val clientDoc = firestore.collection("hdd-monitor")
+                .document("accounts")
+                .collection("clients")
+                .document(clientDocName)
+                .get()
+                .await()
+
+            clientDoc.getString("name") ?: "Cliente"
+        } catch (e: Exception) {
+            Log.e(TAG, "Error obteniendo nombre del cliente", e)
+            "Cliente"
+        }
+    }
+
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // Canal para relays
+            NotificationChannel(
+                CHANNEL_ID_RELAY,
+                "Estado de Relay",
+                IMPORTANCE_HIGH
+            ).apply {
+                description = "Notificaciones de cambios de estado en relays"
+                enableVibration(true)
+                enableLights(true)
+                setShowBadge(true)
+                notificationManager.createNotificationChannel(this)
+            }
+
+            // Canal para eventos
+            NotificationChannel(
+                CHANNEL_ID_EVENT,
+                "Estado de Eventos",
+                IMPORTANCE_HIGH
+            ).apply {
+                description = "Notificaciones de cambios de estado en eventos"
+                enableVibration(true)
+                enableLights(true)
+                setShowBadge(true)
+                notificationManager.createNotificationChannel(this)
+            }
+        }
+    }
+
+    override fun onNewToken(token: String) {
+        Log.d(TAG, "Nuevo token FCM recibido")
+        serviceScope.launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser != null) {
+                    Log.d(TAG, "Actualizando token para usuario: ${currentUser.documentName}")
+                    notificationRepository.updateFcmToken(currentUser.documentName, token)
+                    Log.d(TAG, "Token FCM actualizado exitosamente")
+                } else {
+                    Log.w(TAG, "No hay usuario actual para actualizar token")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error actualizando token FCM", e)
+            }
+        }
+    }
+}
+
+==================================================
+

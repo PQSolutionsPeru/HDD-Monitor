@@ -1,8 +1,8 @@
-// Archivo: domain/model/EventStatus.kt
 package com.pqsolutions.hdd_monitor.domain.model
 
 import androidx.compose.ui.graphics.Color
 import com.google.firebase.firestore.PropertyName
+import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.util.Constants.Status
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -11,19 +11,21 @@ object EventStatus {
     // Constantes para estados
     const val STATUS_PROGRAMADO = Status.STATUS_PROGRAMADO
     const val STATUS_ACEPTADO = Status.STATUS_ACEPTADO
+    const val STATUS_FINALIZADO = "FINALIZADO"  // Nuevo estado
 
     // Formatter para fechas
     private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
 
     // Función para validar estados
     fun isValidStatus(status: String): Boolean =
-        status.uppercase() in listOf(STATUS_PROGRAMADO, STATUS_ACEPTADO)
+        status.uppercase() in listOf(STATUS_PROGRAMADO, STATUS_ACEPTADO, STATUS_FINALIZADO)
 
     // Función para normalizar estados
     fun normalize(status: String): String =
         when (status.uppercase()) {
             STATUS_PROGRAMADO -> STATUS_PROGRAMADO
             STATUS_ACEPTADO -> STATUS_ACEPTADO
+            STATUS_FINALIZADO -> STATUS_FINALIZADO
             else -> STATUS_PROGRAMADO
         }
 
@@ -32,6 +34,7 @@ object EventStatus {
         when (normalize(status)) {
             STATUS_PROGRAMADO -> StatusColor.Programado
             STATUS_ACEPTADO -> StatusColor.Aceptado
+            STATUS_FINALIZADO -> StatusColor.Finalizado
             else -> StatusColor.Default
         }
 
@@ -40,17 +43,28 @@ object EventStatus {
         if (!isValidStatus(currentStatus) || !isValidStatus(newStatus)) return false
 
         return when (normalize(currentStatus)) {
-            STATUS_PROGRAMADO -> true // Puede transicionar a cualquier estado
-            STATUS_ACEPTADO -> false // No puede cambiar una vez aceptado
+            STATUS_PROGRAMADO -> newStatus == STATUS_ACEPTADO
+            STATUS_ACEPTADO -> newStatus == STATUS_FINALIZADO
+            STATUS_FINALIZADO -> false
             else -> false
         }
     }
 
-    // Función para obtener mensaje de estado
+    // Función para obtener mensaje de estado usando string resources
+    fun getStatusStringResource(status: String): Int =
+        when (normalize(status)) {
+            STATUS_PROGRAMADO -> R.string.event_status_programmed
+            STATUS_ACEPTADO -> R.string.event_status_accepted
+            STATUS_FINALIZADO -> R.string.status_completed
+            else -> R.string.error
+        }
+
+    // Función para obtener mensaje de estado (fallback si no hay contexto)
     fun getStatusMessage(status: String): String =
         when (normalize(status)) {
             STATUS_PROGRAMADO -> "Programado"
             STATUS_ACEPTADO -> "Aceptado"
+            STATUS_FINALIZADO -> "Finalizado"
             else -> "Estado desconocido"
         }
 
@@ -62,6 +76,7 @@ object EventStatus {
     fun getNextStatus(currentStatus: String): String? =
         when (normalize(currentStatus)) {
             STATUS_PROGRAMADO -> STATUS_ACEPTADO
+            STATUS_ACEPTADO -> STATUS_FINALIZADO
             else -> null
         }
 
@@ -72,7 +87,11 @@ object EventStatus {
         @get:PropertyName("timestamp")
         val timestamp: String = LocalDateTime.now().format(DATE_FORMATTER),
         @get:PropertyName("userDocName")
-        val userDocName: String? = null
+        val userDocName: String? = null,
+        @get:PropertyName("userRole")
+        val userRole: String? = null,
+        @get:PropertyName("isRead")
+        val isRead: Boolean = false
     ) {
         fun isValid(): Boolean =
             isValidStatus(fromStatus) &&
@@ -80,15 +99,16 @@ object EventStatus {
                     isValidTransition(fromStatus, toStatus)
 
         override fun toString(): String =
-            "Transición de $fromStatus a $toStatus por $userDocName en $timestamp"
+            "Transición de $fromStatus a $toStatus por $userDocName ($userRole) en $timestamp"
     }
 }
 
 // Colores para los diferentes estados
 enum class StatusColor(val value: Long, val composableColor: Color) {
-    Programado(0xFFE53935, Color(0xFFE53935)), // Rojo
-    Aceptado(0xFF2196F3, Color(0xFF2196F3)),  // Azul
-    Default(0xFF757575, Color(0xFF757575));    // Gris
+    Programado(0xFFE53935, Color(0xFFE53935)),  // Rojo para programado
+    Aceptado(0xFF2196F3, Color(0xFF2196F3)),    // Azul para aceptado
+    Finalizado(0xFF4CAF50, Color(0xFF4CAF50)),  // Verde para finalizado
+    Default(0xFF757575, Color(0xFF757575));     // Gris para estado por defecto
 
     companion object {
         fun fromStatus(status: String): StatusColor =
@@ -102,3 +122,4 @@ fun String.isValidEventStatus(): Boolean = EventStatus.isValidStatus(this)
 fun String.getStatusColor(): StatusColor = EventStatus.getStatusColor(this)
 fun String.isEditableStatus(): Boolean = EventStatus.isEditable(this)
 fun String.getStatusMessage(): String = EventStatus.getStatusMessage(this)
+fun String.getStatusStringResource(): Int = EventStatus.getStatusStringResource(this)

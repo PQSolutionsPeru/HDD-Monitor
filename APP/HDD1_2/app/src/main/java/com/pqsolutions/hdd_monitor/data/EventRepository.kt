@@ -1,41 +1,61 @@
 package com.pqsolutions.hdd_monitor.data
 
 import android.util.Log
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.ListenerRegistration
 import com.pqsolutions.hdd_monitor.data.util.IdManager
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
+import javax.inject.Singleton
 
-/**
- * Repositorio para manejar las operaciones de eventos en Firestore.
- *
- * @property firestore Instancia de FirebaseFirestore para acceder a la base de datos.
- */
+@Singleton
 class EventRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val auth: FirebaseAuth
 ) {
     companion object {
         private const val TAG = "EventRepository"
         private const val BASE_PATH = "hdd-monitor/accounts/clients"
+        private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
     }
 
-    /**
-     * Obtiene un flujo de todos los eventos de todos los clientes.
-     *
-     * @return Flow<List<Event>> Flujo de lista de eventos.
-     */
+    private var eventListeners = mutableListOf<ListenerRegistration>()
+
     fun getAllEventsFlow(): Flow<List<Event>> = callbackFlow {
+        if (auth.currentUser == null) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+
         val listenerRegistration = firestore.collectionGroup("events")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    if (error is FirebaseFirestoreException &&
+                        error.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                        trySend(emptyList())
+                        close()
+                        return@addSnapshotListener
+                    }
                     Log.e(TAG, "Error getting events", error)
                     close(error)
                     return@addSnapshotListener
                 }
+
+                if (auth.currentUser == null) {
+                    trySend(emptyList())
+                    close()
+                    return@addSnapshotListener
+                }
+
                 snapshot?.let {
                     val events = it.documents.mapNotNull { doc ->
                         try {
@@ -43,25 +63,10 @@ class EventRepository @Inject constructor(
                                 .split("/")
                                 .find { segment -> segment.startsWith("client_") }
 
-                            val eventType = doc.getString("type")
-                            Log.d(TAG, "Reading event type from Firestore: $eventType for event ${doc.id}")
-
-                            Event(
-                                documentName = doc.id,
-                                clientDocName = clientDocName ?: "",
-                                panelDocName = doc.getString("panelDocName"),
-                                panelName = doc.getString("panelName"),
-                                title = doc.getString("title") ?: "",
-                                text = doc.getString("text") ?: "",
-                                status = doc.getString("status") ?: EventStatus.STATUS_PROGRAMADO,
-                                date_time = doc.getString("date_time") ?: "",
-                                userAcceptDocName = doc.getString("userAcceptDocName"),
-                                type = eventType ?: "",  // Aseguramos que nunca sea null
-                                createdByUserId = doc.getString("createdByUserId"),
-                                createdByUserRole = doc.getString("createdByUserRole")
-                            ).also { event ->
-                                Log.d(TAG, "Created event object with type ${event.type}: ${event.toLogString()} from doc ${doc.reference.path}")
-                            }
+                            Event.fromMap(doc.data?.plus(mapOf(
+                                "documentName" to doc.id,
+                                "clientDocName" to (clientDocName ?: "")
+                            )) ?: emptyMap())
                         } catch (e: Exception) {
                             Log.e(TAG, "Error converting document ${doc.id}: ${e.message}", e)
                             null
@@ -70,17 +75,16 @@ class EventRepository @Inject constructor(
                     trySend(events)
                 }
             }
-        awaitClose { listenerRegistration.remove() }
+
+        eventListeners.add(listenerRegistration)
+        awaitClose {
+            listenerRegistration.remove()
+            eventListeners.remove(listenerRegistration)
+        }
     }
 
-    /**
-     * Obtiene un flujo de eventos para un cliente específico.
-     *
-     * @param clientDocName Identificador del documento del cliente.
-     * @return Flow<List<Event>> Flujo de lista de eventos del cliente.
-     */
     fun getEventsFlow(clientDocName: String): Flow<List<Event>> = callbackFlow {
-        if (clientDocName.isEmpty()) {
+        if (clientDocName.isEmpty() || auth.currentUser == null) {
             trySend(emptyList())
             close()
             return@callbackFlow
@@ -90,32 +94,30 @@ class EventRepository @Inject constructor(
             .collection("$BASE_PATH/$clientDocName/events")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    if (error is FirebaseFirestoreException &&
+                        error.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                        trySend(emptyList())
+                        close()
+                        return@addSnapshotListener
+                    }
                     Log.e(TAG, "Error getting client events", error)
                     close(error)
                     return@addSnapshotListener
                 }
+
+                if (auth.currentUser == null) {
+                    trySend(emptyList())
+                    close()
+                    return@addSnapshotListener
+                }
+
                 snapshot?.let {
                     val events = it.documents.mapNotNull { doc ->
                         try {
-                            val eventType = doc.getString("type")
-                            Log.d(TAG, "Reading event type from Firestore: $eventType for event ${doc.id}")
-
-                            Event(
-                                documentName = doc.id,
-                                clientDocName = clientDocName,
-                                panelDocName = doc.getString("panelDocName"),
-                                panelName = doc.getString("panelName"),
-                                title = doc.getString("title") ?: "",
-                                text = doc.getString("text") ?: "",
-                                status = doc.getString("status") ?: EventStatus.STATUS_PROGRAMADO,
-                                date_time = doc.getString("date_time") ?: "",
-                                userAcceptDocName = doc.getString("userAcceptDocName"),
-                                type = eventType ?: "",  // Aseguramos que nunca sea null
-                                createdByUserId = doc.getString("createdByUserId"),
-                                createdByUserRole = doc.getString("createdByUserRole")
-                            ).also { event ->
-                                Log.d(TAG, "Created event object with type ${event.type}: ${event.toLogString()} from doc ${doc.reference.path}")
-                            }
+                            Event.fromMap(doc.data?.plus(mapOf(
+                                "documentName" to doc.id,
+                                "clientDocName" to clientDocName
+                            )) ?: emptyMap())
                         } catch (e: Exception) {
                             Log.e(TAG, "Error converting document ${doc.id}: ${e.message}", e)
                             null
@@ -124,8 +126,14 @@ class EventRepository @Inject constructor(
                     trySend(events)
                 }
             }
-        awaitClose { listenerRegistration.remove() }
+
+        eventListeners.add(listenerRegistration)
+        awaitClose {
+            listenerRegistration.remove()
+            eventListeners.remove(listenerRegistration)
+        }
     }
+
 
     /**
      * Crea nuevos eventos para una lista de clientes.
@@ -136,12 +144,12 @@ class EventRepository @Inject constructor(
         }
 
         val batch = firestore.batch()
+        val now = LocalDateTime.now().format(DATE_FORMATTER)
 
         for (clientDocName in clientDocNames) {
             val eventDocName = IdManager.generateEventDocumentName(clientDocName)
             Log.d(TAG, "Creating new event with document name: $eventDocName for client: $clientDocName")
 
-            // Obtener el nombre del panel si existe un panelDocName
             var panelName: String? = null
             event.panelDocName?.let { pDocName ->
                 val panelDoc = firestore
@@ -160,21 +168,22 @@ class EventRepository @Inject constructor(
                 "text" to event.text,
                 "status" to EventStatus.STATUS_PROGRAMADO,
                 "date_time" to event.date_time,
+                "lastUpdate" to now,
                 "panelDocName" to event.panelDocName,
                 "panelName" to panelName,
-                "type" to event.type?.takeIf { it.isNotEmpty() },  // Solo guardar si no está vacío
+                "type" to event.type,
                 "createdByUserId" to event.createdByUserId,
-                "createdByUserRole" to event.createdByUserRole
+                "createdByUserRole" to event.createdByUserRole,
+                "isRead" to false
             ).apply {
-                values.removeAll { it == null }  // Remover campos nulos
+                values.removeAll { it == null }
             }
 
-            Log.d(TAG, "Creating event in Firestore with type '${event.type}'")
             batch.set(eventRef, eventData)
         }
 
         batch.commit().await()
-        Log.d(TAG, "Events batch committed successfully with type ${event.type}")
+        Log.d(TAG, "Events batch committed successfully")
     }
 
     /**
@@ -186,8 +195,7 @@ class EventRepository @Inject constructor(
         }
 
         val eventsCollection = firestore.collection("$BASE_PATH/$clientDocName/events")
-        Log.d(TAG, "Base path for update: ${eventsCollection.path}")
-        Log.d(TAG, "Attempting to update event with document name: ${event.documentName}")
+        Log.d(TAG, "Attempting to update event: ${event.documentName}")
 
         val eventDoc = eventsCollection.document(event.documentName)
         val snapshot = eventDoc.get().await()
@@ -196,7 +204,6 @@ class EventRepository @Inject constructor(
             throw IllegalStateException("El evento no existe: ${event.documentName}")
         }
 
-        // Obtener el nombre del panel si existe un panelDocName
         var panelName: String? = null
         event.panelDocName?.let { pDocName ->
             val panelDoc = firestore
@@ -206,22 +213,13 @@ class EventRepository @Inject constructor(
             panelName = panelDoc.getString("name")
         }
 
-        val eventData = hashMapOf<String, Any?>(
-            "title" to event.title,
-            "text" to event.text,
-            "date_time" to event.date_time,
-            "panelDocName" to event.panelDocName,
-            "panelName" to panelName,
-            "type" to event.type?.takeIf { it.isNotEmpty() },  // Solo guardar si no está vacío
-            "createdByUserId" to event.createdByUserId,
-            "createdByUserRole" to event.createdByUserRole
-        ).apply {
-            values.removeAll { it == null }  // Remover campos nulos
+        val eventData = event.toMap().toMutableMap().apply {
+            this["panelName"] = panelName
+            this["lastUpdate"] = LocalDateTime.now().format(DATE_FORMATTER)
         }
 
-        Log.d(TAG, "Updating event in Firestore with type '${event.type}'")
         eventDoc.update(eventData).await()
-        Log.d(TAG, "Event updated successfully with type ${event.type}")
+        Log.d(TAG, "Event updated successfully: ${event.documentName}")
     }
 
     /**
@@ -231,32 +229,57 @@ class EventRepository @Inject constructor(
         clientDocName: String,
         eventDocName: String,
         newStatus: String,
-        userDocName: String? = null
+        updatedByUserId: String,
+        isAdmin: Boolean
     ): Result<Unit> = runCatching {
         if (clientDocName.isEmpty() || eventDocName.isEmpty()) {
             throw IllegalArgumentException("Client and Event document names cannot be empty")
         }
 
-        val eventsCollection = firestore.collection("$BASE_PATH/$clientDocName/events")
-        Log.d(TAG, "Updating event status: $eventDocName for client: $clientDocName to: $newStatus")
-
-        val eventDoc = eventsCollection.document(eventDocName)
+        val now = LocalDateTime.now().format(DATE_FORMATTER)
+        val eventDoc = firestore.document("$BASE_PATH/$clientDocName/events/$eventDocName")
         val snapshot = eventDoc.get().await()
 
         if (!snapshot.exists()) {
             throw IllegalStateException("El evento no existe: $eventDocName")
         }
 
-        val updates = mutableMapOf<String, Any?>(
-            "status" to newStatus
+        val currentStatus = snapshot.getString("status") ?: EventStatus.STATUS_PROGRAMADO
+        if (!EventStatus.isValidTransition(currentStatus, newStatus)) {
+            throw IllegalStateException("Transición de estado inválida: $currentStatus -> $newStatus")
+        }
+
+        val updates = mutableMapOf<String, Any>(
+            "status" to newStatus,
+            "lastUpdate" to now,
+            "isRead" to false
         )
 
-        if (newStatus == EventStatus.STATUS_ACEPTADO) {
-            updates["userAcceptDocName"] = userDocName
+        when (newStatus) {
+            EventStatus.STATUS_ACEPTADO -> {
+                updates["acceptedAt"] = now
+                if (isAdmin) {
+                    updates["adminAcceptDocName"] = updatedByUserId
+                } else {
+                    updates["userAcceptDocName"] = updatedByUserId
+                }
+            }
+            EventStatus.STATUS_FINALIZADO -> {
+                updates["finalizedAt"] = now
+            }
         }
 
         eventDoc.update(updates).await()
         Log.d(TAG, "Event status updated successfully: $eventDocName to $newStatus")
+    }
+
+    /**
+     * Marca un evento como leído.
+     */
+    suspend fun markEventAsRead(clientDocName: String, eventDocName: String): Result<Unit> = runCatching {
+        firestore.document("$BASE_PATH/$clientDocName/events/$eventDocName")
+            .update("isRead", true)
+            .await()
     }
 
     /**
@@ -267,32 +290,16 @@ class EventRepository @Inject constructor(
             throw IllegalArgumentException("Client and Event document names cannot be empty")
         }
 
-        val eventsCollection = firestore.collection("$BASE_PATH/$clientDocName/events")
-        Log.d(TAG, "Attempting to delete event: $eventDocName for client: $clientDocName")
-
-        val eventDoc = eventsCollection.document(eventDocName)
+        val eventDoc = firestore.document("$BASE_PATH/$clientDocName/events/$eventDocName")
         val snapshot = eventDoc.get().await()
 
         if (!snapshot.exists()) {
             throw IllegalStateException("El evento no existe: $eventDocName")
         }
 
-        // Obtener información actual del evento incluyendo el tipo
-        val currentEvent = Event(
-            documentName = snapshot.id,
-            clientDocName = clientDocName,
-            title = snapshot.getString("title") ?: "",
-            text = snapshot.getString("text") ?: "",
-            status = snapshot.getString("status") ?: EventStatus.STATUS_PROGRAMADO,
-            date_time = snapshot.getString("date_time") ?: "",
-            type = snapshot.getString("type") ?: "",
-            createdByUserId = snapshot.getString("createdByUserId"),
-            createdByUserRole = snapshot.getString("createdByUserRole")
-        )
+        val currentEvent = Event.fromMap(snapshot.data?.plus("documentName" to eventDocName) ?: emptyMap())
 
-        Log.d(TAG, "Event to delete: ${currentEvent.toLogString()}")
-
-        if (currentEvent.status != EventStatus.STATUS_PROGRAMADO) {
+        if (!currentEvent.isProgramado) {
             throw IllegalStateException("Solo se pueden eliminar eventos en estado PROGRAMADO")
         }
 
@@ -324,5 +331,10 @@ class EventRepository @Inject constructor(
             .mapNotNull { doc ->
                 doc.toObject(Panel::class.java)?.copy(documentName = doc.id)
             }
+    }
+
+    fun clearListeners() {
+        eventListeners.forEach { it.remove() }
+        eventListeners.clear()
     }
 }

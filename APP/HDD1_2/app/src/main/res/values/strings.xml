@@ -3,13 +3,13 @@
     <!-- Títulos de la aplicación -->
     <string name="app_name">HDD Monitor</string>
     <string name="notification_history_title">Historial de Notificaciones</string>
-    <string name="events">Eventos</string>
+    <string name="events">Agenda HDD</string>
 
     <!-- Títulos de Dashboard -->
     <string name="admin_dashboard_title">Panel de Administración</string>
     <string name="user_dashboard_title">Panel de Usuario</string>
     <string name="manage_clients">Gestionar Clientes</string>
-    <string name="view_events">Ver Eventos</string>
+    <string name="view_events">Agenda HDD</string>
     <string name="view_notification_history">Ver Historial de Notificaciones</string>
     <string name="logout">Cerrar Sesión</string>
 

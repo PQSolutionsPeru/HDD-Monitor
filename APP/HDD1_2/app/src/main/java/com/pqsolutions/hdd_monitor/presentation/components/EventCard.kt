@@ -1,25 +1,11 @@
 package com.pqsolutions.hdd_monitor.presentation.components
 
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +18,7 @@ import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun EventCard(
@@ -42,6 +29,7 @@ fun EventCard(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onAcceptClick: () -> Unit,
+    onFinalizeClick: () -> Unit,
     onContactWhatsApp: (String, String, Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -71,6 +59,22 @@ fun EventCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 16.dp)
+                    )
+                }
+            }
+
+            // Indicador de no leído
+            if (!event.isRead) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Text(
+                        text = "NUEVO",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White
                     )
                 }
             }
@@ -112,6 +116,14 @@ fun EventCard(
                 )
             }
 
+            // Última actualización
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Última actualización: ${event.lastUpdate}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             // Panel asociado (si existe)
             event.panelName?.let { panelName ->
                 Spacer(modifier = Modifier.height(8.dp))
@@ -148,21 +160,38 @@ fun EventCard(
                 }
             }
 
-            // Creado por (si hay información del usuario)
-            user?.let { userData ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Column {
+            // Información de creación y aceptación
+            Spacer(modifier = Modifier.height(8.dp))
+            Column {
+                // Creado por
+                user?.let { userData ->
                     Text(
-                        text = "Creado por:",
+                        text = "Creado por: ${userData.name}",
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text(
-                        text = userData.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                }
+
+                // Aceptado por
+                if (event.status == EventStatus.STATUS_ACEPTADO || event.status == EventStatus.STATUS_FINALIZADO) {
+                    event.acceptedAt?.let { acceptedAt ->
+                        Text(
+                            text = "Aceptado el: $acceptedAt",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Finalizado
+                if (event.status == EventStatus.STATUS_FINALIZADO) {
+                    event.finalizedAt?.let { finalizedAt ->
+                        Text(
+                            text = "Finalizado el: $finalizedAt",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -182,6 +211,7 @@ fun EventCard(
                     color = when (event.status) {
                         EventStatus.STATUS_PROGRAMADO -> MaterialTheme.colorScheme.primary
                         EventStatus.STATUS_ACEPTADO -> MaterialTheme.colorScheme.tertiary
+                        EventStatus.STATUS_FINALIZADO -> MaterialTheme.colorScheme.secondary
                         else -> MaterialTheme.colorScheme.error
                     },
                     shape = MaterialTheme.shapes.small
@@ -217,33 +247,34 @@ fun EventCard(
                         Spacer(modifier = Modifier.padding(horizontal = 8.dp))
                     }
 
-                    IconButton(
-                        onClick = onEditClick,
-                        enabled = event.isProgramado
-                    ) {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = "Editar evento",
-                            tint = if (event.isProgramado)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                        )
-                    }
-                    IconButton(
-                        onClick = onDeleteClick,
-                        enabled = event.isProgramado
-                    ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Eliminar evento",
-                            tint = if (event.isProgramado)
-                                MaterialTheme.colorScheme.error
-                            else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                        )
+                    // Botones de administración
+                    if (event.isProgramado) {
+                        IconButton(onClick = onEditClick) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Editar evento",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(onClick = onDeleteClick) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Eliminar evento",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    } else if (event.isAceptado) {
+                        Button(
+                            onClick = onFinalizeClick,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Text("Finalizar")
+                        }
                     }
                 } else {
+                    // Botones de usuario
                     if (event.isProgramado) {
                         Button(
                             onClick = onAcceptClick,
@@ -253,14 +284,14 @@ fun EventCard(
                         ) {
                             Text("Aceptar")
                         }
-                        Button(
-                            onClick = { onContactWhatsApp("+51993533004", "Administrador", event) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondary
-                            )
-                        ) {
-                            Text("Contactar Admin")
-                        }
+                    }
+                    Button(
+                        onClick = { onContactWhatsApp("+51993533004", "Administrador", event) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Text("Contactar Admin")
                     }
                 }
             }
@@ -277,6 +308,7 @@ fun EventList(
     onEditClick: (Event) -> Unit,
     onDeleteClick: (Event) -> Unit,
     onAcceptClick: (Event) -> Unit,
+    onFinalizeClick: (Event) -> Unit,
     onContactWhatsApp: (String, String, Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -296,6 +328,7 @@ fun EventList(
                 onEditClick = { onEditClick(event) },
                 onDeleteClick = { onDeleteClick(event) },
                 onAcceptClick = { onAcceptClick(event) },
+                onFinalizeClick = { onFinalizeClick(event) },
                 onContactWhatsApp = onContactWhatsApp
             )
         }

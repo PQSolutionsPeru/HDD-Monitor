@@ -123,8 +123,14 @@ class PanelRepository @Inject constructor(
 
                 if (snapshot != null) {
                     val relays = snapshot.documents.mapNotNull { relayDoc ->
-                        relayDoc.toObject(Relay::class.java)?.copy(name = relayDoc.id).also { relay ->
-                            Log.d(TAG, "Relay update from Firestore: ${relay?.name}, status: ${relay?.status}")
+                        try {
+                            // Usar el método fromMap en lugar de toObject
+                            Relay.fromMap(relayDoc.data?.plus(mapOf("name" to relayDoc.id)) ?: emptyMap()).also { relay ->
+                                Log.d(TAG, "Relay update from Firestore: ${relay.name}, status: ${relay.status}")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error converting relay document: ${e.message}")
+                            null
                         }
                     }
 

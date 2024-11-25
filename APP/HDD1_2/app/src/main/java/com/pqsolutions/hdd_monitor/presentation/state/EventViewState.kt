@@ -23,6 +23,7 @@ sealed class EventFilter {
     object All : EventFilter()
     object Programmed : EventFilter()
     object Accepted : EventFilter()
+    object Completed : EventFilter()  // Nuevo estado
     data class ByClient(val clientDocName: String) : EventFilter()
     data class ByType(val eventType: String) : EventFilter()
 
@@ -30,6 +31,7 @@ sealed class EventFilter {
         is All -> "Todos"
         is Programmed -> "Programados"
         is Accepted -> "Aceptados"
+        is Completed -> "Finalizados"  // Nuevo caso
         is ByClient -> "Cliente: $clientDocName"
         is ByType -> "Tipo: $eventType"
     }
@@ -43,7 +45,8 @@ data class EventSortOption(
         DATE,
         STATUS,
         TITLE,
-        TYPE
+        TYPE,
+        LAST_UPDATE  // Nuevo campo
     }
 
     enum class SortDirection {
@@ -61,6 +64,7 @@ data class EventSortOption(
             SortField.STATUS -> "Estado"
             SortField.TITLE -> "Título"
             SortField.TYPE -> "Tipo"
+            SortField.LAST_UPDATE -> "Última actualización"  // Nuevo caso
         }
         val dirStr = when (direction) {
             SortDirection.ASC -> "↑"
