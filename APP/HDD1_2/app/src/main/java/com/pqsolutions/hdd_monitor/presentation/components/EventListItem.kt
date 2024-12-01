@@ -82,6 +82,17 @@ fun EventItem(
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (event.needsAdminApproval) {
+                            Button(
+                                onClick = onAcceptClick,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text(stringResource(R.string.accept))
+                            }
+                        }
+
                         IconButton(
                             onClick = onEditClick,
                             enabled = event.isProgramado
@@ -109,12 +120,19 @@ fun EventItem(
                             )
                         }
                     }
-                } else if (event.isProgramado) {
+                } else {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(onClick = onAcceptClick) {
-                            Text(stringResource(R.string.accept))
+                        if (event.needsUserApproval) {
+                            Button(
+                                onClick = onAcceptClick,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text(stringResource(R.string.accept))
+                            }
                         }
                         Button(
                             onClick = onContactAdmin,

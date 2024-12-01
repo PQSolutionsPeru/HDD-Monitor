@@ -7,6 +7,7 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.pqsolutions.hdd_monitor.data.util.IdManager
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -244,9 +245,26 @@ class EventRepository @Inject constructor(
             throw IllegalStateException("El evento no existe: $eventDocName")
         }
 
-        val currentStatus = snapshot.getString("status") ?: EventStatus.STATUS_PROGRAMADO
-        if (!EventStatus.isValidTransition(currentStatus, newStatus)) {
-            throw IllegalStateException("Transición de estado inválida: $currentStatus -> $newStatus")
+        val currentEvent = Event.fromMap(snapshot.data?.plus("documentName" to eventDocName) ?: emptyMap())
+
+        // Validar que el usuario tenga permiso para actualizar el estado
+        when {
+            isAdmin && currentEvent.createdByUserRole == UserRole.USER.toString() && currentEvent.needsAdminApproval -> {
+                // Admin aceptando evento de usuario
+            }
+            !isAdmin && currentEvent.createdByUserRole == UserRole.ADMIN.toString() && currentEvent.needsUserApproval -> {
+                // Usuario aceptando evento de admin
+            }
+            newStatus == EventStatus.STATUS_FINALIZADO && currentEvent.isAceptado -> {
+                // Permitir finalización si el evento está aceptado
+            }
+            else -> {
+                throw IllegalStateException("No tiene permisos para actualizar este evento o el evento no está en un estado válido")
+            }
+        }
+
+        if (!EventStatus.isValidTransition(currentEvent.status, newStatus)) {
+            throw IllegalStateException("Transición de estado inválida: ${currentEvent.status} -> $newStatus")
         }
 
         val updates = mutableMapOf<String, Any>(

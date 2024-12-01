@@ -18,7 +18,6 @@ import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
-import java.time.format.DateTimeFormatter
 
 @Composable
 fun EventCard(
@@ -47,7 +46,7 @@ fun EventCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Tipo de evento primero y en mayúsculas
+            // Tipo de evento
             event.type?.let { type ->
                 if (type.isNotEmpty()) {
                     Text(
@@ -101,7 +100,7 @@ fun EventCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Fecha y hora
+            // Fecha y hora del evento
             Column {
                 Text(
                     text = "Fecha/Hora del Evento:",
@@ -124,7 +123,7 @@ fun EventCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // Panel asociado (si existe)
+            // Panel asociado
             event.panelName?.let { panelName ->
                 Spacer(modifier = Modifier.height(8.dp))
                 Column {
@@ -142,7 +141,7 @@ fun EventCard(
                 }
             }
 
-            // Cliente (solo en modo admin)
+            // Cliente (solo modo admin)
             if (isAdmin && client != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Column {
@@ -160,10 +159,10 @@ fun EventCard(
                 }
             }
 
-            // Información de creación y aceptación
+            // Información de creación y estados
             Spacer(modifier = Modifier.height(8.dp))
             Column {
-                // Creado por
+                // Creador
                 user?.let { userData ->
                     Text(
                         text = "Creado por: ${userData.name}",
@@ -172,8 +171,8 @@ fun EventCard(
                     )
                 }
 
-                // Aceptado por
-                if (event.status == EventStatus.STATUS_ACEPTADO || event.status == EventStatus.STATUS_FINALIZADO) {
+                // Fecha de aceptación
+                if (event.isAceptado || event.isFinalizado) {
                     event.acceptedAt?.let { acceptedAt ->
                         Text(
                             text = "Aceptado el: $acceptedAt",
@@ -183,8 +182,8 @@ fun EventCard(
                     }
                 }
 
-                // Finalizado
-                if (event.status == EventStatus.STATUS_FINALIZADO) {
+                // Fecha de finalización
+                if (event.isFinalizado) {
                     event.finalizedAt?.let { finalizedAt ->
                         Text(
                             text = "Finalizado el: $finalizedAt",
@@ -234,7 +233,7 @@ fun EventCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isAdmin) {
-                    // Botón de contacto al usuario si hay teléfono disponible
+                    // Botón de contacto al usuario
                     if (user?.phone?.isNotEmpty() == true) {
                         Button(
                             onClick = { onContactWhatsApp(user.phone, user.name, event) },
@@ -249,6 +248,19 @@ fun EventCard(
 
                     // Botones de administración
                     if (event.isProgramado) {
+                        // Botón de aceptar para eventos que necesitan aprobación de admin
+                        if (event.needsAdminApproval) {
+                            Button(
+                                onClick = onAcceptClick,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                ),
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) {
+                                Text("Aceptar")
+                            }
+                        }
+
                         IconButton(onClick = onEditClick) {
                             Icon(
                                 Icons.Default.Edit,
@@ -275,7 +287,7 @@ fun EventCard(
                     }
                 } else {
                     // Botones de usuario
-                    if (event.isProgramado) {
+                    if (event.needsUserApproval) {
                         Button(
                             onClick = onAcceptClick,
                             colors = ButtonDefaults.buttonColors(

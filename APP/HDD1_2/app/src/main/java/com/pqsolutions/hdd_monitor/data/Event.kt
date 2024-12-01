@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor.data
 
 import com.google.firebase.firestore.PropertyName
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -26,7 +27,8 @@ data class Event(
     val adminAcceptDocName: String? = null,
     val acceptedAt: String? = null,
     val finalizedAt: String? = null,
-    val isRead: Boolean = false
+    val isRead: Boolean = false,
+    val needsApproval: Boolean = true
 ) {
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
@@ -56,7 +58,8 @@ data class Event(
                 type = type,
                 createdByUserId = createdByUserId,
                 createdByUserRole = createdByUserRole,
-                isRead = false
+                isRead = false,
+                needsApproval = true
             )
         }
 
@@ -78,17 +81,34 @@ data class Event(
                 adminAcceptDocName = map["adminAcceptDocName"] as? String,
                 acceptedAt = map["acceptedAt"] as? String,
                 finalizedAt = map["finalizedAt"] as? String,
-                isRead = map["isRead"] as? Boolean ?: false
+                isRead = map["isRead"] as? Boolean ?: false,
+                needsApproval = map["needsApproval"] as? Boolean ?: true
             )
         }
     }
 
-    // Propiedades computadas
+    // Propiedades computadas para control de estado
     val isProgramado: Boolean
         get() = status == EventStatus.STATUS_PROGRAMADO
 
+    val needsAdminApproval: Boolean
+        get() = createdByUserRole == UserRole.USER.toString() &&
+                isProgramado &&
+                adminAcceptDocName == null &&
+                needsApproval
+
+    val needsUserApproval: Boolean
+        get() = createdByUserRole == UserRole.ADMIN.toString() &&
+                isProgramado &&
+                userAcceptDocName == null &&
+                needsApproval
+
     val isAceptado: Boolean
-        get() = status == EventStatus.STATUS_ACEPTADO
+        get() = status == EventStatus.STATUS_ACEPTADO && when (createdByUserRole) {
+            UserRole.USER.toString() -> adminAcceptDocName != null
+            UserRole.ADMIN.toString() -> userAcceptDocName != null
+            else -> false
+        }
 
     val isFinalizado: Boolean
         get() = status == EventStatus.STATUS_FINALIZADO
@@ -124,23 +144,36 @@ data class Event(
     fun getFormattedDateTime(): String = date_time
 
     fun accept(userDocName: String, isAdmin: Boolean, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
-        return copy(
-            status = EventStatus.STATUS_ACEPTADO,
-            lastUpdate = timestamp,
-            acceptedAt = timestamp,
-            adminAcceptDocName = if (isAdmin) userDocName else null,
-            userAcceptDocName = if (!isAdmin) userDocName else null,
-            isRead = false
-        )
+        return when {
+            // Si un admin acepta un evento creado por usuario
+            isAdmin && createdByUserRole == UserRole.USER.toString() && needsAdminApproval -> copy(
+                status = EventStatus.STATUS_ACEPTADO,
+                lastUpdate = timestamp,
+                acceptedAt = timestamp,
+                adminAcceptDocName = userDocName,
+                isRead = false
+            )
+            // Si un usuario acepta un evento creado por admin
+            !isAdmin && createdByUserRole == UserRole.ADMIN.toString() && needsUserApproval -> copy(
+                status = EventStatus.STATUS_ACEPTADO,
+                lastUpdate = timestamp,
+                acceptedAt = timestamp,
+                userAcceptDocName = userDocName,
+                isRead = false
+            )
+            else -> this
+        }
     }
 
-    fun finalize(userDocName: String, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
-        return copy(
-            status = EventStatus.STATUS_FINALIZADO,
-            lastUpdate = timestamp,
-            finalizedAt = timestamp,
-            isRead = false
-        )
+    fun finalize(timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
+        return if (isAceptado) {
+            copy(
+                status = EventStatus.STATUS_FINALIZADO,
+                lastUpdate = timestamp,
+                finalizedAt = timestamp,
+                isRead = false
+            )
+        } else this
     }
 
     fun markAsRead(): Event {
@@ -188,7 +221,8 @@ data class Event(
             "adminAcceptDocName" to adminAcceptDocName,
             "acceptedAt" to acceptedAt,
             "finalizedAt" to finalizedAt,
-            "isRead" to isRead
+            "isRead" to isRead,
+            "needsApproval" to needsApproval
         ).filterValues { it != null }
     }
 
@@ -209,6 +243,7 @@ data class Event(
         if (acceptedAt != null) append("acceptedAt='$acceptedAt', ")
         if (finalizedAt != null) append("finalizedAt='$finalizedAt', ")
         append("isRead=$isRead, ")
+        append("needsApproval=$needsApproval, ")
         if (createdByUserId != null) append("createdByUserId='$createdByUserId', ")
         if (createdByUserRole != null) append("createdByUserRole='$createdByUserRole', ")
         append(")")
