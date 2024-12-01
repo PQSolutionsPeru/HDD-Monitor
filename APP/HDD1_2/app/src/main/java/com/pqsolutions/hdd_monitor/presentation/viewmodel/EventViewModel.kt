@@ -146,6 +146,33 @@ class EventViewModel @Inject constructor(
         }
     }
 
+    private suspend fun initializeEventCreation() {
+        try {
+            val currentUser = userRepository.getCurrentUser()
+                ?: throw IllegalStateException("No hay usuario autenticado")
+
+            if (currentUser.role == UserRole.ADMIN) {
+                // Admin: Cargar todos los clientes para selección
+                val clients = eventRepository.getClients()
+                val validClients = clients.filter { it.documentName.startsWith(DocumentPrefixes.CLIENT) }
+                _state.update { it.copy(clients = validClients) }
+            } else {
+                // Usuario: Pre-seleccionar su cliente
+                _state.update {
+                    it.copy(
+                        selectedClients = listOf(currentUser.clientDocName),
+                        selectedClientForPanels = currentUser.clientDocName
+                    )
+                }
+                // Cargar los paneles del cliente
+                loadPanelsForClient(currentUser.clientDocName)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error en initializeEventCreation", e)
+            _uiEvent.send(EventUIEvent.ShowSnackbar(e.toUserFriendlyMessage()))
+        }
+    }
+
     private fun loadUsers() {
         viewModelScope.launch {
             try {
@@ -161,45 +188,76 @@ class EventViewModel @Inject constructor(
         }
     }
 
+    // Función auxiliar para cargar los paneles de un cliente
     private fun loadPanelsForClient(clientDocName: String) {
         viewModelScope.launch {
             try {
                 _state.update {
-                    it.copy(
-                        selectedClientForPanels = clientDocName,
-                        availablePanels = emptyList()
-                    )
+                    it.copy(selectedClientForPanels = clientDocName)
                 }
 
-                panelRepository
-                    .getPanels(clientDocName)
-                    .collect { panels ->
-                        _state.update {
-                            it.copy(availablePanels = panels)
-                        }
-                    }
+                val panels = eventRepository.getPanelsByClient(clientDocName)
+                _state.update {
+                    it.copy(availablePanels = panels)
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading panels", e)
-                _uiEvent.send(EventUIEvent.ShowSnackbar(e.toUserFriendlyMessage()))
+                handleError(e)
             }
         }
     }
 
     fun showCreateDialog() {
-        _state.update {
-            it.copy(
-                showDialog = true,
-                selectedEvent = null,
-                currentDate = null,
-                currentTime = null,
-                selectedClients = emptyList(),
-                availablePanels = emptyList(),
-                selectedClientForPanels = null,
-                newEventTitle = "",
-                newEventDescription = "",
-                selectedPanelDocName = null,
-                selectedEventType = null
-            )
+        viewModelScope.launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                    ?: throw IllegalStateException("No hay usuario autenticado")
+
+                // Guardar el usuario y su rol en el estado e inicializar el diálogo
+                _state.update {
+                    it.copy(
+                        showDialog = true,
+                        currentUserRole = currentUser.role,
+                        currentUserClientDocName = currentUser.clientDocName,
+                        selectedEvent = null,
+                        currentDate = null,
+                        currentTime = null,
+                        newEventTitle = "",
+                        newEventDescription = "",
+                        selectedEventType = null,
+                        selectedPanelDocName = null,
+                        selectedPanelName = null,
+                        availablePanels = emptyList()
+                    )
+                }
+
+                // Cargar datos basados en el rol del usuario
+                when (currentUser.role) {
+                    UserRole.ADMIN -> {
+                        // Para administradores: cargar clientes para selección
+                        val clients = eventRepository.getClients()
+                        val validClients = clients.filter {
+                            it.documentName.startsWith(DocumentPrefixes.CLIENT)
+                        }
+                        _state.update { it.copy(clients = validClients) }
+                    }
+                    UserRole.USER -> {
+                        // Para usuarios: preseleccionar su cliente y cargar sus paneles
+                        _state.update {
+                            it.copy(
+                                selectedClients = listOf(currentUser.clientDocName),
+                                selectedClientForPanels = currentUser.clientDocName
+                            )
+                        }
+                        loadPanelsForClient(currentUser.clientDocName)
+                    }
+                }
+
+                // Cargar tipos de eventos disponibles (común para ambos roles)
+                loadEventTypes()
+
+            } catch (e: Exception) {
+                handleError(e)
+            }
         }
     }
 
@@ -271,6 +329,7 @@ class EventViewModel @Inject constructor(
 
     fun onDialogEvent(event: EventDialogEvent) {
         when (event) {
+            // Eventos que no requieren verificación de usuario ni corrutinas
             is EventDialogEvent.TitleChanged -> {
                 _state.update { currentState ->
                     if (currentState.selectedEvent != null) {
@@ -293,151 +352,171 @@ class EventViewModel @Inject constructor(
                     }
                 }
             }
-            is EventDialogEvent.DateSelected -> {
-                _state.update { it.copy(currentDate = event.date) }
+            is EventDialogEvent.Dismiss -> {
+                clearDialogState()
             }
-            is EventDialogEvent.TimeSelected -> {
-                _state.update { it.copy(currentTime = event.time) }
-            }
-            is EventDialogEvent.EventTypeSelected -> {
-                Log.d(TAG, "Tipo de evento seleccionado: ${event.eventType}")
-                _state.update { currentState ->
-                    if (currentState.selectedEvent != null) {
-                        currentState.copy(
-                            selectedEvent = currentState.selectedEvent.copy(type = event.eventType),
-                            selectedEventType = event.eventType
-                        )
-                    } else {
-                        currentState.copy(selectedEventType = event.eventType)
+
+            // Eventos que requieren verificación y/o operaciones asíncronas
+            else -> {
+                viewModelScope.launch {
+                    try {
+                        when (event) {
+                            is EventDialogEvent.DateSelected -> {
+                                _state.update { it.copy(currentDate = event.date) }
+                            }
+                            is EventDialogEvent.TimeSelected -> {
+                                _state.update { it.copy(currentTime = event.time) }
+                            }
+                            is EventDialogEvent.EventTypeSelected -> {
+                                Log.d(TAG, "Tipo de evento seleccionado: ${event.eventType}")
+                                _state.update { currentState ->
+                                    if (currentState.selectedEvent != null) {
+                                        currentState.copy(
+                                            selectedEvent = currentState.selectedEvent.copy(type = event.eventType),
+                                            selectedEventType = event.eventType
+                                        )
+                                    } else {
+                                        currentState.copy(selectedEventType = event.eventType)
+                                    }
+                                }
+                            }
+                            is EventDialogEvent.MultipleClientsSelected -> {
+                                if (_state.value.currentUserRole == UserRole.ADMIN) {
+                                    _state.update { it.copy(selectedClients = event.clientDocNames) }
+                                    if (event.clientDocNames.size == 1) {
+                                        loadPanelsForClient(event.clientDocNames.first())
+                                    } else {
+                                        _state.update {
+                                            it.copy(
+                                                availablePanels = emptyList(),
+                                                selectedClientForPanels = null,
+                                                selectedPanelDocName = null,
+                                                selectedPanelName = null
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            is EventDialogEvent.PanelSelected -> {
+                                _state.update {
+                                    val selectedPanel = it.availablePanels.find { panel ->
+                                        panel.documentName == event.panelDocName
+                                    }
+                                    if (it.selectedEvent != null) {
+                                        it.copy(
+                                            selectedEvent = it.selectedEvent.copy(
+                                                panelDocName = event.panelDocName,
+                                                panelName = selectedPanel?.name
+                                            ),
+                                            selectedPanelDocName = event.panelDocName,
+                                            selectedPanelName = selectedPanel?.name
+                                        )
+                                    } else {
+                                        it.copy(
+                                            selectedPanelDocName = event.panelDocName,
+                                            selectedPanelName = selectedPanel?.name
+                                        )
+                                    }
+                                }
+                            }
+                            is EventDialogEvent.CreateNewEventType -> {
+                                if (_state.value.currentUserRole == UserRole.ADMIN) {
+                                    createNewEventType(event.type)
+                                } else {
+                                    _uiEvent.send(EventUIEvent.ShowSnackbar("Solo los administradores pueden crear tipos de eventos"))
+                                }
+                            }
+                            is EventDialogEvent.Confirm -> handleConfirmDialog()
+                            else -> {} // Otros eventos ya manejados anteriormente
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error en onDialogEvent", e)
+                        handleError(e)
                     }
                 }
             }
-            is EventDialogEvent.MultipleClientsSelected -> {
-                _state.update { it.copy(selectedClients = event.clientDocNames) }
-                if (event.clientDocNames.size == 1) {
-                    loadPanelsForClient(event.clientDocNames.first())
-                } else {
-                    _state.update {
-                        it.copy(
-                            availablePanels = emptyList(),
-                            selectedClientForPanels = null,
-                            selectedPanelDocName = null,
-                            selectedPanelName = null
-                        )
-                    }
-                }
-            }
-            is EventDialogEvent.PanelSelected -> {
-                _state.update {
-                    val selectedPanel = it.availablePanels.find { panel ->
-                        panel.documentName == event.panelDocName
-                    }
-                    if (it.selectedEvent != null) {
-                        it.copy(
-                            selectedEvent = it.selectedEvent.copy(
-                                panelDocName = event.panelDocName,
-                                panelName = selectedPanel?.name
-                            ),
-                            selectedPanelDocName = event.panelDocName,
-                            selectedPanelName = selectedPanel?.name
-                        )
-                    } else {
-                        it.copy(
-                            selectedPanelDocName = event.panelDocName,
-                            selectedPanelName = selectedPanel?.name
-                        )
-                    }
-                }
-            }
-            is EventDialogEvent.CreateNewEventType -> {
-                createNewEventType(event.type)
-            }
-            is EventDialogEvent.Confirm -> handleConfirmDialog()
-            is EventDialogEvent.Dismiss -> clearDialogState()
-            else -> {} // ShowDatePicker, ShowTimePicker, etc. manejados por la UI
         }
     }
 
-    private fun handleConfirmDialog() {
+    private suspend fun handleConfirmDialog() {
         Log.d(TAG, "Iniciando handleConfirmDialog")
         val currentState = _state.value
         if (currentState.hasDateTime) {
-            viewModelScope.launch {
-                try {
-                    val dateTime = LocalDateTime.of(
-                        currentState.currentDate!!,
-                        currentState.currentTime!!
+            try {
+                val dateTime = LocalDateTime.of(
+                    currentState.currentDate!!,
+                    currentState.currentTime!!
+                )
+
+                val currentUser = userRepository.getCurrentUser()
+                    ?: throw IllegalStateException("No hay usuario autenticado")
+
+                if (currentState.selectedEvent != null) {
+                    // Manejo de evento existente (edición)
+                    val updatedEvent = currentState.selectedEvent.update(
+                        title = currentState.selectedEvent.title,
+                        text = currentState.selectedEvent.text,
+                        dateTime = dateTime,
+                        panelDocName = currentState.selectedEvent.panelDocName,
+                        panelName = currentState.selectedEvent.panelName,
+                        type = currentState.selectedEventType
                     )
 
-                    val currentUser = userRepository.getCurrentUser()
-                        ?: throw IllegalStateException("No hay usuario autenticado")
-
-                    if (currentState.selectedEvent != null) {
-                        // Manejo de evento existente (edición)
-                        val updatedEvent = currentState.selectedEvent.update(
-                            title = currentState.selectedEvent.title,
-                            text = currentState.selectedEvent.text,
-                            dateTime = dateTime,
-                            panelDocName = currentState.selectedEvent.panelDocName,
-                            panelName = currentState.selectedEvent.panelName,
-                            type = currentState.selectedEventType
-                        )
-
-                        if (updatedEvent == null) {
-                            Log.d(TAG, "No se puede actualizar: evento no programado o nulo")
-                            _uiEvent.send(EventUIEvent.ShowSnackbar("No se puede actualizar un evento ya aceptado"))
-                            return@launch
-                        }
-
-                        if (!updatedEvent.isValid()) {
-                            Log.d(TAG, "Evento actualizado no es válido")
-                            _uiEvent.send(EventUIEvent.ShowSnackbar("Evento inválido. Verifique todos los campos"))
-                            return@launch
-                        }
-
-                        Log.d(TAG, "Actualizando evento con tipo: ${updatedEvent.type}")
-                        updateEvent(updatedEvent)
-                    } else {
-                        // Creación de nuevo evento
-                        val clientDocName = currentState.selectedClients.firstOrNull() ?: run {
-                            _uiEvent.send(EventUIEvent.ShowSnackbar("Debe seleccionar un cliente"))
-                            return@launch
-                        }
-
-                        val eventType = currentState.selectedEventType ?: run {
-                            _uiEvent.send(EventUIEvent.ShowSnackbar("Debe seleccionar un tipo de evento"))
-                            return@launch
-                        }
-
-                        val newEvent = Event.createNew(
-                            clientDocName = clientDocName,
-                            panelDocName = currentState.selectedPanelDocName,
-                            panelName = currentState.selectedPanelName,
-                            title = currentState.newEventTitle,
-                            text = currentState.newEventDescription,
-                            dateTime = dateTime,
-                            type = eventType,
-                            createdByUserId = currentUser.documentName,
-                            createdByUserRole = currentUser.role.toString()
-                        )
-
-                        if (!newEvent.isValid()) {
-                            _uiEvent.send(EventUIEvent.ShowSnackbar("Evento inválido. Verifique todos los campos"))
-                            return@launch
-                        }
-
-                        Log.d(TAG, "Creando nuevo evento con tipo: ${newEvent.type}")
-                        createEvent(newEvent, currentState.selectedClients)
+                    if (updatedEvent == null) {
+                        Log.d(TAG, "No se puede actualizar: evento no programado o nulo")
+                        _uiEvent.send(EventUIEvent.ShowSnackbar("No se puede actualizar un evento ya aceptado"))
+                        return
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error en handleConfirmDialog", e)
-                    _uiEvent.send(EventUIEvent.ShowSnackbar(e.message ?: "Error al procesar el evento"))
+
+                    if (!updatedEvent.isValid()) {
+                        Log.d(TAG, "Evento actualizado no es válido")
+                        _uiEvent.send(EventUIEvent.ShowSnackbar("Evento inválido. Verifique todos los campos"))
+                        return
+                    }
+
+                    Log.d(TAG, "Actualizando evento con tipo: ${updatedEvent.type}")
+                    updateEvent(updatedEvent)
+                } else {
+                    // Creación de nuevo evento
+                    val clientDocName = if (currentUser.role == UserRole.ADMIN) {
+                        currentState.selectedClients.firstOrNull()
+                            ?: throw IllegalStateException("Debe seleccionar un cliente")
+                    } else {
+                        currentUser.clientDocName
+                    }
+
+                    val eventType = currentState.selectedEventType
+                        ?: throw IllegalStateException("Debe seleccionar un tipo de evento")
+
+                    val newEvent = Event.createNew(
+                        clientDocName = clientDocName,
+                        panelDocName = currentState.selectedPanelDocName,
+                        panelName = currentState.selectedPanelName,
+                        title = currentState.newEventTitle,
+                        text = currentState.newEventDescription,
+                        dateTime = dateTime,
+                        type = eventType,
+                        createdByUserId = currentUser.documentName,
+                        createdByUserRole = currentUser.role.toString()
+                    )
+
+                    if (!newEvent.isValid()) {
+                        throw IllegalStateException("Evento inválido. Verifique todos los campos")
+                    }
+
+                    Log.d(TAG, "Creando nuevo evento con tipo: ${newEvent.type}")
+                    if (currentUser.role == UserRole.ADMIN) {
+                        createEvent(newEvent, currentState.selectedClients)
+                    } else {
+                        createEvent(newEvent, listOf(clientDocName))
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error en handleConfirmDialog", e)
+                _uiEvent.send(EventUIEvent.ShowSnackbar(e.message ?: "Error al procesar el evento"))
             }
         } else {
-            viewModelScope.launch {
-                _uiEvent.send(EventUIEvent.ShowSnackbar("Fecha y hora son requeridas"))
-            }
+            _uiEvent.send(EventUIEvent.ShowSnackbar("Fecha y hora son requeridas"))
         }
     }
 
@@ -710,7 +789,7 @@ class EventViewModel @Inject constructor(
         }
     }
 
-    fun clearListeners() {
+    private fun clearListeners() {
         viewModelScope.launch {
             try {
                 // Cancelar el Job actual si existe

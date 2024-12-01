@@ -3,6 +3,7 @@ import ustruct as struct
 import utime
 from ubinascii import hexlify
 import gc
+import json
 
 def log_debug(msg, *args):
     """Función helper para logging con timestamp"""
@@ -55,6 +56,10 @@ class MQTTClientSimple:
         self.timeout = timeout
         self.last_ping = 0
         self.last_activity = 0
+        self.lw_topic = None
+        self.lw_msg = None
+        self.lw_qos = 0
+        self.lw_retain = False
         log_info("MQTT Client initialized - Broker: %s:%d, Client ID: %s", server, port, client_id)
 
     def _send_str(self, s):
@@ -66,6 +71,14 @@ class MQTTClientSimple:
         except Exception as e:
             log_error("Error en _send_str: %s", str(e))
             raise
+
+    def set_last_will(self, topic, msg, retain=False, qos=0):
+        """Configura el mensaje Last Will and Testament"""
+        self.lw_topic = topic
+        self.lw_msg = msg
+        self.lw_qos = qos
+        self.lw_retain = retain
+        log_debug("LWT configurado - Topic: %s, Mensaje: %s", topic, msg)
 
     def connect(self, clean_session=True):
         try:
@@ -95,6 +108,14 @@ class MQTTClientSimple:
             if self.user:
                 sz += 2 + len(self.user) + 2 + len(self.pswd)
                 msg[6] |= 0xC0
+            if self.keepalive:
+                assert self.keepalive < 65536
+                msg[7] |= self.keepalive >> 8
+                msg[8] |= self.keepalive & 0x00FF
+            if self.lw_topic:
+                sz += 2 + len(self.lw_topic) + 2 + len(self.lw_msg)
+                msg[6] |= 0x4 | (self.lw_qos & 0x1) << 3 | (self.lw_qos & 0x2) << 3
+                msg[6] |= self.lw_retain << 5
 
             i = 1
             while sz > 0x7F:
@@ -107,6 +128,9 @@ class MQTTClientSimple:
             self.sock.write(premsg, i + 2)
             self.sock.write(msg)
             self._send_str(self.client_id)
+            if self.lw_topic:
+                self._send_str(self.lw_topic)
+                self._send_str(self.lw_msg)
             if self.user:
                 self._send_str(self.user)
                 self._send_str(self.pswd)
@@ -346,9 +370,33 @@ class MQTTManager:
         self.MQTT_PASSWORD = "esp32"
         self.last_publish_attempt = 0
         self.last_check = 0
-        self.CHECK_INTERVAL = 1000  # 1 segundo entre checks
-        self.PUBLISH_RETRY_INTERVAL = 5000  # 5 segundos entre reintentos
+        self.CHECK_INTERVAL = 1000
+        self.PUBLISH_RETRY_INTERVAL = 5000
+        
+        # Tópicos para estado del dispositivo
+        self.events_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/eventos"
+        self.status_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/status"
+        self.lwt_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/connection"
+        
         log_info("MQTTManager inicializado - Broker: %s:%d", self.MQTT_BROKER, self.MQTT_PORT)
+
+    def _get_status_payload(self, status, reason=""):
+        """Genera el payload para mensajes de estado"""
+        try:
+            payload = {
+                "status": status,
+                "timestamp": self.wifi_manager.get_current_time(),
+                "device_id": self.MQTT_CLIENT_ID,
+                "reason": reason,
+                "ip": self.wifi_manager.sta_if.ifconfig()[0] if self.wifi_manager.sta_if.isconnected() else None,
+                "rssi": self.wifi_manager.get_signal_strength(),
+                "uptime": utime.ticks_ms() // 1000,  # Uptime en segundos
+                "free_memory": gc.mem_free()
+            }
+            return json.dumps(payload)
+        except Exception as e:
+            log_error("Error generando payload de estado: %s", str(e))
+            return ""
 
     def ensure_client(self):
         log_debug("Verificando conexión WiFi y cliente MQTT")
@@ -368,11 +416,19 @@ class MQTTManager:
             if self.client:
                 try:
                     log_debug("Desconectando cliente MQTT existente")
+                    # Intentar publicar estado offline antes de desconectar
+                    try:
+                        status_payload = self._get_status_payload("offline", "normal_disconnect")
+                        self.client.publish(self.status_topic.encode(), status_payload.encode(), retain=True)
+                    except:
+                        pass
                     self.client.disconnect()
                 except Exception as e:
                     log_error("Error desconectando cliente anterior: %s", str(e))
                     
             log_info("Creando nuevo cliente MQTT")
+            
+            # Crear cliente con keepalive más corto para detectar desconexiones más rápido
             self.client = MQTTClient(
                 self.MQTT_CLIENT_ID.encode('utf-8'),
                 self.MQTT_BROKER,
@@ -380,11 +436,27 @@ class MQTTManager:
                 user=self.MQTT_USER.encode('utf-8'),
                 password=self.MQTT_PASSWORD.encode('utf-8'),
                 ssl=False,
-                timeout=5
+                keepalive=30  # 30 segundos
+            )
+            
+            # Configurar Last Will and Testament
+            lwt_payload = self._get_status_payload("offline", "unexpected_disconnect")
+            log_debug("Configurando LWT mensaje: %s", lwt_payload)
+            
+            self.client.set_last_will(
+                self.lwt_topic.encode(),
+                lwt_payload.encode(),
+                retain=True,
+                qos=1
             )
             
             log_debug("Conectando nuevo cliente MQTT")
             self.client.connect()
+            
+            # Publicar estado online después de conexión exitosa
+            status_payload = self._get_status_payload("online", "connection_established")
+            self.client.publish(self.status_topic.encode(), status_payload.encode(), retain=True)
+            
             log_info("Cliente MQTT conectado exitosamente")
             
         except Exception as e:
@@ -418,6 +490,14 @@ class MQTTManager:
 
             log_info("Publicando mensaje - Topic: %s", topic)
             self.client.publish(topic, message, qos=0)
+            
+            # Si el mensaje fue exitoso, publicar también el estado actual
+            try:
+                status_payload = self._get_status_payload("online", "normal_operation")
+                self.client.publish(self.status_topic.encode(), status_payload.encode(), retain=True)
+            except Exception as e:
+                log_error("Error publicando estado: %s", str(e))
+            
             log_info("Mensaje publicado exitosamente: %s", message)
             return True
             

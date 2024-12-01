@@ -4,6 +4,7 @@ import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.Panel
 import com.pqsolutions.hdd_monitor.data.UserData
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -23,7 +24,7 @@ sealed class EventFilter {
     object All : EventFilter()
     object Programmed : EventFilter()
     object Accepted : EventFilter()
-    object Completed : EventFilter()  // Nuevo estado
+    object Completed : EventFilter()
     data class ByClient(val clientDocName: String) : EventFilter()
     data class ByType(val eventType: String) : EventFilter()
 
@@ -31,7 +32,7 @@ sealed class EventFilter {
         is All -> "Todos"
         is Programmed -> "Programados"
         is Accepted -> "Aceptados"
-        is Completed -> "Finalizados"  // Nuevo caso
+        is Completed -> "Finalizados"
         is ByClient -> "Cliente: $clientDocName"
         is ByType -> "Tipo: $eventType"
     }
@@ -46,7 +47,7 @@ data class EventSortOption(
         STATUS,
         TITLE,
         TYPE,
-        LAST_UPDATE  // Nuevo campo
+        LAST_UPDATE
     }
 
     enum class SortDirection {
@@ -64,7 +65,7 @@ data class EventSortOption(
             SortField.STATUS -> "Estado"
             SortField.TITLE -> "Título"
             SortField.TYPE -> "Tipo"
-            SortField.LAST_UPDATE -> "Última actualización"  // Nuevo caso
+            SortField.LAST_UPDATE -> "Última actualización"
         }
         val dirStr = when (direction) {
             SortDirection.ASC -> "↑"
@@ -104,10 +105,12 @@ sealed class EventDialogEvent {
 }
 
 data class EventViewState(
-    // Lista principal de eventos
-    val events: List<Event> = emptyList(),
+    // Estado del usuario actual
+    val currentUserRole: UserRole? = null,
+    val currentUserClientDocName: String? = null,
 
-    // Datos relacionados
+    // Lista principal de eventos y datos relacionados
+    val events: List<Event> = emptyList(),
     val clients: List<Client> = emptyList(),
     val availablePanels: List<Panel> = emptyList(),
     val eventTypes: List<String> = emptyList(),
@@ -132,11 +135,11 @@ data class EventViewState(
     val currentDate: LocalDate? = null,
     val currentTime: LocalTime? = null,
 
-    // Manejar el título y descripción de nuevos eventos
+    // Campos para nuevos eventos
     val newEventTitle: String = "",
     val newEventDescription: String = "",
 
-    // Campo name dentro del documento panel
+    // Información del panel seleccionado
     val selectedPanelName: String? = null,
 
     // Estado de última actualización
@@ -154,7 +157,11 @@ data class EventViewState(
         get() = error != null
 
     val canCreateEvent: Boolean
-        get() = !isLoading && error == null
+        get() = when (currentUserRole) {
+            UserRole.ADMIN -> selectedClients.isNotEmpty()
+            UserRole.USER -> currentUserClientDocName != null
+            null -> false
+        }
 
     val hasSelectedClients: Boolean
         get() = selectedClients.isNotEmpty()
@@ -178,11 +185,15 @@ data class EventViewState(
     val hasValidEventType: Boolean
         get() = selectedEventType != null
 
+    val hasValidPanelSelection: Boolean
+        get() = selectedPanelDocName != null || selectedPanelName != null
+
     fun isValid(): Boolean {
         return !isLoading &&
                 error == null &&
                 currentOperation !is EventOperation.Error &&
-                hasValidEventType
+                hasValidEventType &&
+                (currentUserRole == UserRole.USER || hasSelectedClients)
     }
 
     companion object {
@@ -204,6 +215,8 @@ data class EventViewState(
 
     override fun toString(): String {
         return "EventViewState(" +
+                "currentUserRole=$currentUserRole, " +
+                "currentUserClientDocName=$currentUserClientDocName, " +
                 "events=${events.size}, " +
                 "clients=${clients.size}, " +
                 "panels=${availablePanels.size}, " +

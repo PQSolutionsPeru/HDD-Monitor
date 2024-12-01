@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -18,6 +17,7 @@ import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,9 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
-import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 import com.pqsolutions.hdd_monitor.presentation.components.EventCard
@@ -50,6 +48,7 @@ import com.pqsolutions.hdd_monitor.presentation.state.EventDialogEvent
 import com.pqsolutions.hdd_monitor.presentation.state.EventFilter
 import com.pqsolutions.hdd_monitor.presentation.state.EventSortOption
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.presentation.util.HandleKeyboardFocus
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.EventViewModel
@@ -66,6 +65,7 @@ fun EventScreen(
     isAdmin: Boolean,
     hasPendingNotifications: Boolean
 ) {
+    HandleKeyboardFocus()
     val state by viewModel.state.collectAsState()
     val notificationState by notificationViewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -162,23 +162,22 @@ fun EventScreen(
                             notificationCount = notificationState.pendingCount,
                             onClick = { /* Ya estamos en la pantalla de eventos */ }
                         )
-
-                        if (isAdmin) {
-                            IconButton(
-                                onClick = {
-                                    performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
-                                    viewModel.showCreateDialog()
-                                }
-                            ) {
-                                Icon(
-                                    Icons.Default.Add,
-                                    contentDescription = stringResource(R.string.create_new_event)
-                                )
-                            }
-                        }
                     }
                 )
+            },
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = {
+                        performHapticFeedback(context)
+                        playSoundEffect(context, R.raw.button_click)
+                        viewModel.showCreateDialog()
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = stringResource(R.string.create_new_event)
+                    )
+                }
             }
         ) { paddingValues ->
             Box(

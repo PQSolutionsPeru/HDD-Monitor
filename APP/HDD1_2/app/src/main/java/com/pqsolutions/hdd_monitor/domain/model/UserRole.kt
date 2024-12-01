@@ -35,7 +35,10 @@ enum class UserRole {
         get() = this == ADMIN
 
     val canManageEvents: Boolean
-        get() = this == ADMIN
+        get() = true // Modificado para permitir a todos manejar eventos
+
+    val canCreateEventTypes: Boolean
+        get() = this == ADMIN // Solo admins pueden crear tipos
 
     val canViewAllClients: Boolean
         get() = this == ADMIN

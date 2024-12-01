@@ -2,20 +2,26 @@ package com.pqsolutions.hdd_monitor.presentation.components
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pqsolutions.hdd_monitor.R
@@ -23,195 +29,13 @@ import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.Panel
 import com.pqsolutions.hdd_monitor.presentation.state.EventDialogEvent
+import com.pqsolutions.hdd_monitor.presentation.util.HandleKeyboardFocus
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.util.Calendar
-import androidx.compose.ui.text.font.FontWeight
+import java.util.*
 
-private const val TAG = "EventDialog"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun EventTypeSelector(
-    selectedEventType: String?,
-    eventTypes: List<String>,
-    isAdmin: Boolean,
-    onTypeSelected: (String) -> Unit,
-    onCreateNewType: () -> Unit,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = "Tipo de Evento",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
-
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { if (enabled) expanded = it }
-        ) {
-            OutlinedTextField(
-                value = selectedEventType ?: "Seleccione tipo de evento",
-                onValueChange = { },
-                readOnly = true,
-                enabled = enabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(),
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                },
-                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                    disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                    disabledBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                    disabledTrailingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                    disabledPlaceholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                ),
-                textStyle = MaterialTheme.typography.bodyLarge,
-                singleLine = true,
-            )
-
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.exposedDropdownSize()
-            ) {
-                eventTypes.sortedBy { it }.forEach { eventType ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = eventType,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        onClick = {
-                            onTypeSelected(eventType)
-                            expanded = false
-                        },
-                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                    )
-                }
-
-                if (isAdmin) {
-                    Divider(
-                        modifier = Modifier.padding(vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
-                    )
-
-                    DropdownMenuItem(
-                        text = {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.Add,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "Crear Nuevo Tipo",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        },
-                        onClick = {
-                            expanded = false
-                            onCreateNewType()
-                        },
-                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
-                        colors = MenuDefaults.itemColors(
-                            textColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
-            }
-        }
-
-        // Mensaje de error si no hay tipo seleccionado
-        if (selectedEventType == null) {
-            Text(
-                text = "Debe seleccionar un tipo de evento",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp, start = 16.dp)
-            )
-        }
-    }
-}
-
-
-@Composable
-fun NewEventTypeDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var newType by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Crear Nuevo Tipo de Evento",
-                style = MaterialTheme.typography.headlineSmall
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                OutlinedTextField(
-                    value = newType,
-                    onValueChange = {
-                        newType = it
-                        error = null
-                    },
-                    label = { Text("Nombre del tipo") },
-                    singleLine = true,
-                    isError = error != null,
-                    supportingText = error?.let { { Text(it) } },
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = MaterialTheme.typography.bodyLarge
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    when {
-                        newType.isBlank() -> error = "El nombre no puede estar vacío"
-                        newType.length > 50 -> error = "El nombre es demasiado largo"
-                        else -> onConfirm(newType.trim())
-                    }
-                },
-                enabled = newType.isNotBlank()
-            ) {
-                Text("Crear")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        },
-        modifier = modifier
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun EventDialog(
     event: Event?,
@@ -230,6 +54,12 @@ fun EventDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    // Manejar el foco del teclado globalmente
+    HandleKeyboardFocus()
+
     val isEditing = event != null
     val canEdit = event == null || event.isProgramado
 
@@ -271,7 +101,7 @@ fun EventDialog(
             title.length <= maxTitleLength &&
             description.length <= maxDescriptionLength &&
             selectedEventType != null &&
-            (isEditing || selectedClients.isNotEmpty())
+            (isEditing || isAdmin && selectedClients.isNotEmpty() || !isAdmin)
 
     // Date Picker
     val datePickerDialog = remember {
@@ -307,7 +137,11 @@ fun EventDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            onDismiss()
+        },
         title = {
             Text(
                 text = stringResource(
@@ -336,9 +170,15 @@ fun EventDialog(
                         eventTypes = eventTypes,
                         isAdmin = isAdmin,
                         onTypeSelected = { eventType ->
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
                             onEvent(EventDialogEvent.EventTypeSelected(eventType))
                         },
-                        onCreateNewType = { showNewTypeDialog = true },
+                        onCreateNewType = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            showNewTypeDialog = true
+                        },
                         enabled = canEdit
                     )
 
@@ -352,10 +192,23 @@ fun EventDialog(
                             }
                         },
                         label = { Text(stringResource(R.string.event_title)) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { focusState ->
+                                if (!focusState.isFocused && title.length >= maxTitleLength) {
+                                    keyboardController?.hide()
+                                }
+                            },
                         enabled = canEdit,
                         singleLine = true,
                         isError = title.isBlank(),
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Next,
+                            keyboardType = KeyboardType.Text
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                        ),
                         supportingText = {
                             Text(
                                 "${title.length}/$maxTitleLength" +
@@ -374,11 +227,27 @@ fun EventDialog(
                             }
                         },
                         label = { Text(stringResource(R.string.event_description)) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { focusState ->
+                                if (!focusState.isFocused && description.length >= maxDescriptionLength) {
+                                    keyboardController?.hide()
+                                }
+                            },
                         enabled = canEdit,
                         minLines = 3,
                         maxLines = 5,
                         isError = description.isBlank(),
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Done,
+                            keyboardType = KeyboardType.Text
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                            }
+                        ),
                         supportingText = {
                             Text(
                                 "${description.length}/$maxDescriptionLength" +
@@ -397,13 +266,26 @@ fun EventDialog(
                             value = selectedDate?.format(dateFormatter) ?: "",
                             onValueChange = { },
                             label = { Text(stringResource(R.string.date)) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { focusState ->
+                                    if (focusState.isFocused) {
+                                        keyboardController?.hide()
+                                        datePickerDialog.show()
+                                    }
+                                },
                             readOnly = true,
                             enabled = canEdit,
                             isError = !isDateValid,
                             trailingIcon = {
                                 IconButton(
-                                    onClick = { if (canEdit) datePickerDialog.show() },
+                                    onClick = {
+                                        if (canEdit) {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            datePickerDialog.show()
+                                        }
+                                    },
                                     enabled = canEdit
                                 ) {
                                     Icon(Icons.Default.CalendarToday, contentDescription = null)
@@ -417,13 +299,26 @@ fun EventDialog(
                             value = selectedTime?.format(timeFormatter) ?: "",
                             onValueChange = { },
                             label = { Text(stringResource(R.string.time)) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { focusState ->
+                                    if (focusState.isFocused) {
+                                        keyboardController?.hide()
+                                        timePickerDialog.show()
+                                    }
+                                },
                             readOnly = true,
                             enabled = canEdit,
                             isError = !isTimeValid,
                             trailingIcon = {
                                 IconButton(
-                                    onClick = { if (canEdit) timePickerDialog.show() },
+                                    onClick = {
+                                        if (canEdit) {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            timePickerDialog.show()
+                                        }
+                                    },
                                     enabled = canEdit
                                 ) {
                                     Icon(Icons.Default.Schedule, contentDescription = null)
@@ -433,6 +328,7 @@ fun EventDialog(
                     }
                 }
 
+                // Solo mostrar selección de cliente para administradores en modo creación
                 if (!isEditing && isAdmin) {
                     item {
                         Text(
@@ -447,87 +343,100 @@ fun EventDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
-                    }
 
-                    items(clients.sortedBy { it.name }) { client ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = client.documentName in selectedClients,
-                                onCheckedChange = { checked ->
-                                    if (canEdit) {
-                                        selectedClients = if (checked) {
-                                            setOf(client.documentName)  // Solo permitir uno
-                                        } else {
-                                            emptySet()
+                        clients.sortedBy { it.name }.forEach { client ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = client.documentName in selectedClients,
+                                    onCheckedChange = { checked ->
+                                        if (canEdit) {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            selectedClients = if (checked) {
+                                                setOf(client.documentName)  // Solo permitir uno
+                                            } else {
+                                                emptySet()
+                                            }
+                                            onEvent(EventDialogEvent.MultipleClientsSelected(selectedClients.toList()))
                                         }
-                                        onEvent(EventDialogEvent.MultipleClientsSelected(selectedClients.toList()))
-                                    }
-                                },
-                                enabled = canEdit
-                            )
-                            Text(
-                                text = client.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(start = 8.dp),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                                    },
+                                    enabled = canEdit
+                                )
+                                Text(
+                                    text = client.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
 
-                if (selectedClients.size == 1 && availablePanels.isNotEmpty()) {
+                // Mostrar selector de panel si hay cliente seleccionado o es un usuario normal
+                if ((isAdmin && selectedClients.size == 1) || (!isAdmin && selectedClientForPanels != null)) {
                     item {
-                        var expanded by remember { mutableStateOf(false) }
+                        if (availablePanels.isNotEmpty()) {
+                            var expanded by remember { mutableStateOf(false) }
 
-                        Text(
-                            text = stringResource(R.string.select_panel),
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                        )
-
-                        ExposedDropdownMenuBox(
-                            expanded = expanded,
-                            onExpandedChange = { if (canEdit) expanded = it }
-                        ) {
-                            OutlinedTextField(
-                                value = availablePanels.find { it.documentName == selectedPanelDocName }?.name
-                                    ?: stringResource(R.string.select_panel),
-                                onValueChange = { },
-                                label = { Text(stringResource(R.string.panel)) },
-                                readOnly = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor(),
-                                enabled = canEdit
+                            Text(
+                                text = stringResource(R.string.select_panel),
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
                             )
 
-                            ExposedDropdownMenu(
+                            ExposedDropdownMenuBox(
                                 expanded = expanded,
-                                onDismissRequest = { expanded = false }
-                            ) {
-                                availablePanels
-                                    .sortedBy { it.name }
-                                    .forEach { panel ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = panel.name,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            },
-                                            onClick = {
-                                                onEvent(EventDialogEvent.PanelSelected(panel.documentName))
-                                                expanded = false
-                                            }
-                                        )
+                                onExpandedChange = {
+                                    if (canEdit) {
+                                        expanded = it
+                                        keyboardController?.hide()
+                                        focusManager.clearFocus()
                                     }
+                                }
+                            ) {
+                                OutlinedTextField(
+                                    value = availablePanels.find { it.documentName == selectedPanelDocName }?.name
+                                        ?: stringResource(R.string.select_panel),
+                                    onValueChange = { },
+                                    label = { Text(stringResource(R.string.panel)) },
+                                    readOnly = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor(),
+                                    enabled = canEdit
+                                )
+
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false }
+                                ) {
+                                    availablePanels
+                                        .sortedBy { it.name }
+                                        .forEach { panel ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = panel.name,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                },
+                                                onClick = {
+                                                    keyboardController?.hide()
+                                                    focusManager.clearFocus()
+                                                    onEvent(EventDialogEvent.PanelSelected(panel.documentName))
+                                                    expanded = false
+                                                }
+                                            )
+                                        }
+                                }
                             }
                         }
                     }
@@ -537,9 +446,8 @@ fun EventDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    Log.d(TAG, "Confirmando con título: $title")
-                    Log.d(TAG, "Confirmando con descripción: $description")
-                    Log.d(TAG, "Confirmando con panel: $selectedPanelDocName")
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
                     onEvent(EventDialogEvent.Confirm)
                 },
                 enabled = isFormValid
@@ -552,16 +460,28 @@ fun EventDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                    onDismiss()
+                }
+            ) {
                 Text(stringResource(R.string.cancel))
             }
         }
     )
 
-    if (showNewTypeDialog) {
+    if (showNewTypeDialog && isAdmin) {
         NewEventTypeDialog(
-            onDismiss = { showNewTypeDialog = false },
+            onDismiss = {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+                showNewTypeDialog = false
+            },
             onConfirm = { newType ->
+                keyboardController?.hide()
+                focusManager.clearFocus()
                 onEvent(EventDialogEvent.CreateNewEventType(newType))
                 showNewTypeDialog = false
             }

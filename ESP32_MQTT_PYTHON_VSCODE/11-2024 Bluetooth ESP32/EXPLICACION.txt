@@ -171,4 +171,8 @@ El sistema puede reiniciarse en varios casos:
 
 
 
-ssid:MiWiFi,password:MiPassword,panel_name:Panel1,panel_location:Sala
+ssid:PABLO-2.4G,password:47009410,panel_name:Panel de prueba,panel_location:3er piso
+
+self.events_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/eventos"
+self.status_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/status"
+self.lwt_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/connection"

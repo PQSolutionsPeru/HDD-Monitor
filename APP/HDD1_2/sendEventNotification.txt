@@ -1,0 +1,181 @@
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+admin.initializeApp();
+
+exports.sendEventNotification = functions.firestore
+    .document('hdd-monitor/accounts/clients/{clientId}/events/{eventId}')
+    .onUpdate(async (change, context) => {
+        const newValue = change.after.data();
+        const previousValue = change.before.data();
+        const clientId = context.params.clientId;
+        const eventId = context.params.eventId;
+
+        // Verificar cambios significativos
+        const significantChange = Object.entries(newValue).some(([key, value]) => {
+            return key !== 'lastUpdate' && 
+                   JSON.stringify(value) !== JSON.stringify(previousValue[key]);
+        });
+
+        if (!significantChange) return null;
+
+        try {
+            const clientDoc = await admin.firestore()
+                .doc(`hdd-monitor/accounts/clients/${clientId}`)
+                .get();
+
+            if (!clientDoc.exists) {
+                console.error('Cliente no encontrado:', clientId);
+                return null;
+            }
+
+            const clientName = clientDoc.data().name;
+
+            // Obtener información del actor que realizó el cambio
+            const actorInfo = await getActorInfo(newValue.createdByUserId, newValue.createdByUserRole);
+            
+            // Construir mensajes diferenciados para admins y usuarios
+            const { adminMessage, userMessage, notificationTitle } = await buildMessages(
+                newValue,
+                previousValue,
+                actorInfo,
+                clientName
+            );
+
+            // Enviar a usuarios del cliente
+            const userSnapshot = await admin.firestore()
+                .collection(`hdd-monitor/accounts/clients/${clientId}/users`)
+                .get();
+
+            const userPromises = userSnapshot.docs
+                .filter(doc => doc.data().fcmToken && doc.id !== newValue.createdByUserId)
+                .map(async (userDoc) => {
+                    const payload = createNotificationPayload(
+                        `${clientName} - ${notificationTitle}`,
+                        userMessage,
+                        clientId,
+                        eventId,
+                        newValue,
+                        previousValue,
+                        userDoc.data().fcmToken
+                    );
+                    return sendNotification(payload, userDoc.id, 'user');
+                });
+
+            // Enviar a administradores
+            const adminSnapshot = await admin.firestore()
+                .collection('hdd-monitor/accounts/admins')
+                .get();
+
+            const adminPromises = adminSnapshot.docs
+                .filter(doc => doc.data().fcmToken && doc.id !== newValue.createdByUserId)
+                .map(async (adminDoc) => {
+                    const payload = createNotificationPayload(
+                        `${clientName} - ${notificationTitle}`,
+                        adminMessage,
+                        clientId,
+                        eventId,
+                        newValue,
+                        previousValue,
+                        adminDoc.data().fcmToken
+                    );
+                    return sendNotification(payload, adminDoc.id, 'admin');
+                });
+
+            await Promise.all([...userPromises, ...adminPromises]);
+
+        } catch (error) {
+            console.error('Error procesando notificación de evento:', error);
+        }
+
+        return null;
+    });
+
+async function getActorInfo(actorId, actorRole) {
+    if (!actorId) return { name: 'Usuario desconocido', role: 'UNKNOWN' };
+
+    try {
+        const isAdmin = actorRole === 'ADMIN';
+        const path = isAdmin 
+            ? `hdd-monitor/accounts/admins/${actorId}`
+            : `hdd-monitor/accounts/clients/${clientId}/users/${actorId}`;
+        
+        const actorDoc = await admin.firestore().doc(path).get();
+        return {
+            name: actorDoc.exists ? actorDoc.data().name : 'Usuario desconocido',
+            role: actorRole
+        };
+    } catch (error) {
+        console.error('Error obteniendo información del actor:', error);
+        return { name: 'Usuario desconocido', role: 'UNKNOWN' };
+    }
+}
+
+async function buildMessages(newValue, previousValue, actorInfo, clientName) {
+    let adminMessage, userMessage, notificationTitle;
+
+    if (newValue.status !== previousValue.status) {
+        switch(newValue.status) {
+            case 'ACEPTADO':
+                if (actorInfo.role === 'ADMIN') {
+                    adminMessage = `${actorInfo.name} ha aceptado el evento "${newValue.title}" para ${clientName}`;
+                    userMessage = `Un administrador ha aceptado el evento "${newValue.title}"`;
+                } else {
+                    adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha aceptado el evento "${newValue.title}"`;
+                    userMessage = `${actorInfo.name} ha aceptado el evento "${newValue.title}"`;
+                }
+                notificationTitle = "Evento Aceptado";
+                break;
+
+            case 'FINALIZADO':
+                if (actorInfo.role === 'ADMIN') {
+                    adminMessage = `${actorInfo.name} ha finalizado el evento "${newValue.title}" para ${clientName}`;
+                    userMessage = `Un administrador ha finalizado el evento "${newValue.title}"`;
+                } else {
+                    adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha finalizado el evento "${newValue.title}"`;
+                    userMessage = `${actorInfo.name} ha finalizado el evento "${newValue.title}"`;
+                }
+                notificationTitle = "Evento Finalizado";
+                break;
+
+            case 'PROGRAMADO':
+                if (previousValue.status === 'FINALIZADO') {
+                    // Solo administradores pueden reabrir eventos
+                    adminMessage = `${actorInfo.name} ha reabierto el evento "${newValue.title}" para ${clientName}`;
+                    userMessage = `Un administrador ha reabierto el evento "${newValue.title}"`;
+                    notificationTitle = "Evento Reabierto";
+                } else {
+                    if (actorInfo.role === 'ADMIN') {
+                        adminMessage = `${actorInfo.name} ha creado el evento "${newValue.title}" para ${clientName}`;
+                        userMessage = `Un administrador ha creado el evento "${newValue.title}"`;
+                    } else {
+                        adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha creado el evento "${newValue.title}"`;
+                        userMessage = `${actorInfo.name} ha creado el evento "${newValue.title}"`;
+                    }
+                    notificationTitle = "Nuevo Evento";
+                }
+                break;
+
+            default:
+                if (actorInfo.role === 'ADMIN') {
+                    adminMessage = `${actorInfo.name} ha cambiado el estado del evento "${newValue.title}" a ${newValue.status} para ${clientName}`;
+                    userMessage = `Un administrador ha cambiado el estado del evento "${newValue.title}" a ${newValue.status}`;
+                } else {
+                    adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha cambiado el estado del evento "${newValue.title}" a ${newValue.status}`;
+                    userMessage = `${actorInfo.name} ha cambiado el estado del evento "${newValue.title}" a ${newValue.status}`;
+                }
+                notificationTitle = "Actualización de Estado";
+        }
+    } else {
+        // Cambios en datos del evento
+        if (actorInfo.role === 'ADMIN') {
+            adminMessage = `${actorInfo.name} ha modificado el evento "${newValue.title}" para ${clientName}`;
+            userMessage = `Un administrador ha modificado el evento "${newValue.title}"`;
+        } else {
+            adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha modificado el evento "${newValue.title}"`;
+            userMessage = `${actorInfo.name} ha modificado el evento "${newValue.title}"`;
+        }
+        notificationTitle = "Actualización de Evento";
+    }
+
+    return { adminMessage, userMessage, notificationTitle };
+}
