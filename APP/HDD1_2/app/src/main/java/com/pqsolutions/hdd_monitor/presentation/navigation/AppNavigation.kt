@@ -11,6 +11,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import com.pqsolutions.hdd_monitor.presentation.screens.AdminDashboardScreen
+import com.pqsolutions.hdd_monitor.presentation.screens.BleConfigScreen
 import com.pqsolutions.hdd_monitor.presentation.screens.ClientManagementScreen
 import com.pqsolutions.hdd_monitor.presentation.screens.EventScreen
 import com.pqsolutions.hdd_monitor.presentation.screens.LoginScreen
@@ -30,6 +31,7 @@ sealed class Screen(val route: String) {
     object ClientManagement : Screen("client_management")
     object NotificationHistory : Screen("notification_history")
     object Events : Screen("events")
+    object BleConfig : Screen("ble_config")
 }
 
 @Composable
@@ -77,6 +79,7 @@ fun AppNavigation(
                         onManageUsersClick = { navController.navigate(Screen.ClientManagement.route) },
                         onViewEventsClick = { navController.navigate(Screen.Events.route) },
                         onViewNotificationHistoryClick = { navController.navigate(Screen.NotificationHistory.route) },
+                        onConfigureEsp32Click = { navController.navigate(Screen.BleConfig.route) },
                         hasPendingNotifications = hasPendingNotifications
                     )
                 }
@@ -118,6 +121,13 @@ fun AppNavigation(
                 onBackClick = { navController.popBackStack() },
                 isAdmin = uiState.userData?.role == UserRole.ADMIN,
                 hasPendingNotifications = hasPendingNotifications
+            )
+        }
+
+        composable(Screen.BleConfig.route) {
+            BleConfigScreen(
+                onConfigurationComplete = { navController.navigate(Screen.Dashboard.route) },
+                onBackClick = { navController.popBackStack() }
             )
         }
     }

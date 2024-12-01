@@ -185,6 +185,9 @@ dependencies {
 
     // Multidex
     implementation(libs.androidx.multidex)
+
+    // Bluetooth
+    implementation(libs.play.services.nearby)
 }
 
 kapt {

@@ -62,6 +62,21 @@
     <string name="panel_connection_ok">Conectado</string>
     <string name="panel_connection_error">Desconectado</string>
 
+    <!-- BleConfig Strings -->
+    <string name="configure_esp32">Configurar Chip Monitor</string>
+    <string name="wifi_name">Nombre de red WiFi</string>
+    <string name="wifi_password">Contraseña WiFi</string>
+    <string name="panel_name">Nombre del Panel</string>
+    <string name="panel_location">Ubicación del Panel</string>
+    <string name="search_devices">Buscar dispositivos</string>
+    <string name="scanning_devices">Buscando dispositivos...</string>
+    <string name="send_configuration">Enviar configuración</string>
+    <string name="configuration_successful">Configuración enviada exitosamente</string>
+    <string name="permissions_required">Permisos necesarios</string>
+    <string name="bluetooth_permission_explanation">Para configurar el chip monitor se necesitan permisos de Bluetooth. Por favor, concede los permisos en la configuración de la aplicación.</string>
+    <string name="go_to_settings">Ir a Configuración</string>
+    <string name="unknown_device">Dispositivo desconocido</string>
+
     <!-- Gestión de Usuarios -->
     <string name="manage_users">Gestionar Usuarios</string>
     <string name="new_user">Nuevo Usuario</string>

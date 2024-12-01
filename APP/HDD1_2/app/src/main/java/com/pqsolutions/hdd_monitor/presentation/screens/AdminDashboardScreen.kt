@@ -56,6 +56,7 @@ fun AdminDashboardScreen(
     onManageUsersClick: () -> Unit,
     onViewEventsClick: () -> Unit,
     onViewNotificationHistoryClick: () -> Unit,
+    onConfigureEsp32Click: () -> Unit,
     hasPendingNotifications: Boolean
 ) {
     Log.d(TAG, "AdminDashboardScreen composition started")
@@ -107,6 +108,7 @@ fun AdminDashboardScreen(
                     onManageUsersClick = onManageUsersClick,
                     onViewEventsClick = onViewEventsClick,
                     onViewNotificationHistoryClick = onViewNotificationHistoryClick,
+                    onConfigureEsp32Click = onConfigureEsp32Click,
                     context = context
                 )
 
@@ -147,6 +149,7 @@ private fun DashboardActions(
     onManageUsersClick: () -> Unit,
     onViewEventsClick: () -> Unit,
     onViewNotificationHistoryClick: () -> Unit,
+    onConfigureEsp32Click: () -> Unit, // Nuevo parámetro
     context: android.content.Context
 ) {
     Log.d(TAG, "Rendering DashboardActions")
@@ -183,6 +186,16 @@ private fun DashboardActions(
                 onViewNotificationHistoryClick()
             },
             text = stringResource(R.string.view_notification_history)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        DashboardButton(
+            onClick = {
+                Log.d(TAG, "Configure ESP32 button clicked")
+                performHapticFeedback(context)
+                playSoundEffect(context, R.raw.button_click)
+                onConfigureEsp32Click()
+            },
+            text = stringResource(R.string.configure_esp32)
         )
     }
 }
