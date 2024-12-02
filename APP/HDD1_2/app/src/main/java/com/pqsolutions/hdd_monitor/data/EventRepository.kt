@@ -303,7 +303,7 @@ class EventRepository @Inject constructor(
     /**
      * Elimina un evento.
      */
-    suspend fun deleteEvent(clientDocName: String, eventDocName: String): Result<Unit> = runCatching {
+    suspend fun deleteEvent(clientDocName: String, eventDocName: String, isAdmin: Boolean = false): Result<Unit> = runCatching {
         if (clientDocName.isEmpty() || eventDocName.isEmpty()) {
             throw IllegalArgumentException("Client and Event document names cannot be empty")
         }
@@ -317,7 +317,9 @@ class EventRepository @Inject constructor(
 
         val currentEvent = Event.fromMap(snapshot.data?.plus("documentName" to eventDocName) ?: emptyMap())
 
-        if (!currentEvent.isProgramado) {
+        // Si es admin, puede eliminar en cualquier estado
+        // Si no es admin, solo puede eliminar eventos programados
+        if (!isAdmin && !currentEvent.isProgramado) {
             throw IllegalStateException("Solo se pueden eliminar eventos en estado PROGRAMADO")
         }
 

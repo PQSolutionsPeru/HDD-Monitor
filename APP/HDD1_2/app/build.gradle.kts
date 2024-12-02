@@ -113,12 +113,12 @@ dependencies {
     implementation(platform(libs.firebase.bom.v3280))
 
     // Firebase
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.google.firebase:firebase-analytics-ktx")
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-functions-ktx")
-    implementation("com.google.firebase:firebase-crashlytics-ktx")
+    implementation(libs.com.google.firebase.firebase.messaging.ktx2)
+    implementation(libs.com.google.firebase.firebase.analytics.ktx)
+    implementation(libs.com.google.firebase.firebase.auth.ktx2)
+    implementation(libs.com.google.firebase.firebase.firestore.ktx2)
+    implementation(libs.com.google.firebase.firebase.functions.ktx)
+    implementation(libs.google.firebase.crashlytics.ktx)
 
     // Hilt
     implementation(libs.hilt.android)
@@ -128,15 +128,15 @@ dependencies {
     kapt(libs.androidx.hilt.compiler)
 
     // Compose
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.runtime:runtime")
-    implementation("androidx.compose.animation:animation")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.material:material-icons-extended")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation(libs.ui)
+    implementation(libs.ui.graphics)
+    implementation(libs.ui.tooling.preview)
+    implementation(libs.material3)
+    implementation(libs.androidx.runtime)
+    implementation(libs.androidx.animation)
+    implementation(libs.androidx.foundation)
+    implementation(libs.androidx.material.icons.extended)
+    debugImplementation(libs.ui.tooling)
 
     // Testing
     testImplementation(libs.junit)
@@ -145,8 +145,8 @@ dependencies {
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    androidTestImplementation(libs.ui.test.junit4)
+    debugImplementation(libs.ui.test.manifest)
 
     // Core Android
     implementation(libs.androidx.core.ktx)

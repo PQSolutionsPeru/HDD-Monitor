@@ -8,6 +8,7 @@ import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.data.EventRepository
 import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.domain.model.EventStatus
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import com.pqsolutions.hdd_monitor.presentation.state.EventDialogEvent
 import com.pqsolutions.hdd_monitor.presentation.state.EventFilter
@@ -199,6 +200,33 @@ class EventViewModel @Inject constructor(
                 val panels = eventRepository.getPanelsByClient(clientDocName)
                 _state.update {
                     it.copy(availablePanels = panels)
+                }
+            } catch (e: Exception) {
+                handleError(e)
+            }
+        }
+    }
+
+    fun reopenEvent(clientDocName: String, eventDocName: String) {
+        viewModelScope.launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser?.role != UserRole.ADMIN) {
+                    _uiEvent.send(EventUIEvent.ShowSnackbar("Solo los administradores pueden reabrir eventos"))
+                    return@launch
+                }
+
+                eventRepository.updateEventStatus(
+                    clientDocName = clientDocName,
+                    eventDocName = eventDocName,
+                    newStatus = EventStatus.STATUS_ACEPTADO, // Vuelve a estado aceptado
+                    updatedByUserId = currentUser.documentName,
+                    isAdmin = true
+                ).onSuccess {
+                    _uiEvent.send(EventUIEvent.ShowSnackbar("Evento reabierto exitosamente"))
+                    loadEvents()
+                }.onFailure { error ->
+                    handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
@@ -710,14 +738,17 @@ class EventViewModel @Inject constructor(
     fun deleteEvent(clientDocName: String, eventDocName: String) {
         viewModelScope.launch {
             try {
-                if (!clientDocName.startsWith(DocumentPrefixes.CLIENT) ||
-                    !eventDocName.startsWith(DocumentPrefixes.EVENT)) {
-                    throw IllegalArgumentException("Nombres de documentos inválidos")
+                val currentUser = userRepository.getCurrentUser()
+                    ?: throw IllegalStateException("No hay usuario autenticado")
+
+                if (currentUser.role != UserRole.ADMIN) {
+                    _uiEvent.send(EventUIEvent.ShowSnackbar("Solo los administradores pueden eliminar eventos"))
+                    return@launch
                 }
 
                 _state.update { it.copy(currentOperation = EventOperation.Loading) }
 
-                eventRepository.deleteEvent(clientDocName, eventDocName)
+                eventRepository.deleteEvent(clientDocName, eventDocName, isAdmin = true)
                     .onSuccess {
                         _state.update {
                             it.copy(

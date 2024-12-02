@@ -146,9 +146,9 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 FirebaseMessaging.getInstance().subscribeToTopic("relay-status").await()
-                Log.d(TAG, "Subscribed to relay-status topic")
+                Log.d(TAG, "Suscrito exitosamente al tema relay-status")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to subscribe to relay-status topic", e)
+                Log.e(TAG, "Error al suscribirse al tema relay-status", e)
             }
         }
     }
@@ -315,12 +315,15 @@ class MainViewModel @Inject constructor(
     private suspend fun updateFCMToken() {
         try {
             val token = FirebaseMessaging.getInstance().token.await()
+            Log.d(TAG, "Token FCM obtenido: $token")  // Añadir este log
             val currentUser = userRepository.getCurrentUser()
             if (currentUser != null) {
+                Log.d(TAG, "Actualizando token para usuario: ${currentUser.documentName}")  // Añadir este log
                 userRepository.updateFcmToken(currentUser.documentName, token)
+                Log.d(TAG, "Token FCM actualizado exitosamente")  // Añadir este log
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error updating FCM token: ${e.message}")
+            Log.e(TAG, "Error updating FCM token: ${e.message}", e)
         }
     }
 }

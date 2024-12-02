@@ -29,6 +29,7 @@ fun EventCard(
     onDeleteClick: () -> Unit,
     onAcceptClick: () -> Unit,
     onFinalizeClick: () -> Unit,
+    onReopenClick: () -> Unit,
     onContactWhatsApp: (String, String, Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -246,43 +247,68 @@ fun EventCard(
                         Spacer(modifier = Modifier.padding(horizontal = 8.dp))
                     }
 
-                    // Botones de administración
-                    if (event.isProgramado) {
-                        // Botón de aceptar para eventos que necesitan aprobación de admin
-                        if (event.needsAdminApproval) {
-                            Button(
-                                onClick = onAcceptClick,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                ),
-                                modifier = Modifier.padding(end = 8.dp)
-                            ) {
-                                Text("Aceptar")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        when {
+                            // Estado PROGRAMADO
+                            event.isProgramado -> {
+                                if (event.needsAdminApproval) {
+                                    Button(
+                                        onClick = onAcceptClick,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    ) {
+                                        Text("Aceptar")
+                                    }
+                                }
+                                IconButton(onClick = onEditClick) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = "Editar evento",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            // Estado ACEPTADO
+                            event.isAceptado -> {
+                                Button(
+                                    onClick = onFinalizeClick,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.secondary
+                                    )
+                                ) {
+                                    Text("Finalizar")
+                                }
+                                IconButton(onClick = onEditClick) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = "Editar evento",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            // Estado FINALIZADO
+                            event.isFinalizado -> {
+                                Button(
+                                    onClick = onReopenClick,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.tertiary
+                                    )
+                                ) {
+                                    Text("Reabrir")
+                                }
                             }
                         }
-
-                        IconButton(onClick = onEditClick) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = "Editar evento",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        // Botón eliminar siempre visible para admin
                         IconButton(onClick = onDeleteClick) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = "Eliminar evento",
                                 tint = MaterialTheme.colorScheme.error
                             )
-                        }
-                    } else if (event.isAceptado) {
-                        Button(
-                            onClick = onFinalizeClick,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondary
-                            )
-                        ) {
-                            Text("Finalizar")
                         }
                     }
                 } else {
@@ -321,6 +347,7 @@ fun EventList(
     onDeleteClick: (Event) -> Unit,
     onAcceptClick: (Event) -> Unit,
     onFinalizeClick: (Event) -> Unit,
+    onReopenClick: (Event) -> Unit,
     onContactWhatsApp: (String, String, Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -341,6 +368,7 @@ fun EventList(
                 onDeleteClick = { onDeleteClick(event) },
                 onAcceptClick = { onAcceptClick(event) },
                 onFinalizeClick = { onFinalizeClick(event) },
+                onReopenClick = { onReopenClick(event) },
                 onContactWhatsApp = onContactWhatsApp
             )
         }

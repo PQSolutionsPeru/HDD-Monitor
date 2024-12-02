@@ -9,6 +9,7 @@
     <!-- Permisos de Notificaciones y Vibración -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" /> <!-- Añadido para asegurar que las notificaciones despierten el dispositivo -->
 
     <!-- Permisos de Bluetooth -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -41,32 +42,42 @@
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
 
-        <!-- Configuración del canal de notificación predeterminado para Firebase -->
+        <!-- Configuración de Firebase Cloud Messaging -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="@string/default_notification_channel_id" />
+            android:value="event_notifications" />
 
-        <!-- Configuración del ícono para la notificación -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />
 
-        <!-- Actividad principal de la aplicación -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@android:color/holo_red_dark" />
+
+        <!-- Actividad principal -->
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.HDD1_2"
             android:windowSoftInputMode="adjustResize"
-            android:launchMode="singleTop">
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Intent filter para manejar notificaciones -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="hddmonitor" />
+            </intent-filter>
         </activity>
 
-        <!-- Servicio para manejar mensajes de Firebase Cloud Messaging -->
+        <!-- Firebase Messaging Service -->
         <service
             android:name=".service.MessagingService"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />

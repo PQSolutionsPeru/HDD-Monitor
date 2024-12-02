@@ -239,6 +239,14 @@ fun EventScreen(
                                         EventStatus.STATUS_FINALIZADO
                                     )
                                 },
+                                onReopenClick = {
+                                    performHapticFeedback(context)
+                                    playSoundEffect(context, R.raw.button_click)
+                                    viewModel.reopenEvent(
+                                        event.clientDocName,
+                                        event.documentName
+                                    )
+                                },
                                 onContactWhatsApp = { phone, name, eventToShare ->
                                     launchWhatsApp(context, phone, name, eventToShare)
                                 }
