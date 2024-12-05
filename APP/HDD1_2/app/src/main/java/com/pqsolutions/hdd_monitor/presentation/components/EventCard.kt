@@ -185,9 +185,9 @@ fun EventCard(
 
                 // Fecha de finalización
                 if (event.isFinalizado) {
-                    event.finalizedAt?.let { finalizedAt ->
+                    event.finishedAt?.let { finishedAt ->
                         Text(
-                            text = "Finalizado el: $finalizedAt",
+                            text = "Finalizado el: $finishedAt",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -254,7 +254,7 @@ fun EventCard(
                         when {
                             // Estado PROGRAMADO
                             event.isProgramado -> {
-                                if (event.needsAdminApproval) {
+                                if (event.needAdminAcceptance) {
                                     Button(
                                         onClick = onAcceptClick,
                                         colors = ButtonDefaults.buttonColors(
@@ -313,23 +313,40 @@ fun EventCard(
                     }
                 } else {
                     // Botones de usuario
-                    if (event.needsUserApproval) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (event.needUserAcceptance) {
+                            Button(
+                                onClick = onAcceptClick,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text("Aceptar")
+                            }
+                        }
+
+                        // Agregar botón de finalizar cuando el evento está aceptado
+                        if (event.isAceptado) {
+                            Button(
+                                onClick = onFinalizeClick,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondary
+                                )
+                            ) {
+                                Text("Finalizar")
+                            }
+                        }
+
                         Button(
-                            onClick = onAcceptClick,
+                            onClick = { onContactWhatsApp("+51993533004", "Administrador", event) },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
+                                containerColor = MaterialTheme.colorScheme.secondary
                             )
                         ) {
-                            Text("Aceptar")
+                            Text("Contactar Admin")
                         }
-                    }
-                    Button(
-                        onClick = { onContactWhatsApp("+51993533004", "Administrador", event) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary
-                        )
-                    ) {
-                        Text("Contactar Admin")
                     }
                 }
             }
@@ -357,7 +374,9 @@ fun EventList(
     ) {
         events.forEach { event ->
             val client = clients.find { it.documentName == event.clientDocName }
-            val user = users[event.createdByUserId]
+            val user = event.createdByAccountId?.let { accountId ->
+                users[accountId]
+            }
 
             EventCard(
                 event = event,

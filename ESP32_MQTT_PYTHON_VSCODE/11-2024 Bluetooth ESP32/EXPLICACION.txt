@@ -176,3 +176,14 @@ ssid:PABLO-2.4G,password:47009410,panel_name:Panel de prueba,panel_location:3er�
 self.events_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/eventos"
 self.status_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/status"
 self.lwt_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/connection"
+
+
+
+A todos los usuarios de un mismo cliente se les notifica en los siguientes casos:
+- Cuando algún administrador o algún usuario crea un evento; esto significa que hay un documento nuevo en la colección "events" dentro de la BD
+- Cuando algún administrador o algún usuario edite un evento
+- Cuando algún administrador o algún usuario acepta un evento
+- Cuando algún administrador o algún usuario finaliza un evento
+- Cuando algún administrador reabra algún evento finalizado
+
+A todos los administradores se les notifica en los mismos casos solo que se menciona también el nombre del cliente, que está en el campo "name" dentro del documento cliente en la BD.

@@ -35,7 +35,7 @@ enum class UserRole {
         get() = this == ADMIN
 
     val canManageEvents: Boolean
-        get() = true // Modificado para permitir a todos manejar eventos
+        get() = true // Permite a todos manejar eventos
 
     val canCreateEventTypes: Boolean
         get() = this == ADMIN // Solo admins pueden crear tipos
@@ -44,9 +44,6 @@ enum class UserRole {
         get() = this == ADMIN
 
     override fun toString(): String {
-        return when (this) {
-            ADMIN -> "Administrador"
-            USER -> "Usuario"
-        }
+        return toFirestoreValue(this)  // Retorna "admin" o "user"
     }
 }

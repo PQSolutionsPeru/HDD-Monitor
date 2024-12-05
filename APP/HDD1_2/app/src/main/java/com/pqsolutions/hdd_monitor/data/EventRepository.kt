@@ -135,10 +135,6 @@ class EventRepository @Inject constructor(
         }
     }
 
-
-    /**
-     * Crea nuevos eventos para una lista de clientes.
-     */
     suspend fun createEvent(clientDocNames: List<String>, event: Event): Result<Unit> = runCatching {
         if (clientDocNames.isEmpty()) {
             throw IllegalArgumentException("Client document names list cannot be empty")
@@ -173,8 +169,9 @@ class EventRepository @Inject constructor(
                 "panelDocName" to event.panelDocName,
                 "panelName" to panelName,
                 "type" to event.type,
-                "createdByUserId" to event.createdByUserId,
+                "createdByAccountId" to event.createdByAccountId,
                 "createdByUserRole" to event.createdByUserRole,
+                "needsApproval" to event.needsApproval,
                 "isRead" to false
             ).apply {
                 values.removeAll { it == null }
@@ -187,9 +184,68 @@ class EventRepository @Inject constructor(
         Log.d(TAG, "Events batch committed successfully")
     }
 
-    /**
-     * Actualiza un evento existente.
-     */
+    suspend fun updateEventStatus(
+        clientDocName: String,
+        eventDocName: String,
+        newStatus: String,
+        updatedByAccountId: String,
+        isAdmin: Boolean
+    ): Result<Unit> = runCatching {
+        if (clientDocName.isEmpty() || eventDocName.isEmpty()) {
+            throw IllegalArgumentException("Client and Event document names cannot be empty")
+        }
+
+        val now = LocalDateTime.now().format(DATE_FORMATTER)
+        val eventDoc = firestore.document("$BASE_PATH/$clientDocName/events/$eventDocName")
+        val snapshot = eventDoc.get().await()
+
+        if (!snapshot.exists()) {
+            throw IllegalStateException("El evento no existe: $eventDocName")
+        }
+
+        val currentEvent = Event.fromMap(snapshot.data?.plus("documentName" to eventDocName) ?: emptyMap())
+
+        // Validar que el usuario tenga permiso para actualizar el estado
+        when {
+            isAdmin && currentEvent.createdByUserRole == UserRole.USER.toString() && currentEvent.needAdminAcceptance -> {
+                // Admin aceptando evento de usuario
+            }
+            !isAdmin && currentEvent.createdByUserRole == UserRole.ADMIN.toString() && currentEvent.needUserAcceptance -> {
+                // Usuario aceptando evento de admin
+            }
+            newStatus == EventStatus.STATUS_FINALIZADO && currentEvent.isAceptado -> {
+                // Permitir finalización si el evento está aceptado
+            }
+            else -> {
+                throw IllegalStateException("No tiene permisos para actualizar este evento o el evento no está en un estado válido")
+            }
+        }
+
+        if (!EventStatus.isValidTransition(currentEvent.status, newStatus)) {
+            throw IllegalStateException("Transición de estado inválida: ${currentEvent.status} -> $newStatus")
+        }
+
+        val updates = mutableMapOf<String, Any>(
+            "status" to newStatus,
+            "lastUpdate" to now,
+            "isRead" to false
+        )
+
+        when (newStatus) {
+            EventStatus.STATUS_ACEPTADO -> {
+                updates["acceptedAt"] = now
+                updates["acceptedByAccountId"] = updatedByAccountId
+            }
+            EventStatus.STATUS_FINALIZADO -> {
+                updates["finishedAt"] = now
+                updates["finishedByAccountId"] = updatedByAccountId
+            }
+        }
+
+        eventDoc.update(updates).await()
+        Log.d(TAG, "Event status updated successfully: $eventDocName to $newStatus")
+    }
+
     suspend fun updateEvent(clientDocName: String, event: Event): Result<Unit> = runCatching {
         if (clientDocName.isEmpty() || event.documentName.isEmpty()) {
             throw IllegalArgumentException("Client and Event document names cannot be empty")
@@ -223,86 +279,12 @@ class EventRepository @Inject constructor(
         Log.d(TAG, "Event updated successfully: ${event.documentName}")
     }
 
-    /**
-     * Actualiza el estado de un evento.
-     */
-    suspend fun updateEventStatus(
-        clientDocName: String,
-        eventDocName: String,
-        newStatus: String,
-        updatedByUserId: String,
-        isAdmin: Boolean
-    ): Result<Unit> = runCatching {
-        if (clientDocName.isEmpty() || eventDocName.isEmpty()) {
-            throw IllegalArgumentException("Client and Event document names cannot be empty")
-        }
-
-        val now = LocalDateTime.now().format(DATE_FORMATTER)
-        val eventDoc = firestore.document("$BASE_PATH/$clientDocName/events/$eventDocName")
-        val snapshot = eventDoc.get().await()
-
-        if (!snapshot.exists()) {
-            throw IllegalStateException("El evento no existe: $eventDocName")
-        }
-
-        val currentEvent = Event.fromMap(snapshot.data?.plus("documentName" to eventDocName) ?: emptyMap())
-
-        // Validar que el usuario tenga permiso para actualizar el estado
-        when {
-            isAdmin && currentEvent.createdByUserRole == UserRole.USER.toString() && currentEvent.needsAdminApproval -> {
-                // Admin aceptando evento de usuario
-            }
-            !isAdmin && currentEvent.createdByUserRole == UserRole.ADMIN.toString() && currentEvent.needsUserApproval -> {
-                // Usuario aceptando evento de admin
-            }
-            newStatus == EventStatus.STATUS_FINALIZADO && currentEvent.isAceptado -> {
-                // Permitir finalización si el evento está aceptado
-            }
-            else -> {
-                throw IllegalStateException("No tiene permisos para actualizar este evento o el evento no está en un estado válido")
-            }
-        }
-
-        if (!EventStatus.isValidTransition(currentEvent.status, newStatus)) {
-            throw IllegalStateException("Transición de estado inválida: ${currentEvent.status} -> $newStatus")
-        }
-
-        val updates = mutableMapOf<String, Any>(
-            "status" to newStatus,
-            "lastUpdate" to now,
-            "isRead" to false
-        )
-
-        when (newStatus) {
-            EventStatus.STATUS_ACEPTADO -> {
-                updates["acceptedAt"] = now
-                if (isAdmin) {
-                    updates["adminAcceptDocName"] = updatedByUserId
-                } else {
-                    updates["userAcceptDocName"] = updatedByUserId
-                }
-            }
-            EventStatus.STATUS_FINALIZADO -> {
-                updates["finalizedAt"] = now
-            }
-        }
-
-        eventDoc.update(updates).await()
-        Log.d(TAG, "Event status updated successfully: $eventDocName to $newStatus")
-    }
-
-    /**
-     * Marca un evento como leído.
-     */
     suspend fun markEventAsRead(clientDocName: String, eventDocName: String): Result<Unit> = runCatching {
         firestore.document("$BASE_PATH/$clientDocName/events/$eventDocName")
             .update("isRead", true)
             .await()
     }
 
-    /**
-     * Elimina un evento.
-     */
     suspend fun deleteEvent(clientDocName: String, eventDocName: String, isAdmin: Boolean = false): Result<Unit> = runCatching {
         if (clientDocName.isEmpty() || eventDocName.isEmpty()) {
             throw IllegalArgumentException("Client and Event document names cannot be empty")
@@ -327,9 +309,6 @@ class EventRepository @Inject constructor(
         Log.d(TAG, "Event deleted successfully: $eventDocName")
     }
 
-    /**
-     * Obtiene la lista de clientes.
-     */
     suspend fun getClients(): List<Client> {
         return firestore.collection(BASE_PATH)
             .get()
@@ -340,9 +319,6 @@ class EventRepository @Inject constructor(
             }
     }
 
-    /**
-     * Obtiene la lista de paneles de un cliente.
-     */
     suspend fun getPanelsByClient(clientDocName: String): List<Panel> {
         return firestore.collection("$BASE_PATH/$clientDocName/panels")
             .get()

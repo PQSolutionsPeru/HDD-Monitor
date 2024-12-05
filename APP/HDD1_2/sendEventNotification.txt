@@ -4,21 +4,14 @@ admin.initializeApp();
 
 exports.sendEventNotification = functions.firestore
     .document('hdd-monitor/accounts/clients/{clientId}/events/{eventId}')
-    .onUpdate(async (change, context) => {
-        const newValue = change.after.data();
-        const previousValue = change.before.data();
+    .onWrite(async (change, context) => {
+        console.log('Procesando cambio en evento');
+        
         const clientId = context.params.clientId;
         const eventId = context.params.eventId;
 
-        // Verificar cambios significativos
-        const significantChange = Object.entries(newValue).some(([key, value]) => {
-            return key !== 'lastUpdate' && 
-                   JSON.stringify(value) !== JSON.stringify(previousValue[key]);
-        });
-
-        if (!significantChange) return null;
-
         try {
+            // Obtener información del cliente
             const clientDoc = await admin.firestore()
                 .doc(`hdd-monitor/accounts/clients/${clientId}`)
                 .get();
@@ -29,68 +22,240 @@ exports.sendEventNotification = functions.firestore
             }
 
             const clientName = clientDoc.data().name;
+            console.log('Información del cliente:', { clientName, clientId });
 
-            // Obtener información del actor que realizó el cambio
-            const actorInfo = await getActorInfo(newValue.createdByUserId, newValue.createdByUserRole);
-            
-            // Construir mensajes diferenciados para admins y usuarios
-            const { adminMessage, userMessage, notificationTitle } = await buildMessages(
-                newValue,
-                previousValue,
-                actorInfo,
-                clientName
-            );
+            // Si el documento fue eliminado
+            if (!change.after.exists) {
+                const deletedData = change.before.data();
+                return handleEventDeletion(deletedData, clientId, clientName, eventId);
+            }
 
-            // Enviar a usuarios del cliente
-            const userSnapshot = await admin.firestore()
-                .collection(`hdd-monitor/accounts/clients/${clientId}/users`)
-                .get();
+            // Si es una creación o actualización
+            const newValue = change.after.data();
+            if (!change.before.exists) {
+                return handleEventCreation(newValue, clientId, clientName, eventId);
+            }
 
-            const userPromises = userSnapshot.docs
-                .filter(doc => doc.data().fcmToken && doc.id !== newValue.createdByUserId)
-                .map(async (userDoc) => {
-                    const payload = createNotificationPayload(
-                        `${clientName} - ${notificationTitle}`,
-                        userMessage,
-                        clientId,
-                        eventId,
-                        newValue,
-                        previousValue,
-                        userDoc.data().fcmToken
-                    );
-                    return sendNotification(payload, userDoc.id, 'user');
-                });
+            // Si es una actualización
+            const previousValue = change.before.data();
+            // Verificar cambios significativos
+            const changedFields = [];
+            Object.entries(newValue).forEach(([key, value]) => {
+                if (key !== 'lastUpdate' && JSON.stringify(value) !== JSON.stringify(previousValue[key])) {
+                    changedFields.push(key);
+                }
+            });
 
-            // Enviar a administradores
-            const adminSnapshot = await admin.firestore()
-                .collection('hdd-monitor/accounts/admins')
-                .get();
+            if (changedFields.length === 0) {
+                console.log('No hay cambios significativos');
+                return null;
+            }
 
-            const adminPromises = adminSnapshot.docs
-                .filter(doc => doc.data().fcmToken && doc.id !== newValue.createdByUserId)
-                .map(async (adminDoc) => {
-                    const payload = createNotificationPayload(
-                        `${clientName} - ${notificationTitle}`,
-                        adminMessage,
-                        clientId,
-                        eventId,
-                        newValue,
-                        previousValue,
-                        adminDoc.data().fcmToken
-                    );
-                    return sendNotification(payload, adminDoc.id, 'admin');
-                });
-
-            await Promise.all([...userPromises, ...adminPromises]);
+            console.log('Campos modificados:', changedFields);
+            return handleEventUpdate(newValue, previousValue, clientId, clientName, eventId, changedFields);
 
         } catch (error) {
-            console.error('Error procesando notificación de evento:', error);
+            console.error('Error general en procesamiento:', error);
+            return null;
         }
-
-        return null;
     });
 
-async function getActorInfo(actorId, actorRole) {
+async function handleEventDeletion(deletedData, clientId, clientName, eventId) {
+    try {
+        const actorInfo = await getActorInfo(deletedData.createdByUserId, deletedData.createdByUserRole, clientId);
+        
+        const basePayload = {
+            data: {
+                clientDocName: clientId,
+                eventId: eventId,
+                type: 'event_deleted'
+            },
+            android: {
+                priority: 'high',
+                notification: {
+                    channelId: 'event_notifications',
+                    priority: 'high',
+                    sound: 'default',
+                    visibility: 'public'
+                }
+            }
+        };
+
+        await sendNotifications(
+            clientId,
+            {
+                title: 'Evento Eliminado',
+                body: actorInfo.role === 'ADMIN' ?
+                    `Un administrador ha eliminado el evento "${deletedData.title}"` :
+                    `${actorInfo.name} ha eliminado el evento "${deletedData.title}"`
+            },
+            {
+                title: `${clientName} - Evento Eliminado`,
+                body: actorInfo.role === 'ADMIN' ?
+                    `${actorInfo.name} (Admin) ha eliminado el evento "${deletedData.title}" (Cliente: ${clientName})` :
+                    `${actorInfo.name} (Usuario de ${clientName}) ha eliminado el evento "${deletedData.title}"`
+            },
+            basePayload,
+            deletedData.createdByUserId
+        );
+    } catch (error) {
+        console.error('Error en handleEventDeletion:', error);
+    }
+}
+
+async function handleEventCreation(newEvent, clientId, clientName, eventId) {
+    try {
+        const actorInfo = await getActorInfo(newEvent.createdByUserId, newEvent.createdByUserRole, clientId);
+        
+        const basePayload = {
+            data: {
+                clientDocName: clientId,
+                eventId: eventId,
+                type: 'event_created',
+                status: newEvent.status
+            },
+            android: {
+                priority: 'high',
+                notification: {
+                    channelId: 'event_notifications',
+                    priority: 'high',
+                    sound: 'default',
+                    visibility: 'public'
+                }
+            }
+        };
+
+        await sendNotifications(
+            clientId,
+            {
+                title: 'Nuevo Evento',
+                body: actorInfo.role === 'ADMIN' ?
+                    `Un administrador ha creado el evento "${newEvent.title}"` :
+                    `${actorInfo.name} ha creado el evento "${newEvent.title}"`
+            },
+            {
+                title: `${clientName} - Nuevo Evento`,
+                body: actorInfo.role === 'ADMIN' ?
+                    `${actorInfo.name} (Admin) ha creado el evento "${newEvent.title}" (Cliente: ${clientName})` :
+                    `${actorInfo.name} (Usuario de ${clientName}) ha creado el evento "${newEvent.title}"`
+            },
+            basePayload,
+            newEvent.createdByUserId
+        );
+    } catch (error) {
+        console.error('Error en handleEventCreation:', error);
+    }
+}
+
+async function handleEventUpdate(newValue, previousValue, clientId, clientName, eventId, changedFields) {
+    try {
+        const actorInfo = await getActorInfo(newValue.createdByUserId, newValue.createdByUserRole, clientId);
+        
+        let title, userMessage, adminMessage;
+
+        if (changedFields.includes('status')) {
+            const messages = getStatusChangeMessages(newValue, previousValue, actorInfo, clientName);
+            title = messages.title;
+            userMessage = messages.userMessage;
+            adminMessage = messages.adminMessage;
+        } else {
+            title = `${clientName} - Evento Modificado`;
+            userMessage = actorInfo.role === 'ADMIN' ?
+                `Un administrador ha modificado el evento "${newValue.title}"` :
+                `${actorInfo.name} ha modificado el evento "${newValue.title}"`;
+            adminMessage = actorInfo.role === 'ADMIN' ?
+                `${actorInfo.name} (Admin) ha modificado el evento "${newValue.title}" (Cliente: ${clientName})` :
+                `${actorInfo.name} (Usuario de ${clientName}) ha modificado el evento "${newValue.title}"`;
+        }
+
+        const basePayload = {
+            data: {
+                clientDocName: clientId,
+                eventId: eventId,
+                type: 'event_updated',
+                newStatus: newValue.status,
+                oldStatus: previousValue.status,
+                changedFields: changedFields.join(',')
+            },
+            android: {
+                priority: 'high',
+                notification: {
+                    channelId: 'event_notifications',
+                    priority: 'high',
+                    sound: 'default',
+                    visibility: 'public'
+                }
+            }
+        };
+
+        await sendNotifications(
+            clientId,
+            {
+                title: title.replace(`${clientName} - `, ''),
+                body: userMessage
+            },
+            {
+                title: title,
+                body: adminMessage
+            },
+            basePayload,
+            newValue.createdByUserId
+        );
+    } catch (error) {
+        console.error('Error en handleEventUpdate:', error);
+    }
+}
+
+function getStatusChangeMessages(newValue, previousValue, actorInfo, clientName) {
+    let title, userMessage, adminMessage;
+
+    switch(newValue.status) {
+        case 'ACEPTADO':
+            title = `${clientName} - Evento Aceptado`;
+            userMessage = actorInfo.role === 'ADMIN' ?
+                `Un administrador ha aceptado el evento "${newValue.title}"` :
+                `${actorInfo.name} ha aceptado el evento "${newValue.title}"`;
+            adminMessage = actorInfo.role === 'ADMIN' ?
+                `${actorInfo.name} (Admin) ha aceptado el evento "${newValue.title}" (Cliente: ${clientName})` :
+                `${actorInfo.name} (Usuario de ${clientName}) ha aceptado el evento "${newValue.title}"`;
+            break;
+
+        case 'FINALIZADO':
+            title = `${clientName} - Evento Finalizado`;
+            userMessage = actorInfo.role === 'ADMIN' ?
+                `Un administrador ha finalizado el evento "${newValue.title}"` :
+                `${actorInfo.name} ha finalizado el evento "${newValue.title}"`;
+            adminMessage = actorInfo.role === 'ADMIN' ?
+                `${actorInfo.name} (Admin) ha finalizado el evento "${newValue.title}" (Cliente: ${clientName})` :
+                `${actorInfo.name} (Usuario de ${clientName}) ha finalizado el evento "${newValue.title}"`;
+            break;
+
+        case 'PROGRAMADO':
+            if (previousValue.status === 'FINALIZADO') {
+                title = `${clientName} - Evento Reabierto`;
+                userMessage = actorInfo.role === 'ADMIN' ?
+                    `Un administrador ha reabierto el evento "${newValue.title}"` :
+                    `${actorInfo.name} ha reabierto el evento "${newValue.title}"`;
+                adminMessage = actorInfo.role === 'ADMIN' ?
+                    `${actorInfo.name} (Admin) ha reabierto el evento "${newValue.title}" (Cliente: ${clientName})` :
+                    `${actorInfo.name} (Usuario de ${clientName}) ha reabierto el evento "${newValue.title}"`;
+            }
+            break;
+
+        default:
+            title = `${clientName} - Cambio de Estado`;
+            userMessage = actorInfo.role === 'ADMIN' ?
+                `Un administrador ha cambiado el estado del evento "${newValue.title}" de ${previousValue.status} a ${newValue.status}` :
+                `${actorInfo.name} ha cambiado el estado del evento "${newValue.title}" de ${previousValue.status} a ${newValue.status}`;
+            adminMessage = actorInfo.role === 'ADMIN' ?
+                `${actorInfo.name} (Admin) ha cambiado el estado del evento "${newValue.title}" de ${previousValue.status} a ${newValue.status} (Cliente: ${clientName})` :
+                `${actorInfo.name} (Usuario de ${clientName}) ha cambiado el estado del evento "${newValue.title}" de ${previousValue.status} a ${newValue.status}`;
+    }
+
+    return { title, userMessage, adminMessage };
+}
+
+async function getActorInfo(actorId, actorRole, clientId) {
     if (!actorId) return { name: 'Usuario desconocido', role: 'UNKNOWN' };
 
     try {
@@ -110,72 +275,50 @@ async function getActorInfo(actorId, actorRole) {
     }
 }
 
-async function buildMessages(newValue, previousValue, actorInfo, clientName) {
-    let adminMessage, userMessage, notificationTitle;
+async function sendNotifications(clientId, userNotification, adminNotification, basePayload, excludeUserId) {
+    try {
+        // Enviar a usuarios del cliente
+        const userSnapshot = await admin.firestore()
+            .collection(`hdd-monitor/accounts/clients/${clientId}/users`)
+            .get();
 
-    if (newValue.status !== previousValue.status) {
-        switch(newValue.status) {
-            case 'ACEPTADO':
-                if (actorInfo.role === 'ADMIN') {
-                    adminMessage = `${actorInfo.name} ha aceptado el evento "${newValue.title}" para ${clientName}`;
-                    userMessage = `Un administrador ha aceptado el evento "${newValue.title}"`;
-                } else {
-                    adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha aceptado el evento "${newValue.title}"`;
-                    userMessage = `${actorInfo.name} ha aceptado el evento "${newValue.title}"`;
+        for (const userDoc of userSnapshot.docs) {
+            if (userDoc.data().fcmToken && userDoc.id !== excludeUserId) {
+                try {
+                    const userPayload = {
+                        ...basePayload,
+                        token: userDoc.data().fcmToken,
+                        notification: userNotification
+                    };
+                    await admin.messaging().send(userPayload);
+                    console.log('Notificación enviada a usuario:', userDoc.id);
+                } catch (error) {
+                    console.error('Error enviando notificación a usuario:', userDoc.id, error);
                 }
-                notificationTitle = "Evento Aceptado";
-                break;
-
-            case 'FINALIZADO':
-                if (actorInfo.role === 'ADMIN') {
-                    adminMessage = `${actorInfo.name} ha finalizado el evento "${newValue.title}" para ${clientName}`;
-                    userMessage = `Un administrador ha finalizado el evento "${newValue.title}"`;
-                } else {
-                    adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha finalizado el evento "${newValue.title}"`;
-                    userMessage = `${actorInfo.name} ha finalizado el evento "${newValue.title}"`;
-                }
-                notificationTitle = "Evento Finalizado";
-                break;
-
-            case 'PROGRAMADO':
-                if (previousValue.status === 'FINALIZADO') {
-                    // Solo administradores pueden reabrir eventos
-                    adminMessage = `${actorInfo.name} ha reabierto el evento "${newValue.title}" para ${clientName}`;
-                    userMessage = `Un administrador ha reabierto el evento "${newValue.title}"`;
-                    notificationTitle = "Evento Reabierto";
-                } else {
-                    if (actorInfo.role === 'ADMIN') {
-                        adminMessage = `${actorInfo.name} ha creado el evento "${newValue.title}" para ${clientName}`;
-                        userMessage = `Un administrador ha creado el evento "${newValue.title}"`;
-                    } else {
-                        adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha creado el evento "${newValue.title}"`;
-                        userMessage = `${actorInfo.name} ha creado el evento "${newValue.title}"`;
-                    }
-                    notificationTitle = "Nuevo Evento";
-                }
-                break;
-
-            default:
-                if (actorInfo.role === 'ADMIN') {
-                    adminMessage = `${actorInfo.name} ha cambiado el estado del evento "${newValue.title}" a ${newValue.status} para ${clientName}`;
-                    userMessage = `Un administrador ha cambiado el estado del evento "${newValue.title}" a ${newValue.status}`;
-                } else {
-                    adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha cambiado el estado del evento "${newValue.title}" a ${newValue.status}`;
-                    userMessage = `${actorInfo.name} ha cambiado el estado del evento "${newValue.title}" a ${newValue.status}`;
-                }
-                notificationTitle = "Actualización de Estado";
+            }
         }
-    } else {
-        // Cambios en datos del evento
-        if (actorInfo.role === 'ADMIN') {
-            adminMessage = `${actorInfo.name} ha modificado el evento "${newValue.title}" para ${clientName}`;
-            userMessage = `Un administrador ha modificado el evento "${newValue.title}"`;
-        } else {
-            adminMessage = `${actorInfo.name} (usuario de ${clientName}) ha modificado el evento "${newValue.title}"`;
-            userMessage = `${actorInfo.name} ha modificado el evento "${newValue.title}"`;
+
+        // Enviar a administradores
+        const adminSnapshot = await admin.firestore()
+            .collection('hdd-monitor/accounts/admins')
+            .get();
+
+        for (const adminDoc of adminSnapshot.docs) {
+            if (adminDoc.data().fcmToken && adminDoc.id !== excludeUserId) {
+                try {
+                    const adminPayload = {
+                        ...basePayload,
+                        token: adminDoc.data().fcmToken,
+                        notification: adminNotification
+                    };
+                    await admin.messaging().send(adminPayload);
+                    console.log('Notificación enviada a admin:', adminDoc.id);
+                } catch (error) {
+                    console.error('Error enviando notificación a admin:', adminDoc.id, error);
+                }
+            }
         }
-        notificationTitle = "Actualización de Evento";
+    } catch (error) {
+        console.error('Error en sendNotifications:', error);
     }
-
-    return { adminMessage, userMessage, notificationTitle };
 }

@@ -19,14 +19,16 @@ data class Event(
     val date_time: String = "",
     val lastUpdate: String = "",
     val type: String? = null,
-    val createdByUserId: String? = null,
+    val createdByAccountId: String? = null,
     val createdByUserRole: String? = null,
     val panelDocName: String? = null,
     val panelName: String? = null,
-    val userAcceptDocName: String? = null,
-    val adminAcceptDocName: String? = null,
+    val acceptedByAccountId: String? = null,
     val acceptedAt: String? = null,
-    val finalizedAt: String? = null,
+    val finishedByAccountId: String? = null,
+    val finishedAt: String? = null,
+    val reopenedByAccountId: String? = null,
+    val reopenedAt: String? = null,
     val isRead: Boolean = false,
     val needsApproval: Boolean = true
 ) {
@@ -41,10 +43,12 @@ data class Event(
             text: String,
             dateTime: LocalDateTime,
             type: String,
-            createdByUserId: String,
+            createdByAccountId: String,
             createdByUserRole: String
         ): Event {
+            val normalizedRole = if (createdByUserRole.equals("admin", ignoreCase = true)) "admin" else "user"
             val now = LocalDateTime.now().format(DATE_FORMATTER)
+
             return Event(
                 documentName = "",
                 clientDocName = clientDocName,
@@ -56,8 +60,8 @@ data class Event(
                 lastUpdate = now,
                 status = EventStatus.STATUS_PROGRAMADO,
                 type = type,
-                createdByUserId = createdByUserId,
-                createdByUserRole = createdByUserRole,
+                createdByAccountId = createdByAccountId,
+                createdByUserRole = normalizedRole,
                 isRead = false,
                 needsApproval = true
             )
@@ -73,48 +77,42 @@ data class Event(
                 date_time = map["date_time"] as? String ?: "",
                 lastUpdate = map["lastUpdate"] as? String ?: "",
                 type = map["type"] as? String,
-                createdByUserId = map["createdByUserId"] as? String,
+                createdByAccountId = map["createdByAccountId"] as? String,
                 createdByUserRole = map["createdByUserRole"] as? String,
                 panelDocName = map["panelDocName"] as? String,
                 panelName = map["panelName"] as? String,
-                userAcceptDocName = map["userAcceptDocName"] as? String,
-                adminAcceptDocName = map["adminAcceptDocName"] as? String,
+                acceptedByAccountId = map["acceptedByAccountId"] as? String,
                 acceptedAt = map["acceptedAt"] as? String,
-                finalizedAt = map["finalizedAt"] as? String,
+                finishedByAccountId = map["finishedByAccountId"] as? String,
+                finishedAt = map["finishedAt"] as? String,
+                reopenedByAccountId = map["reopenedByAccountId"] as? String,
+                reopenedAt = map["reopenedAt"] as? String,
                 isRead = map["isRead"] as? Boolean ?: false,
                 needsApproval = map["needsApproval"] as? Boolean ?: true
             )
         }
     }
 
-    // Propiedades computadas para control de estado
     val isProgramado: Boolean
         get() = status == EventStatus.STATUS_PROGRAMADO
 
-    val needsAdminApproval: Boolean
-        get() = createdByUserRole == UserRole.USER.toString() &&
-                isProgramado &&
-                adminAcceptDocName == null &&
-                needsApproval
+    val needAdminAcceptance: Boolean
+        get() = createdByUserRole == "user" && acceptedByAccountId == null && needsApproval
 
-    val needsUserApproval: Boolean
-        get() = createdByUserRole == UserRole.ADMIN.toString() &&
-                isProgramado &&
-                userAcceptDocName == null &&
-                needsApproval
+    val needUserAcceptance: Boolean
+        get() = createdByUserRole == "admin" && acceptedByAccountId == null && needsApproval
 
     val isAceptado: Boolean
-        get() = status == EventStatus.STATUS_ACEPTADO && when (createdByUserRole) {
-            UserRole.USER.toString() -> adminAcceptDocName != null
-            UserRole.ADMIN.toString() -> userAcceptDocName != null
-            else -> false
-        }
+        get() = status == EventStatus.STATUS_ACEPTADO && acceptedByAccountId != null
 
     val isFinalizado: Boolean
         get() = status == EventStatus.STATUS_FINALIZADO
 
     val isEditable: Boolean
         get() = isProgramado
+
+    val isFinishable: Boolean
+        get() = isAceptado // Cualquiera puede finalizar si está aceptado
 
     val dateTime: LocalDateTime?
         get() = try {
@@ -136,41 +134,48 @@ data class Event(
     fun validateDocumentNames(): Boolean {
         return (documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.EVENT)) &&
                 clientDocName.startsWith(DocumentPrefixes.CLIENT) &&
-                (panelDocName == null || panelDocName.startsWith(DocumentPrefixes.PANEL)) &&
-                (userAcceptDocName == null || userAcceptDocName.startsWith(DocumentPrefixes.USER)) &&
-                (adminAcceptDocName == null || adminAcceptDocName.startsWith(DocumentPrefixes.ADMIN))
+                (panelDocName == null || panelDocName.startsWith(DocumentPrefixes.PANEL))
     }
 
     fun getFormattedDateTime(): String = date_time
 
-    fun accept(userDocName: String, isAdmin: Boolean, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
-        return when {
-            // Si un admin acepta un evento creado por usuario
-            isAdmin && createdByUserRole == UserRole.USER.toString() && needsAdminApproval -> copy(
-                status = EventStatus.STATUS_ACEPTADO,
-                lastUpdate = timestamp,
-                acceptedAt = timestamp,
-                adminAcceptDocName = userDocName,
-                isRead = false
-            )
-            // Si un usuario acepta un evento creado por admin
-            !isAdmin && createdByUserRole == UserRole.ADMIN.toString() && needsUserApproval -> copy(
-                status = EventStatus.STATUS_ACEPTADO,
-                lastUpdate = timestamp,
-                acceptedAt = timestamp,
-                userAcceptDocName = userDocName,
-                isRead = false
-            )
-            else -> this
+    fun accept(accountId: String, isAdmin: Boolean, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
+        val shouldAccept = when {
+            isAdmin && createdByUserRole == UserRole.USER.toString() && needAdminAcceptance -> true
+            !isAdmin && createdByUserRole == UserRole.ADMIN.toString() && needUserAcceptance -> true
+            else -> false
         }
+
+        return if (shouldAccept) {
+            copy(
+                status = EventStatus.STATUS_ACEPTADO,
+                lastUpdate = timestamp,
+                acceptedAt = timestamp,
+                acceptedByAccountId = accountId,
+                isRead = false
+            )
+        } else this
     }
 
-    fun finalize(timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
+    fun finalize(accountId: String, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
         return if (isAceptado) {
             copy(
                 status = EventStatus.STATUS_FINALIZADO,
                 lastUpdate = timestamp,
-                finalizedAt = timestamp,
+                finishedAt = timestamp,
+                finishedByAccountId = accountId,
+                isRead = false
+            )
+        } else this
+    }
+
+    fun reopen(accountId: String, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
+        return if (isFinalizado) {
+            copy(
+                status = EventStatus.STATUS_ACEPTADO,
+                lastUpdate = timestamp,
+                reopenedAt = timestamp,
+                reopenedByAccountId = accountId,
                 isRead = false
             )
         } else this
@@ -213,14 +218,16 @@ data class Event(
             "date_time" to date_time,
             "lastUpdate" to lastUpdate,
             "type" to type,
-            "createdByUserId" to createdByUserId,
+            "createdByAccountId" to createdByAccountId,
             "createdByUserRole" to createdByUserRole,
             "panelDocName" to panelDocName,
             "panelName" to panelName,
-            "userAcceptDocName" to userAcceptDocName,
-            "adminAcceptDocName" to adminAcceptDocName,
+            "acceptedByAccountId" to acceptedByAccountId,
             "acceptedAt" to acceptedAt,
-            "finalizedAt" to finalizedAt,
+            "finishedByAccountId" to finishedByAccountId,
+            "finishedAt" to finishedAt,
+            "reopenedByAccountId" to reopenedByAccountId,
+            "reopenedAt" to reopenedAt,
             "isRead" to isRead,
             "needsApproval" to needsApproval
         ).filterValues { it != null }
@@ -238,13 +245,15 @@ data class Event(
         append("type='$type', ")
         if (panelDocName != null) append("panelDocName='$panelDocName', ")
         if (panelName != null) append("panelName='$panelName', ")
-        if (userAcceptDocName != null) append("userAcceptDocName='$userAcceptDocName', ")
-        if (adminAcceptDocName != null) append("adminAcceptDocName='$adminAcceptDocName', ")
+        if (acceptedByAccountId != null) append("acceptedByAccountId='$acceptedByAccountId', ")
         if (acceptedAt != null) append("acceptedAt='$acceptedAt', ")
-        if (finalizedAt != null) append("finalizedAt='$finalizedAt', ")
+        if (finishedByAccountId != null) append("finishedByAccountId='$finishedByAccountId', ")
+        if (finishedAt != null) append("finishedAt='$finishedAt', ")
+        if (reopenedByAccountId != null) append("reopenedByAccountId='$reopenedByAccountId', ")
+        if (reopenedAt != null) append("reopenedAt='$reopenedAt', ")
         append("isRead=$isRead, ")
         append("needsApproval=$needsApproval, ")
-        if (createdByUserId != null) append("createdByUserId='$createdByUserId', ")
+        if (createdByAccountId != null) append("createdByAccountId='$createdByAccountId', ")
         if (createdByUserRole != null) append("createdByUserRole='$createdByUserRole', ")
         append(")")
     }

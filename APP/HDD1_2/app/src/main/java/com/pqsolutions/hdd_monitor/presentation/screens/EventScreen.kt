@@ -87,7 +87,6 @@ fun EventScreen(
                     title = stringResource(R.string.events),
                     onBackClick = onBackClick,
                     actions = {
-                        // Menú de filtros
                         IconButton(onClick = { showFilterMenu = true }) {
                             Icon(
                                 Icons.Default.FilterList,
@@ -129,7 +128,6 @@ fun EventScreen(
                             )
                         }
 
-                        // Menú de ordenamiento
                         IconButton(onClick = { showSortMenu = true }) {
                             Icon(
                                 Icons.Default.Sort,
@@ -202,8 +200,8 @@ fun EventScreen(
                             key = { event -> "${event.clientDocName}_${event.documentName}" }
                         ) { event ->
                             val client = state.clients.find { it.documentName == event.clientDocName }
-                            val user = event.createdByUserId?.let { userId ->
-                                state.users.find { it.documentName == userId }
+                            val user = event.createdByAccountId?.let { accountId ->
+                                state.users.find { it.documentName == accountId }
                             }
 
                             EventCard(

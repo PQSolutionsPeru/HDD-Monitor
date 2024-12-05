@@ -82,7 +82,7 @@ fun EventItem(
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (event.needsAdminApproval) {
+                        if (event.needAdminAcceptance) {
                             Button(
                                 onClick = onAcceptClick,
                                 colors = ButtonDefaults.buttonColors(
@@ -124,7 +124,7 @@ fun EventItem(
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (event.needsUserApproval) {
+                        if (event.needUserAcceptance) {
                             Button(
                                 onClick = onAcceptClick,
                                 colors = ButtonDefaults.buttonColors(

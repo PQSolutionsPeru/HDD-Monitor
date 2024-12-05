@@ -88,7 +88,6 @@ class EventViewModel @Inject constructor(
                             }
                         }
                         .collect { events ->
-                            Log.d(TAG, "Loaded ${events.size} events")
                             val validEvents = events.filter { event ->
                                 val isValid = event.documentName.startsWith(DocumentPrefixes.EVENT) &&
                                         event.clientDocName.startsWith(DocumentPrefixes.CLIENT) &&
@@ -153,19 +152,16 @@ class EventViewModel @Inject constructor(
                 ?: throw IllegalStateException("No hay usuario autenticado")
 
             if (currentUser.role == UserRole.ADMIN) {
-                // Admin: Cargar todos los clientes para selección
                 val clients = eventRepository.getClients()
                 val validClients = clients.filter { it.documentName.startsWith(DocumentPrefixes.CLIENT) }
                 _state.update { it.copy(clients = validClients) }
             } else {
-                // Usuario: Pre-seleccionar su cliente
                 _state.update {
                     it.copy(
                         selectedClients = listOf(currentUser.clientDocName),
                         selectedClientForPanels = currentUser.clientDocName
                     )
                 }
-                // Cargar los paneles del cliente
                 loadPanelsForClient(currentUser.clientDocName)
             }
         } catch (e: Exception) {
@@ -189,7 +185,6 @@ class EventViewModel @Inject constructor(
         }
     }
 
-    // Función auxiliar para cargar los paneles de un cliente
     private fun loadPanelsForClient(clientDocName: String) {
         viewModelScope.launch {
             try {
@@ -219,8 +214,8 @@ class EventViewModel @Inject constructor(
                 eventRepository.updateEventStatus(
                     clientDocName = clientDocName,
                     eventDocName = eventDocName,
-                    newStatus = EventStatus.STATUS_ACEPTADO, // Vuelve a estado aceptado
-                    updatedByUserId = currentUser.documentName,
+                    newStatus = EventStatus.STATUS_ACEPTADO,
+                    updatedByAccountId = currentUser.documentName,
                     isAdmin = true
                 ).onSuccess {
                     _uiEvent.send(EventUIEvent.ShowSnackbar("Evento reabierto exitosamente"))
@@ -240,7 +235,6 @@ class EventViewModel @Inject constructor(
                 val currentUser = userRepository.getCurrentUser()
                     ?: throw IllegalStateException("No hay usuario autenticado")
 
-                // Guardar el usuario y su rol en el estado e inicializar el diálogo
                 _state.update {
                     it.copy(
                         showDialog = true,
@@ -258,10 +252,8 @@ class EventViewModel @Inject constructor(
                     )
                 }
 
-                // Cargar datos basados en el rol del usuario
                 when (currentUser.role) {
                     UserRole.ADMIN -> {
-                        // Para administradores: cargar clientes para selección
                         val clients = eventRepository.getClients()
                         val validClients = clients.filter {
                             it.documentName.startsWith(DocumentPrefixes.CLIENT)
@@ -269,7 +261,6 @@ class EventViewModel @Inject constructor(
                         _state.update { it.copy(clients = validClients) }
                     }
                     UserRole.USER -> {
-                        // Para usuarios: preseleccionar su cliente y cargar sus paneles
                         _state.update {
                             it.copy(
                                 selectedClients = listOf(currentUser.clientDocName),
@@ -280,7 +271,6 @@ class EventViewModel @Inject constructor(
                     }
                 }
 
-                // Cargar tipos de eventos disponibles (común para ambos roles)
                 loadEventTypes()
 
             } catch (e: Exception) {
@@ -357,7 +347,6 @@ class EventViewModel @Inject constructor(
 
     fun onDialogEvent(event: EventDialogEvent) {
         when (event) {
-            // Eventos que no requieren verificación de usuario ni corrutinas
             is EventDialogEvent.TitleChanged -> {
                 _state.update { currentState ->
                     if (currentState.selectedEvent != null) {
@@ -383,8 +372,6 @@ class EventViewModel @Inject constructor(
             is EventDialogEvent.Dismiss -> {
                 clearDialogState()
             }
-
-            // Eventos que requieren verificación y/o operaciones asíncronas
             else -> {
                 viewModelScope.launch {
                     try {
@@ -455,7 +442,7 @@ class EventViewModel @Inject constructor(
                                 }
                             }
                             is EventDialogEvent.Confirm -> handleConfirmDialog()
-                            else -> {} // Otros eventos ya manejados anteriormente
+                            else -> {}
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error en onDialogEvent", e)
@@ -467,7 +454,6 @@ class EventViewModel @Inject constructor(
     }
 
     private suspend fun handleConfirmDialog() {
-        Log.d(TAG, "Iniciando handleConfirmDialog")
         val currentState = _state.value
         if (currentState.hasDateTime) {
             try {
@@ -480,7 +466,6 @@ class EventViewModel @Inject constructor(
                     ?: throw IllegalStateException("No hay usuario autenticado")
 
                 if (currentState.selectedEvent != null) {
-                    // Manejo de evento existente (edición)
                     val updatedEvent = currentState.selectedEvent.update(
                         title = currentState.selectedEvent.title,
                         text = currentState.selectedEvent.text,
@@ -491,21 +476,17 @@ class EventViewModel @Inject constructor(
                     )
 
                     if (updatedEvent == null) {
-                        Log.d(TAG, "No se puede actualizar: evento no programado o nulo")
                         _uiEvent.send(EventUIEvent.ShowSnackbar("No se puede actualizar un evento ya aceptado"))
                         return
                     }
 
                     if (!updatedEvent.isValid()) {
-                        Log.d(TAG, "Evento actualizado no es válido")
                         _uiEvent.send(EventUIEvent.ShowSnackbar("Evento inválido. Verifique todos los campos"))
                         return
                     }
 
-                    Log.d(TAG, "Actualizando evento con tipo: ${updatedEvent.type}")
                     updateEvent(updatedEvent)
                 } else {
-                    // Creación de nuevo evento
                     val clientDocName = if (currentUser.role == UserRole.ADMIN) {
                         currentState.selectedClients.firstOrNull()
                             ?: throw IllegalStateException("Debe seleccionar un cliente")
@@ -524,7 +505,7 @@ class EventViewModel @Inject constructor(
                         text = currentState.newEventDescription,
                         dateTime = dateTime,
                         type = eventType,
-                        createdByUserId = currentUser.documentName,
+                        createdByAccountId = currentUser.documentName,
                         createdByUserRole = currentUser.role.toString()
                     )
 
@@ -532,7 +513,6 @@ class EventViewModel @Inject constructor(
                         throw IllegalStateException("Evento inválido. Verifique todos los campos")
                     }
 
-                    Log.d(TAG, "Creando nuevo evento con tipo: ${newEvent.type}")
                     if (currentUser.role == UserRole.ADMIN) {
                         createEvent(newEvent, currentState.selectedClients)
                     } else {
@@ -540,7 +520,6 @@ class EventViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error en handleConfirmDialog", e)
                 _uiEvent.send(EventUIEvent.ShowSnackbar(e.message ?: "Error al procesar el evento"))
             }
         } else {
@@ -555,13 +534,10 @@ class EventViewModel @Inject constructor(
                     panelRepository.observePanelUpdates(event.clientDocName, event.panelDocName)
                         .collect { panel ->
                             if (panel != null) {
-                                // El panel existe y se actualizó
                                 if (panel.name != event.panelName) {
-                                    // El nombre del panel ha cambiado, actualizar el evento
                                     updateEventPanelInfo(event.copy(panelName = panel.name))
                                 }
                             } else {
-                                // El panel ya no existe
                                 handleDeletedPanel(event)
                             }
                         }
@@ -612,7 +588,6 @@ class EventViewModel @Inject constructor(
             try {
                 _state.update { it.copy(currentOperation = EventOperation.Loading) }
 
-                // Verificar si el panel existe antes de crear el evento
                 if (event.panelDocName != null) {
                     val panelExists = verifyPanelExists(event.clientDocName, event.panelDocName)
                     if (!panelExists) {
@@ -640,7 +615,6 @@ class EventViewModel @Inject constructor(
                         _uiEvent.send(EventUIEvent.ShowSnackbar("Evento creado exitosamente"))
                         clearDialogState()
                         loadEvents()
-                        startPanelObservation(event)
                     }
                     .onFailure { error ->
                         handleError(error)
@@ -676,7 +650,6 @@ class EventViewModel @Inject constructor(
                 }
 
                 _state.update { it.copy(currentOperation = EventOperation.Loading) }
-                Log.d(TAG, "Updating event: ${event.toLogString()}")
 
                 eventRepository.updateEvent(event.clientDocName, event)
                     .onSuccess {
@@ -718,8 +691,8 @@ class EventViewModel @Inject constructor(
                     clientDocName = clientDocName,
                     eventDocName = eventDocName,
                     newStatus = newStatus,
-                    updatedByUserId = currentUser.documentName,  // Cambio aquí: se usaba documentName en vez de userDocName
-                    isAdmin = isAdmin  // Agregamos este parámetro que faltaba
+                    updatedByAccountId = currentUser.documentName,
+                    isAdmin = isAdmin
                 ).onSuccess {
                     _state.update {
                         it.copy(currentOperation = EventOperation.Success("Estado actualizado exitosamente"))
@@ -823,13 +796,8 @@ class EventViewModel @Inject constructor(
     private fun clearListeners() {
         viewModelScope.launch {
             try {
-                // Cancelar el Job actual si existe
                 viewModelScope.coroutineContext.cancelChildren()
-
-                // Limpiar el estado
-                _state.update {
-                    EventViewState.initial()
-                }
+                _state.update { EventViewState.initial() }
             } catch (e: Exception) {
                 Log.e(TAG, "Error clearing listeners", e)
             }
@@ -865,7 +833,7 @@ class EventViewModel @Inject constructor(
                     is EventFilter.Accepted -> event.isAceptado
                     is EventFilter.ByClient -> event.clientDocName == (currentFilter as EventFilter.ByClient).clientDocName
                     is EventFilter.ByType -> event.type == (currentFilter as EventFilter.ByType).eventType
-                    is EventFilter.Completed -> event.isFinalizado // Agregar este caso
+                    is EventFilter.Completed -> event.isFinalizado
                 }
             }
             .sortedWith { a, b ->
@@ -891,7 +859,7 @@ class EventViewModel @Inject constructor(
                         if (currentSort.direction == EventSortOption.SortDirection.DESC)
                             comparison * -1 else comparison
                     }
-                    EventSortOption.SortField.LAST_UPDATE -> { // Agregar este caso
+                    EventSortOption.SortField.LAST_UPDATE -> {
                         val comparison = a.lastUpdate.compareTo(b.lastUpdate)
                         if (currentSort.direction == EventSortOption.SortDirection.DESC)
                             comparison * -1 else comparison
