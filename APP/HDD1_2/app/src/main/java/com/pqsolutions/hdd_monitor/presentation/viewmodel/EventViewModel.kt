@@ -506,7 +506,7 @@ class EventViewModel @Inject constructor(
                         dateTime = dateTime,
                         type = eventType,
                         createdByAccountId = currentUser.documentName,
-                        createdByUserRole = currentUser.role.toString()
+                        createdByAccountRole = currentUser.role.toString()
                     )
 
                     if (!newEvent.isValid()) {

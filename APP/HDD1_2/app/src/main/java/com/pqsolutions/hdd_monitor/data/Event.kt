@@ -20,7 +20,7 @@ data class Event(
     val lastUpdate: String = "",
     val type: String? = null,
     val createdByAccountId: String? = null,
-    val createdByUserRole: String? = null,
+    val createdByAccountRole: String? = null,
     val panelDocName: String? = null,
     val panelName: String? = null,
     val acceptedByAccountId: String? = null,
@@ -44,9 +44,9 @@ data class Event(
             dateTime: LocalDateTime,
             type: String,
             createdByAccountId: String,
-            createdByUserRole: String
+            createdByAccountRole: String
         ): Event {
-            val normalizedRole = if (createdByUserRole.equals("admin", ignoreCase = true)) "admin" else "user"
+            val normalizedRole = if (createdByAccountRole.equals("admin", ignoreCase = true)) "admin" else "user"
             val now = LocalDateTime.now().format(DATE_FORMATTER)
 
             return Event(
@@ -61,7 +61,7 @@ data class Event(
                 status = EventStatus.STATUS_PROGRAMADO,
                 type = type,
                 createdByAccountId = createdByAccountId,
-                createdByUserRole = normalizedRole,
+                createdByAccountRole = normalizedRole,
                 isRead = false,
                 needsApproval = true
             )
@@ -78,7 +78,7 @@ data class Event(
                 lastUpdate = map["lastUpdate"] as? String ?: "",
                 type = map["type"] as? String,
                 createdByAccountId = map["createdByAccountId"] as? String,
-                createdByUserRole = map["createdByUserRole"] as? String,
+                createdByAccountRole = map["createdByAccountRole"] as? String,
                 panelDocName = map["panelDocName"] as? String,
                 panelName = map["panelName"] as? String,
                 acceptedByAccountId = map["acceptedByAccountId"] as? String,
@@ -97,10 +97,10 @@ data class Event(
         get() = status == EventStatus.STATUS_PROGRAMADO
 
     val needAdminAcceptance: Boolean
-        get() = createdByUserRole == "user" && acceptedByAccountId == null && needsApproval
+        get() = createdByAccountRole == "user" && acceptedByAccountId == null && needsApproval
 
     val needUserAcceptance: Boolean
-        get() = createdByUserRole == "admin" && acceptedByAccountId == null && needsApproval
+        get() = createdByAccountRole == "admin" && acceptedByAccountId == null && needsApproval
 
     val isAceptado: Boolean
         get() = status == EventStatus.STATUS_ACEPTADO && acceptedByAccountId != null
@@ -141,8 +141,8 @@ data class Event(
 
     fun accept(accountId: String, isAdmin: Boolean, timestamp: String = LocalDateTime.now().format(DATE_FORMATTER)): Event {
         val shouldAccept = when {
-            isAdmin && createdByUserRole == UserRole.USER.toString() && needAdminAcceptance -> true
-            !isAdmin && createdByUserRole == UserRole.ADMIN.toString() && needUserAcceptance -> true
+            isAdmin && createdByAccountRole == UserRole.USER.toString() && needAdminAcceptance -> true
+            !isAdmin && createdByAccountRole == UserRole.ADMIN.toString() && needUserAcceptance -> true
             else -> false
         }
 
@@ -219,7 +219,7 @@ data class Event(
             "lastUpdate" to lastUpdate,
             "type" to type,
             "createdByAccountId" to createdByAccountId,
-            "createdByUserRole" to createdByUserRole,
+            "createdByAccountRole" to createdByAccountRole,
             "panelDocName" to panelDocName,
             "panelName" to panelName,
             "acceptedByAccountId" to acceptedByAccountId,
@@ -254,7 +254,7 @@ data class Event(
         append("isRead=$isRead, ")
         append("needsApproval=$needsApproval, ")
         if (createdByAccountId != null) append("createdByAccountId='$createdByAccountId', ")
-        if (createdByUserRole != null) append("createdByUserRole='$createdByUserRole', ")
+        if (createdByAccountRole != null) append("createdByAccountRole='$createdByAccountRole', ")
         append(")")
     }
 }

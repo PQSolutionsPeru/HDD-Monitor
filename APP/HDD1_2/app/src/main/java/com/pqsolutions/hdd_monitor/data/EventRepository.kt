@@ -170,7 +170,7 @@ class EventRepository @Inject constructor(
                 "panelName" to panelName,
                 "type" to event.type,
                 "createdByAccountId" to event.createdByAccountId,
-                "createdByUserRole" to event.createdByUserRole,
+                "createdByAccountRole" to event.createdByAccountRole,
                 "needsApproval" to event.needsApproval,
                 "isRead" to false
             ).apply {
@@ -207,10 +207,10 @@ class EventRepository @Inject constructor(
 
         // Validar que el usuario tenga permiso para actualizar el estado
         when {
-            isAdmin && currentEvent.createdByUserRole == UserRole.USER.toString() && currentEvent.needAdminAcceptance -> {
+            isAdmin && currentEvent.createdByAccountRole == UserRole.USER.toString() && currentEvent.needAdminAcceptance -> {
                 // Admin aceptando evento de usuario
             }
-            !isAdmin && currentEvent.createdByUserRole == UserRole.ADMIN.toString() && currentEvent.needUserAcceptance -> {
+            !isAdmin && currentEvent.createdByAccountRole == UserRole.ADMIN.toString() && currentEvent.needUserAcceptance -> {
                 // Usuario aceptando evento de admin
             }
             newStatus == EventStatus.STATUS_FINALIZADO && currentEvent.isAceptado -> {
