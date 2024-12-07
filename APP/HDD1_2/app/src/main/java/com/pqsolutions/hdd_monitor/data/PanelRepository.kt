@@ -58,7 +58,7 @@ class PanelRepository @Inject constructor(
                                 for (panelDoc in panelSnapshot.documents) {
                                     val panel = panelDoc.toObject(Panel::class.java)?.copy(
                                         documentName = panelDoc.id,
-                                        clientDocName = currentClientDocName
+                                        clientName = currentClientDocName
                                     )
 
                                     if (panel != null) {
@@ -100,7 +100,7 @@ class PanelRepository @Inject constructor(
             if (snapshot != null && snapshot.exists()) {
                 val panel = snapshot.toObject(Panel::class.java)?.copy(
                     documentName = snapshot.id,
-                    clientDocName = clientDocName
+                    clientName = clientDocName
                 )
                 trySend(panel)
             } else {
@@ -112,9 +112,9 @@ class PanelRepository @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     private fun fetchRelaysForPanel(panel: Panel, onUpdate: (Panel) -> Unit) {
-        Log.d(TAG, "Fetching relays for panel ${panel.documentName} of client ${panel.clientDocName}")
+        Log.d(TAG, "Fetching relays for panel ${panel.documentName} of client ${panel.clientName}")
 
-        firestore.collection("$BASE_PATH/${panel.clientDocName}/panels/${panel.documentName}/relays")
+        firestore.collection("$BASE_PATH/${panel.clientName}/panels/${panel.documentName}/relays")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "Error fetching relays for panel ${panel.documentName}", error)
@@ -166,7 +166,7 @@ class PanelRepository @Inject constructor(
 
         val panelData = panel.copy(
             documentName = panelDocName,
-            clientDocName = clientDocName
+            clientName = clientDocName
         ).toMap()
 
         val panelRef = firestore

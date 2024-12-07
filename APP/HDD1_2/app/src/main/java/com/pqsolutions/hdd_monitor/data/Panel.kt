@@ -21,7 +21,7 @@ data class Panel(
     @get:PropertyName("ESP32_IP")
     @set:PropertyName("ESP32_IP")
     var ESP32_IP: String = "",
-    val clientDocName: String = "",
+    val clientName: String = "",
     val relays: List<Relay> = listOf(
         Relay(name = "Alarma"),
         Relay(name = "Problema"),
@@ -43,17 +43,17 @@ data class Panel(
             ssid: String,
             ssidPw: String,
             esp32Ip: String,
-            clientDocName: String
+            clientName: String
         ): Panel {
             return Panel(
-                documentName = "", // Se generará en el Repository
+                documentName = "",
                 name = name.trim(),
                 location = location.trim(),
                 SSID = ssid.trim(),
                 SSID_PW = ssidPw.trim(),
                 ESP32_IP = esp32Ip.trim(),
-                clientDocName = clientDocName,
-                SSID_CON = null, // Inicialmente null, será actualizado por el ESP32
+                clientName = clientName,
+                SSID_CON = null,
                 relays = listOf(
                     Relay(name = "Alarma"),
                     Relay(name = "Problema"),
@@ -72,7 +72,7 @@ data class Panel(
                 SSID_CON = map["SSID_CON"] as? String,
                 SSID_PW = map["SSID_PW"] as? String ?: "",
                 ESP32_IP = map["ESP32_IP"] as? String ?: "",
-                clientDocName = map["clientDocName"] as? String ?: "",
+                clientName = map["clientDocName"] as? String ?: "",
                 relays = (map["relays"] as? List<*>)?.mapNotNull {
                     (it as? Map<*, *>)?.let { relayMap ->
                         Relay.fromMap(relayMap.mapKeys { entry -> entry.key.toString() })
@@ -90,19 +90,18 @@ data class Panel(
     }
 
     fun isValid(): Boolean {
-        return validateDocumentNames() &&
-                name.isNotBlank() &&
+        return name.isNotBlank() &&
                 location.isNotBlank() &&
                 SSID.isNotBlank() &&
-                ESP32_IP.isNotBlank() &&
                 SSID_PW.isNotBlank() &&
+                clientName.isNotBlank() &&
                 relays.isNotEmpty() &&
                 relays.all { it.isValid() }
     }
 
     private fun validateDocumentNames(): Boolean {
-        return (documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.PANEL)) &&
-                clientDocName.startsWith(DocumentPrefixes.CLIENT)
+        return documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.PANEL)
+        // Removida la validación de clientName ya que ahora es el nombre real
     }
 
     fun toMap(): Map<String, Any?> {
@@ -114,7 +113,7 @@ data class Panel(
             "SSID_CON" to SSID_CON,
             "SSID_PW" to SSID_PW,
             "ESP32_IP" to ESP32_IP,
-            "clientDocName" to clientDocName,
+            "clientDocName" to clientName,
             "relays" to relays.map { it.toMap() },
             "overallStatus" to overallStatus
         )
@@ -134,7 +133,7 @@ data class Panel(
         append("location='$location', ")
         append("ESP32_IP='$ESP32_IP', ")
         append("SSID_CON=${SSID_CON ?: "null"}, ")
-        append("clientDocName='$clientDocName', ")
+        append("clientDocName='$clientName', ")
         append("status='$overallStatus', ")
         append("relays=${relays.size}")
         append(")")

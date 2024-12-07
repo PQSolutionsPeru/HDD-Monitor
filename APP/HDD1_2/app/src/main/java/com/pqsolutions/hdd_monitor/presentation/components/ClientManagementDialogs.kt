@@ -187,7 +187,7 @@ fun PanelDialog(
                                 SSID = ssid.trim(),
                                 SSID_PW = ssidPw.trim(),
                                 SSID_CON = panel?.SSID_CON,
-                                clientDocName = panel?.clientDocName ?: ""
+                                clientName = panel?.clientName ?: ""
                             )
                         )
                     }

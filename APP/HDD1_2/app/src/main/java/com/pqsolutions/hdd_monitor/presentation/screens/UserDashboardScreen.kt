@@ -121,7 +121,7 @@ fun UserDashboardScreen(
                     } else {
                         items(
                             items = uiState.panels,
-                            key = { panel -> "${panel.clientDocName}_${panel.documentName}" }
+                            key = { panel -> "${panel.clientName}_${panel.documentName}" }
                         ) { panel ->
                             UserPanelItem(panel)
                             Spacer(modifier = Modifier.height(8.dp))

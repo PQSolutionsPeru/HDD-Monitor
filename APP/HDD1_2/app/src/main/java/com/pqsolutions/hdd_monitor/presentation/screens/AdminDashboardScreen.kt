@@ -103,7 +103,6 @@ fun AdminDashboardScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                // Botones de acción fijos
                 DashboardActions(
                     onManageUsersClick = onManageUsersClick,
                     onViewEventsClick = onViewEventsClick,
@@ -114,16 +113,15 @@ fun AdminDashboardScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Lista scrolleable de paneles
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 16.dp)
                 ) {
-                    uiState.groupedPanels.forEach { (clientDocName, clientPanels) ->
+                    uiState.groupedPanels.forEach { (clientName, clientPanels) ->
                         item {
                             Text(
-                                text = "Cliente: $clientDocName",
+                                text = "Cliente: $clientName",
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
@@ -131,7 +129,7 @@ fun AdminDashboardScreen(
 
                         items(
                             items = clientPanels,
-                            key = { panel -> "${panel.clientDocName}_${panel.documentName}" }
+                            key = { panel -> "${panel.clientName}_${panel.documentName}" }
                         ) { panel ->
                             AdminPanelItem(panel)
                             Spacer(modifier = Modifier.height(8.dp))
@@ -149,7 +147,7 @@ private fun DashboardActions(
     onManageUsersClick: () -> Unit,
     onViewEventsClick: () -> Unit,
     onViewNotificationHistoryClick: () -> Unit,
-    onConfigureEsp32Click: () -> Unit, // Nuevo parámetro
+    onConfigureEsp32Click: () -> Unit,
     context: android.content.Context
 ) {
     Log.d(TAG, "Rendering DashboardActions")
@@ -230,7 +228,6 @@ fun AdminPanelItem(panel: Panel) {
             Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
             Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
             Text(text = "IP: ${panel.ESP32_IP}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "Cliente: ${panel.clientDocName}", style = MaterialTheme.typography.bodyMedium)
             Text(
                 text = "Estado: ${panel.overallStatus}",
                 color = statusColor,
