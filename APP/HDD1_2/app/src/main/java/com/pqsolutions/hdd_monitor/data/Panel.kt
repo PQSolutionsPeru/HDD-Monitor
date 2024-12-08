@@ -54,11 +54,6 @@ data class Panel(
                 ESP32_IP = esp32Ip.trim(),
                 clientName = clientName,
                 SSID_CON = null,
-                relays = listOf(
-                    Relay(name = "Alarma"),
-                    Relay(name = "Problema"),
-                    Relay(name = "Supervision")
-                ),
                 overallStatus = Status.OK
             )
         }
@@ -73,11 +68,6 @@ data class Panel(
                 SSID_PW = map["SSID_PW"] as? String ?: "",
                 ESP32_IP = map["ESP32_IP"] as? String ?: "",
                 clientName = map["clientDocName"] as? String ?: "",
-                relays = (map["relays"] as? List<*>)?.mapNotNull {
-                    (it as? Map<*, *>)?.let { relayMap ->
-                        Relay.fromMap(relayMap.mapKeys { entry -> entry.key.toString() })
-                    }
-                } ?: defaultRelays(),
                 overallStatus = map["overallStatus"] as? String ?: Status.OK
             )
         }
@@ -114,7 +104,6 @@ data class Panel(
             "SSID_PW" to SSID_PW,
             "ESP32_IP" to ESP32_IP,
             "clientDocName" to clientName,
-            "relays" to relays.map { it.toMap() },
             "overallStatus" to overallStatus
         )
     }
@@ -135,7 +124,6 @@ data class Panel(
         append("SSID_CON=${SSID_CON ?: "null"}, ")
         append("clientDocName='$clientName', ")
         append("status='$overallStatus', ")
-        append("relays=${relays.size}")
         append(")")
     }
 
