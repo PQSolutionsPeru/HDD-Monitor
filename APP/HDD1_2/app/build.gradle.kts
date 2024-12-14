@@ -1,4 +1,3 @@
-
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -97,7 +96,12 @@ android {
                 "META-INF/NOTICE.txt",
                 "META-INF/notice.txt",
                 "META-INF/ASL2.0",
-                "META-INF/*.kotlin_module"
+                "META-INF/*.kotlin_module",
+                "META-INF/maven/**"
+            )
+            pickFirsts += listOf(
+                "META-INF/INDEX.LIST",
+                "META-INF/io.netty.versions.properties"
             )
         }
     }
@@ -137,6 +141,14 @@ dependencies {
     implementation(libs.androidx.foundation)
     implementation(libs.androidx.material.icons.extended)
     debugImplementation(libs.ui.tooling)
+
+    // MQTT dependencies
+    implementation(libs.org.eclipse.paho.client.mqttv3)
+    implementation("org.eclipse.paho:org.eclipse.paho.android.service:1.1.1") {
+        exclude(group = "com.android.support")
+        exclude(module = "appcompat-v7")
+        exclude(module = "support-v4")
+    }
 
     // Testing
     testImplementation(libs.junit)
@@ -188,6 +200,9 @@ dependencies {
 
     // Bluetooth
     implementation(libs.play.services.nearby)
+
+    // Service intent para MQTT (recomendado)
+    implementation(libs.androidx.localbroadcastmanager)
 }
 
 kapt {

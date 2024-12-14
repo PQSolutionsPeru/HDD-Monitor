@@ -9,7 +9,7 @@
     <!-- Permisos de Notificaciones y Vibración -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" /> <!-- Añadido para asegurar que las notificaciones despierten el dispositivo -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Permisos de Bluetooth -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -33,7 +33,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.HDD1_2"
-        android:usesCleartextTraffic="false"
+        android:usesCleartextTraffic="true"
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="tiramisu">
 
@@ -66,7 +66,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Intent filter para manejar notificaciones -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -81,6 +80,15 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Servicio MQTT -->
+        <service
+            android:name="org.eclipse.paho.android.service.MqttService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.eclipse.paho.android.service.MqttService" />
             </intent-filter>
         </service>
 

@@ -1,168 +1,137 @@
-Te explicaré detalladamente todo el sistema, paso a paso:
-
-1. **INICIALIZACIÓN DEL SISTEMA**
-El programa comienza con main.py, que es el punto de entrada principal. Aquí se inicializan varios "managers" (administradores) que controlan diferentes aspectos del sistema:
-
+1. GENERACIÓN Y MANEJO DEL ESP32_ID (esp32_id_manager.py)
 ```python
-# Inicialización de los managers principales
-wifi_manager = WiFiManager()         # Maneja la conexión WiFi
-mqtt_manager = MQTTManager()         # Maneja la comunicación MQTT
-relay_manager = RelayManager()       # Maneja los relés
-watchdog_manager = WatchdogManager() # Supervisa el sistema
+Flujo detallado:
+- Durante el primer arranque del ESP32, ESP32IdManager verifica si existe 'esp32_id.json'
+- Si no existe, genera un ID único combinando:
+  * MAC address del ESP32 (usando machine.unique_id())
+  * Timestamp del RTC
+  * Formato: ESP32_{mac}_{timestamp}
+- Guarda el ID en 'esp32_id.json'
+- En arranques posteriores, siempre lee el ID del archivo
+- Este ID NUNCA cambia durante toda la vida del dispositivo
 ```
 
-2. **PROCESO DE CONFIGURACIÓN INICIAL**
-Cuando el ESP32 arranca, sigue este proceso:
-
-a) Primero intenta cargar una configuración existente:
+2. SISTEMA DE REINTENTOS (wifi_manager.py)
 ```python
-def load_config():
-    try:
-        with open(CONFIG_FILE, 'r') as file:
-            config = ujson.load(file)
-    except:
-        config = {}
-    return config
+Parámetros de control:
+- CONNECTION_TIMEOUT = 20000 (20 segundos por intento)
+- RETRY_INTERVAL = 5000 (5 segundos entre reintentos)
+- MAX_RETRIES = 3 (intentos máximos)
+
+Proceso detallado:
+a) Primer nivel de reintentos (connect_wifi):
+   - Intenta conectar
+   - Espera 20 segundos máximo
+   - Si falla, retorna False
+
+b) Segundo nivel (ensure_wifi_connected):
+   - Hace 3 intentos máximo
+   - Entre cada intento espera 5 segundos
+   - Incrementa reconnection_attempts
+   - Registra last_disconnect_reason
+
+c) Tercer nivel (main.py - try_wifi_connection):
+   - 5 intentos máximos
+   - Tiempo de espera progresivo: 5s, 10s, 15s, 20s, 25s
+   - Si falla todos los intentos, vuelve a modo configuración
 ```
 
-b) Si no hay configuración (primer arranque o archivo corrupto), entra en modo de configuración Bluetooth:
-- Activa el Bluetooth y espera conexiones
-- Espera recibir datos de configuración en el formato:
-  ```
-  ssid:nombre_wifi,password:clave_wifi,panel_name:nombre,panel_location:ubicacion
-  ```
-- Una vez recibidos los datos, los guarda y reinicia el dispositivo
-
-3. **CONEXIÓN A LA RED**
-Después de tener la configuración:
-- Intenta conectarse a la red WiFi usando los datos guardados
-- Si no puede conectarse, reintenta periódicamente
-- Una vez conectado, establece la conexión con el broker MQTT
-
-4. **CONFIGURACIÓN DE LOS RELÉS**
-El sistema configura tres relés en pines específicos:
+3. PROCESO DE ARRANQUE DETALLADO:
 ```python
-RELAY_PINS = [32, 33, 25]
-RELAY_NAMES = {32: "Alarma", 33: "Problema", 25: "Supervision"}
+a) Inicialización (Orden exacto):
+   1. ESP32 bootea -> boot.py (si existe) -> main.py
+   2. Inicialización de managers en orden:
+      - ESP32IdManager (primero para tener ID disponible)
+      - WiFiManager
+      - WatchdogManager (timeout 120 segundos)
+      - SystemManager
+      - RelayManager
+      - PerformanceMonitor
+      - ConnectionMonitor
+      - MQTTManager
+
+b) Verificación de Configuración:
+   1. Busca wifi_config.json
+   2. Busca panel_config.json
+   3. Si falta alguno, entra a modo configuración
+
+c) Modo Configuración Bluetooth:
+   1. Activa BLE con nombre "ESP32-HDD"
+   2. Configura servicio UART BLE
+   3. Buffer de recepción: 4096 bytes
+   4. Espera datos JSON con formato:
+      {START}{"ssid":"xxx","password":"xxx"}{END}
+   5. Timeout de espera: 300 segundos
 ```
 
-Cada relé:
-- Se configura como entrada con pull-up
-- Tiene un sistema de debounce para evitar falsos disparos
-- Cuando cambia de estado, genera un evento
-
-5. **CICLO PRINCIPAL DE OPERACIÓN**
-
-Una vez configurado todo, el sistema entra en su ciclo principal de operación:
-
+4. MANEJO DE ESTADOS Y ERRORES:
 ```python
-while True:
-    # Alimentar el watchdog
-    watchdog_manager.feed()
-    
-    # Verificar conexión WiFi
-    wifi_manager.ensure_wifi_connected()
-    
-    # Verificar conexión MQTT
-    mqtt_manager.ensure_client()
-    
-    # Dormir un poco
-    utime.sleep(1)
+Estados del Sistema:
+- INITIAL: Arrancando
+- WIFI_CONFIG: Configurando WiFi vía BLE
+- MQTT_CONFIG: Configurando panel vía MQTT
+- RUNNING: Operación normal
+- ERROR: Estado de error
+- UPDATING: Actualizando firmware
+
+Manejo de Errores:
+a) WiFi:
+   - Desconexiones
+   - Credenciales inválidas
+   - Timeout de conexión
+   - Red no encontrada
+
+b) MQTT:
+   - Cola de mensajes pendientes
+   - Reintentos de conexión
+   - LWT (Last Will and Testament)
+
+c) Sistema:
+   - Watchdog cada 5 segundos
+   - GC (Garbage Collection) cada 5 minutos
+   - Monitoreo de memoria libre
 ```
 
-6. **MANEJO DE EVENTOS DE RELÉ**
-
-Cuando un relé cambia de estado:
+5. MONITOREO Y MÉTRICAS:
 ```python
-def relay_callback(pin, pin_num):
-    # Obtener hora actual
-    current_datetime = get_current_datetime()
-    
-    # Determinar estado
-    status = "DISC" if pin.value() else "OK"
-    
-    # Crear mensaje
-    message = {
-        "date_time": current_datetime,
-        "name": RELAY_NAMES.get(pin_num, "Relay Desconocido"),
-        "status": status
-    }
-    
-    # Publicar por MQTT
-    mqtt_manager.publish_event(f"EMPRESA_TEST/{mqtt_manager.MQTT_CLIENT_ID}/eventos", 
-                             ujson.dumps(message))
+a) Métricas de Sistema:
+   - Memoria libre/usada
+   - Tiempo de ejecución
+   - Conteo de reinicios
+   - Causa del último reinicio
+
+b) Métricas de Conexión:
+   - Estado WiFi
+   - Fuerza de señal (RSSI)
+   - Intentos de reconexión
+   - Última razón de desconexión
+
+c) Métricas de Relés:
+   - Estado actual
+   - Último cambio
+   - Historial de cambios (últimos 50)
+   - Eventos pendientes
 ```
 
-7. **SISTEMA DE RESPALDO Y SEGURIDAD**
-
-El sistema incluye varias características de seguridad:
-
-a) Watchdog Timer:
-- Reinicia el ESP32 si el programa se bloquea
-- Se debe "alimentar" periódicamente
-
-b) Cola de mensajes MQTT:
-- Si no se puede publicar un mensaje, se guarda en una cola
-- Se intenta reenviar más tarde
-
-c) Monitoreo de memoria:
-- Reporta periódicamente el uso de memoria
-- Ejecuta el recolector de basura cuando es necesario
-
-8. **ESTRUCTURA DE ARCHIVOS**
-
-El sistema se divide en varios módulos:
-
-- `main.py`: Archivo principal y punto de entrada
-- `wifi_manager.py`: Maneja la conexión WiFi
-- `mqtt_manager.py`: Maneja la comunicación MQTT
-- `relay_manager.py`: Maneja los relés
-- `watchdog_manager.py`: Supervisa el sistema
-- `bluetooth_manager.py`: Maneja la configuración Bluetooth
-- `ble_advertising.py`: Manejo de publicidad Bluetooth
-- `ble_uart_peripheral.py`: Implementación del servicio UART sobre Bluetooth
-- `performance_monitor.py`: Monitoreo de rendimiento
-
-9. **FLUJO DE DATOS**
-
-El flujo de datos en el sistema es así:
-
-```
-[Relés] → [RelayManager] → [MQTTManager] → [Broker MQTT] → [Servidor/Cliente MQTT]
+6. SINCRONIZACIÓN DE TIEMPO:
+```python
+Proceso:
+1. Intenta obtener hora de worldtimeapi.org
+2. Si falla, intenta con timeapi.io
+3. Si ambos fallan, usa RTC interno
+4. Actualiza cada 5 minutos (TIME_SYNC_INTERVAL = 300000)
 ```
 
-Con el soporte de:
-```
-[WiFiManager] ← → [Internet]
-[WatchdogManager] → [Sistema]
-[BluetoothManager] ← → [App de Configuración]
-```
-
-10. **FORMATO DE MENSAJES MQTT**
-
-Los mensajes enviados tienen este formato:
-```json
-{
-    "date_time": "21-11-2024 a las 15:30:00",
-    "name": "Alarma",
-    "status": "DISC"
-}
+7. PERSISTENCIA DE DATOS:
+```python
+Archivos críticos:
+- esp32_id.json: ID único del dispositivo
+- wifi_config.json: Configuración WiFi
+- panel_config.json: Configuración del panel
+- boot_count.txt: Contador de reinicios
+- update_status.json: Estado de actualizaciones
 ```
 
-11. **CARACTERÍSTICAS DE DEPURACIÓN**
-
-El sistema incluye varias herramientas de depuración:
-
-- Reportes de memoria periódicos
-- Mensajes de estado en la consola serial
-- Monitoreo de rendimiento de funciones específicas
-
-12. **REINICIO Y RECUPERACIÓN**
-
-El sistema puede reiniciarse en varios casos:
-- Después de recibir nueva configuración por Bluetooth
-- Si el watchdog detecta un bloqueo
-- Si ocurre un error crítico
 
 
 
@@ -171,19 +140,251 @@ El sistema puede reiniciarse en varios casos:
 
 
 
-ssid:PABLO-2.4G,password:47009410,panel_name:Panel de prueba,panel_location:3er piso
 
-self.events_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/eventos"
-self.status_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/status"
-self.lwt_topic = f"EMPRESA_TEST/{self.MQTT_CLIENT_ID}/connection"
+:::::::::::::::::::::::::::::::::::::::::::::::::::::ACTUALIZACIÓN::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 
+Este es el performance_monitor.py actualizado. Las principales mejoras incluyen:
 
-A todos los usuarios de un mismo cliente se les notifica en los siguientes casos:
-- Cuando algún administrador o algún usuario crea un evento; esto significa que hay un documento nuevo en la colección "events" dentro de la BD
-- Cuando algún administrador o algún usuario edite un evento
-- Cuando algún administrador o algún usuario acepta un evento
-- Cuando algún administrador o algún usuario finaliza un evento
-- Cuando algún administrador reabra algún evento finalizado
+1. Monitoreo integral del sistema:
+   - Memoria
+   - WiFi
+   - MQTT
+   - Temperatura
+   - CPU
 
-A todos los administradores se les notifica en los mismos casos solo que se menciona también el nombre del cliente, que está en el campo "name" dentro del documento cliente en la BD.
+2. Sistema de alertas mejorado:
+   - Alertas críticas inmediatas
+   - Estadísticas periódicas
+   - Histórico de errores
+
+3. Manejo automático de situaciones críticas:
+   - Reinicio automático en casos graves
+   - Limpieza de memoria proactiva
+   - Reconexión automática de servicios
+
+4. Métricas detalladas:
+   - Uso de memoria
+   - Calidad de señal WiFi
+   - Latencia MQTT
+   - Temperatura del sistema
+
+
+
+
+MQTT MANAGER Y RELAY MANAGER
+
+Las principales mejoras incluyen:
+
+1. MQTT Manager:
+   - Manejo robusto de errores
+   - Sistema de reintentos de publicación
+   - LWT (Last Will and Testament) para detectar desconexiones
+   - Limpieza de memoria proactiva
+
+2. Relay Manager:
+   - Doble verificación de cambios de estado
+   - Protección contra ruido eléctrico
+   - GC periódico para evitar problemas de memoria
+   - Mejor manejo de errores en interrupciones
+
+
+
+
+
+WIFI MANAGER Y BLUETOOTH MANAGER
+
+Mejoras clave en estos managers:
+
+1. WiFi Manager:
+   - Mejor manejo de reconexiones
+   - Control de intentos múltiples
+   - Monitoreo de calidad de señal
+   - Estados detallados
+   - Limpieza de memoria proactiva
+
+2. Bluetooth Manager:
+   - Cola de procesamiento para evitar pérdida de datos
+   - Validación robusta de configuraciones
+   - Control de timeout por inactividad
+   - Cierre seguro de conexiones
+   - Mejor manejo de errores
+
+
+
+
+   WATCHDOG MANAGER Y BLE ADVERTISING
+
+   Principales mejoras:
+
+1. Watchdog Manager:
+   - Detección de patrones de reset problemáticos
+   - Modo seguro automático
+   - Verificación de memoria antes de alimentar
+   - Mejor manejo de errores
+   - Notificación de problemas vía MQTT
+
+2. BLE Advertising:
+   - Manejo robusto de errores
+   - Validación de tamaño de payload
+   - Fallback seguro en caso de error
+   - Mejor manejo de memoria
+   - Logging mejorado
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::: CAPAS DE FUNCIONAMIENTO Y CARACTERISTICAS DE SEGURIDAD :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+   El ESP32 en este sistema tiene varias capas de funcionamiento y características de seguridad. Te explicaré en detalle:
+
+Modo Seguro (Safe Mode):
+
+Se activa cuando detecta patrones anormales de funcionamiento (ej: múltiples resets en poco tiempo)
+Reduce la funcionalidad a lo mínimo necesario
+Aumenta la frecuencia del watchdog
+Libera memoria
+Notifica al servidor del problema
+Es una "última línea de defensa" antes de un fallo total
+
+
+Sistema de Watchdog:
+
+Monitorea que el sistema esté respondiendo
+Si no recibe "alimentación" en el tiempo establecido, fuerza un reset
+Ayuda a recuperar el sistema de bloqueos
+Tiene conteo de resets para detectar problemas recurrentes
+
+
+Gestión de Memoria:
+
+Monitoreo constante del uso de memoria
+Garbage collection proactivo
+Umbrales de memoria libre/usada
+Prevención de fragmentación
+
+
+Sistema de Respaldo:
+
+Archivos de configuración duplicados (.json y .bak)
+Validación de datos antes de guardar
+Archivos temporales para escritura segura
+Recuperación automática si hay corrupción
+
+
+Estados de Operación:
+
+Normal: Funcionamiento completo
+Configuración: Solo BLE activo para setup
+Seguro: Funcionalidad reducida
+Error: Intento de recuperación antes de reset
+
+
+Características Ocultas:
+
+Detección de interferencia en señales
+Conteo de errores de comunicación
+Auto-diagnóstico de hardware
+Sistema de logs en memoria
+Recuperación automática de conexiones
+
+
+Protecciones de Hardware:
+
+Debouncing en señales de entrada
+Filtrado de ruido eléctrico
+Protección contra picos de voltaje
+Monitoreo de temperatura
+
+
+Sistema de Alertas:
+
+Niveles de criticidad
+Alertas inmediatas para problemas graves
+Buffer de eventos para envío posterior
+Registro de incidentes históricos
+
+
+Optimizaciones:
+
+Sleep modes para ahorro de energía
+Priorización de tareas críticas
+Caché de datos frecuentes
+Buffers optimizados
+
+
+Recuperación de Fallos:
+
+Sistema de fallback para conexiones
+Reintentos inteligentes
+Restauración de estado anterior
+Aislamiento de componentes fallidos
+
+
+Diagnóstico Remoto:
+
+Envío de métricas detalladas
+Estado de componentes
+Historial de errores
+Capacidad de debug remoto
+
+
+Mantenimiento Preventivo:
+
+Detección temprana de problemas
+Limpieza periódica de memoria
+Validación de datos
+Actualización de timestamps
+
+
+
+Todo esto funciona en conjunto para garantizar que el sistema:
+
+Nunca deje de monitorear los relés
+Mantenga la comunicación MQTT
+Se recupere de fallos automáticamente
+Preserve la integridad de los datos
+Notifique problemas oportunamente
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"esp32/available": El ESP32 publica en este tópico su estado de disponibilidad durante la configuración. No se suscribe a él.
+"esp32/config/{esp32_id}": Tópico específico para cada ESP32, basado en su ID único. El ESP32 se suscribe a este tópico durante la configuración para recibir su configuración específica de panel.
+"clients/{client_id}/panels/{panel_id}": Este es el tópico de operación. Es específico para cada panel según su clientId y panelId, que se reciben en la configuración a través de "esp32/config/{esp32_id}". El ESP32 se suscribe a este tópico después de recibir su configuración y lo utiliza para publicar sus mensajes de estado y recibir comandos.
+"system/stats/{esp32_id}": El ESP32 publica periódicamente estadísticas del sistema en este tópico, que también es específico para cada dispositivo según su ID.
+"system/alerts/{esp32_id}": El ESP32 publica alertas del sistema en este tópico, de nuevo específico para cada dispositivo.

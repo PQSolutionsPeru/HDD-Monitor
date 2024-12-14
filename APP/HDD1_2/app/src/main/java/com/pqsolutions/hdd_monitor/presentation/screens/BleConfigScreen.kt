@@ -3,6 +3,7 @@ package com.pqsolutions.hdd_monitor.presentation.screens
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -27,10 +28,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.Client
 import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
+import com.pqsolutions.hdd_monitor.presentation.state.BleState
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.BleViewModel
-import com.pqsolutions.hdd_monitor.presentation.state.BleState
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,16 +58,17 @@ fun BleConfigScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
+    LaunchedEffect(state) {
+        Log.d("BleConfigScreen", "Estado actual: $state")
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
+        Log.d("BleConfigScreen", "Permisos concedidos: $allGranted")
         if (allGranted) {
-            if (viewModel.isBluetoothEnabled()) {
-                viewModel.startScan()
-            } else {
-                showBluetoothDialog = true
-            }
+            viewModel.onPermissionsGranted()
         } else {
             showPermissionDialog = true
         }
@@ -73,6 +76,7 @@ fun BleConfigScreen(
 
     LaunchedEffect(Unit) {
         if (!viewModel.hasRequiredPermissions()) {
+            Log.d("BleConfigScreen", "Solicitando permisos iniciales")
             permissionLauncher.launch(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     arrayOf(
@@ -87,6 +91,7 @@ fun BleConfigScreen(
                 }
             )
         } else if (!viewModel.isBluetoothEnabled()) {
+            Log.d("BleConfigScreen", "Bluetooth desactivado")
             showBluetoothDialog = true
         }
     }
@@ -108,312 +113,364 @@ fun BleConfigScreen(
                     .verticalScroll(scrollState),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Selector de Cliente actualizado
-                ExposedDropdownMenuBox(
-                    expanded = showMenu,
-                    onExpandedChange = { showMenu = it }
-                ) {
-                    OutlinedTextField(
-                        value = selectedClientName,
-                        onValueChange = { },
-                        readOnly = true,
-                        label = { Text("Cliente") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showMenu) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor()
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        clients.forEach { client ->
-                            DropdownMenuItem(
-                                text = { Text(client.name) },
-                                onClick = {
-                                    selectedClientName = client.name
-                                    selectedClientId = client.documentName // Guardamos también el ID
-                                    showMenu = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = wifiSsid,
-                    onValueChange = { wifiSsid = it },
-                    label = { Text("Nombre de red WiFi") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = wifiPassword,
-                    onValueChange = { wifiPassword = it },
-                    label = { Text("Contraseña WiFi") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = panelName,
-                    onValueChange = { panelName = it },
-                    label = { Text("Nombre del panel") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = panelLocation,
-                    onValueChange = { panelLocation = it },
-                    label = { Text("Ubicación del panel") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
                 when (state) {
-                    is BleState.Initial -> {
-                        Button(
-                            onClick = {
+                    is BleState.Initial,
+                    is BleState.Scanning -> {
+                        ScanningSection(
+                            state = state,
+                            devices = devices,
+                            onScanClick = {
+                                Log.d("BleConfigScreen", "Iniciando escaneo")
                                 if (viewModel.hasRequiredPermissions()) {
                                     viewModel.startScan()
                                 } else {
                                     showPermissionDialog = true
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Buscar dispositivos")
-                        }
-                    }
-                    is BleState.Scanning -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("Buscando dispositivos...")
-                            Spacer(modifier = Modifier.height(16.dp))
-                            devices.forEach { device ->
-                                DeviceButton(device = device, onClick = { viewModel.connectToDevice(it) })
-                                Spacer(modifier = Modifier.height(8.dp))
+                            onDeviceClick = { device ->
+                                Log.d("BleConfigScreen", "Conectando a dispositivo: ${device.address}")
+                                viewModel.connectToDevice(device)
                             }
-                        }
+                        )
                     }
+
+                    is BleState.Connecting -> {
+                        LoadingSection(message = "Conectando al dispositivo...")
+                    }
+
                     is BleState.Connected -> {
-                        Button(
-                            onClick = {
-                                viewModel.sendConfiguration(
-                                    wifiSsid = wifiSsid,
-                                    wifiPassword = wifiPassword,
+                        WifiConfigSection(
+                            wifiSsid = wifiSsid,
+                            wifiPassword = wifiPassword,
+                            onSsidChange = { wifiSsid = it },
+                            onPasswordChange = { wifiPassword = it },
+                            onSendClick = {
+                                Log.d("BleConfigScreen", "Enviando configuración WiFi: SSID=$wifiSsid")
+                                viewModel.sendWifiConfiguration(wifiSsid, wifiPassword)
+                            }
+                        )
+                    }
+
+                    is BleState.WifiConfigReceived -> {
+                        LoadingSection(message = "Configuración WiFi enviada, esperando conexión...")
+                    }
+
+                    is BleState.WifiConnected,
+                    is BleState.WaitingPanelConfig -> {
+                        PanelConfigSection(
+                            selectedClientName = selectedClientName,
+                            showMenu = showMenu,
+                            clients = clients,
+                            panelName = panelName,
+                            panelLocation = panelLocation,
+                            onClientSelect = { client ->
+                                selectedClientName = client.name
+                                selectedClientId = client.documentName
+                                showMenu = false
+                            },
+                            onShowMenuChange = { showMenu = it },
+                            onPanelNameChange = { panelName = it },
+                            onPanelLocationChange = { panelLocation = it },
+                            onSendClick = {
+                                viewModel.sendPanelConfiguration(
                                     panelName = panelName,
                                     panelLocation = panelLocation,
                                     clientName = selectedClientName,
                                     clientId = selectedClientId
                                 )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = wifiSsid.isNotBlank() &&
-                                    wifiPassword.isNotBlank() &&
-                                    panelName.isNotBlank() &&
-                                    panelLocation.isNotBlank() &&
-                                    selectedClientName.isNotBlank() &&
-                                    selectedClientId.isNotBlank()
-                        ) {
-                            Text("Enviar configuración")
-                        }
+                            }
+                        )
                     }
-                    is BleState.ConfigurationReceived -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "Configuración recibida, conectando WiFi...",
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
-                    }
-                    is BleState.AttemptingWifiConnection -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "Intentando conectar a la red WiFi...\nEsto puede tomar unos momentos",
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
-                    }
+
                     is BleState.ConfigurationSuccess -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "¡Configuración exitosa!\nEl dispositivo se está reiniciando...",
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
+                        SuccessSection(message = "¡Configuración exitosa!\nEl dispositivo se está reiniciando...")
                     }
-                    is BleState.DataSent -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "Panel configurado y registrado exitosamente",
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        LaunchedEffect(Unit) {
-                            delay(2000)
-                            onConfigurationComplete()
-                        }
-                    }
+
                     is BleState.ConfigurationError -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Error,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                (state as BleState.ConfigurationError).message,
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { viewModel.startScan() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Reintentar")
-                            }
-                        }
+                        ErrorSection(
+                            message = (state as BleState.ConfigurationError).message,
+                            onRetryClick = { viewModel.startScan() }
+                        )
                     }
+
                     is BleState.Error -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ErrorSection(
+                            message = (state as BleState.Error).message,
+                            onRetryClick = { viewModel.startScan() }
+                        )
+                    }
+
+                    is BleState.RequiresPermission -> {
+                        LaunchedEffect(Unit) {
+                            permissionLauncher.launch((state as BleState.RequiresPermission).permissions.toTypedArray())
+                        }
+                        LoadingSection(message = "Solicitando permisos necesarios...")
+                    }
+
+                    is BleState.Disconnected -> {
+                        Button(
+                            onClick = { viewModel.startScan() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Error,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                (state as BleState.Error).message,
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { viewModel.startScan() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Reintentar")
-                            }
+                            Text("Reintentar conexión")
                         }
                     }
-                    else -> { /* Estados no manejados */ }
                 }
             }
         }
     }
 
     if (showPermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showPermissionDialog = false },
-            title = { Text("Se requieren permisos") },
-            text = { Text("Se necesitan permisos de Bluetooth para configurar el dispositivo") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showPermissionDialog = false
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", context.packageName, null)
-                        }
-                        context.startActivity(intent)
-                    }
-                ) {
-                    Text("Ir a Ajustes")
+        PermissionDialog(
+            onDismiss = { showPermissionDialog = false },
+            onConfirm = {
+                showPermissionDialog = false
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPermissionDialog = false }) {
-                    Text("Cancelar")
-                }
+                context.startActivity(intent)
             }
         )
     }
 
     if (showBluetoothDialog) {
-        AlertDialog(
-            onDismissRequest = { showBluetoothDialog = false },
-            title = { Text("Bluetooth Desactivado") },
-            text = { Text("Por favor activa el Bluetooth para continuar") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showBluetoothDialog = false
-                        val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-                        if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
-                            PackageManager.PERMISSION_GRANTED) {
-                            context.startActivity(enableBtIntent)
-                        }
-                    }
-                ) {
-                    Text("Activar")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBluetoothDialog = false }) {
-                    Text("Cancelar")
+        BluetoothDialog(
+            context = context,
+            onDismiss = { showBluetoothDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun ScanningSection(
+    state: BleState,
+    devices: List<BluetoothDevice>,
+    onScanClick: () -> Unit,
+    onDeviceClick: (BluetoothDevice) -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        if (state is BleState.Scanning) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Buscando dispositivos...")
+            Spacer(modifier = Modifier.height(16.dp))
+            devices.forEach { device ->
+                DeviceButton(device = device, onClick = onDeviceClick)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        } else {
+            Button(
+                onClick = onScanClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Buscar dispositivos")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WifiConfigSection(
+    wifiSsid: String,
+    wifiPassword: String,
+    onSsidChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onSendClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            "Conectado al dispositivo",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = wifiSsid,
+            onValueChange = onSsidChange,
+            label = { Text("Nombre de red WiFi") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = wifiPassword,
+            onValueChange = onPasswordChange,
+            label = { Text("Contraseña WiFi") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onSendClick,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = wifiSsid.isNotBlank() && wifiPassword.isNotBlank()
+        ) {
+            Text("Configurar WiFi")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PanelConfigSection(
+    selectedClientName: String,
+    showMenu: Boolean,
+    clients: List<Client>,
+    panelName: String,
+    panelLocation: String,
+    onClientSelect: (Client) -> Unit,
+    onShowMenuChange: (Boolean) -> Unit,
+    onPanelNameChange: (String) -> Unit,
+    onPanelLocationChange: (String) -> Unit,
+    onSendClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            "WiFi conectado. Configurar panel",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        ExposedDropdownMenuBox(
+            expanded = showMenu,
+            onExpandedChange = onShowMenuChange
+        ) {
+            OutlinedTextField(
+                value = selectedClientName,
+                onValueChange = { },
+                readOnly = true,
+                label = { Text("Cliente") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showMenu) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor()
+            )
+
+            ExposedDropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { onShowMenuChange(false) }
+            ) {
+                clients.forEach { client ->
+                    DropdownMenuItem(
+                        text = { Text(client.name) },
+                        onClick = { onClientSelect(client) }
+                    )
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = panelName,
+            onValueChange = onPanelNameChange,
+            label = { Text("Nombre del panel") },
+            modifier = Modifier.fillMaxWidth()
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = panelLocation,
+            onValueChange = onPanelLocationChange,
+            label = { Text("Ubicación del panel") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onSendClick,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = selectedClientName.isNotBlank() &&
+                    panelName.isNotBlank() &&
+                    panelLocation.isNotBlank()
+        ) {
+            Text("Configurar Panel")
+        }
+    }
+}
+
+@Composable
+private fun LoadingSection(message: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        CircularProgressIndicator()
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            message,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}
+
+@Composable
+private fun SuccessSection(message: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(48.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            message,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}
+
+@Composable
+private fun ErrorSection(
+    message: String,
+    onRetryClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            imageVector = Icons.Default.Error,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(48.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            message,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.error
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+            onClick = onRetryClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Reintentar")
+        }
     }
 }
 
@@ -427,20 +484,91 @@ private fun DeviceButton(
     val deviceName = remember(device) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
-                PackageManager.PERMISSION_GRANTED) {
-                device.name ?: "Dispositivo desconocido"
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                device.name?.let { name ->
+                    val id = name.substringAfter("ESP32-", "")
+                    if (id.isNotEmpty()) {
+                        "ESP32 #$id"
+                    } else {
+                        "ESP32 (Sin ID)"
+                    }
+                } ?: "Dispositivo desconocido"
             } else {
                 "Dispositivo desconocido"
             }
         } else {
-            device.name ?: "Dispositivo desconocido"
+            device.name?.let { name ->
+                val id = name.substringAfter("ESP32-", "")
+                if (id.isNotEmpty()) {
+                    "ESP32 #$id"
+                } else {
+                    "ESP32 (Sin ID)"
+                }
+            } ?: "Dispositivo desconocido"
         }
     }
 
     Button(
         onClick = { onClick(device) },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
     ) {
         Text(deviceName)
     }
+}
+
+@Composable
+private fun PermissionDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Se requieren permisos") },
+        text = { Text("Se necesitan permisos de Bluetooth para configurar el dispositivo") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Ir a Ajustes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+@Composable
+private fun BluetoothDialog(
+    context: Context,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bluetooth Desactivado") },
+        text = { Text("Por favor activa el Bluetooth para continuar") },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onDismiss()
+                    val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                    if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        context.startActivity(enableBtIntent)
+                    }
+                }
+            ) {
+                Text("Activar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
 }
