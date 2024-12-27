@@ -10,6 +10,7 @@ import com.pqsolutions.hdd_monitor.data.NotificationRepository
 import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserPreferences
 import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.esp32.ESP32Repository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,7 +22,6 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
-
     @Provides
     @Singleton
     fun provideApplicationContext(@ApplicationContext context: Context): Context {
@@ -32,10 +32,16 @@ object AppModule {
     @Singleton
     fun providePanelRepository(
         firestore: FirebaseFirestore,
-        firebaseMessaging: FirebaseMessaging,
-        @ApplicationContext context: Context,
-        @Named("HddMonitorPrefs") sharedPreferences: SharedPreferences
-    ): PanelRepository = PanelRepository(firestore, firebaseMessaging, context, sharedPreferences)
+        esp32Repository: ESP32Repository
+    ): PanelRepository = PanelRepository(firestore, esp32Repository)
+
+    @Provides
+    @Singleton
+    fun provideESP32Repository(
+        firestore: FirebaseFirestore
+    ): ESP32Repository {
+        return ESP32Repository(firestore)
+    }
 
     @Provides
     @Singleton

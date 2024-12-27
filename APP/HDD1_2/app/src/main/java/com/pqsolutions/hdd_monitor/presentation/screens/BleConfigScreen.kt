@@ -1,7 +1,6 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.Intent
@@ -29,11 +28,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.data.Client
+import com.pqsolutions.hdd_monitor.esp32.ESP32Device
 import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
 import com.pqsolutions.hdd_monitor.presentation.state.BleState
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.BleViewModel
-import kotlinx.coroutines.delay
+
+private const val TAG = "BleConfigScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,27 +47,56 @@ fun BleConfigScreen(
     var showBluetoothDialog by remember { mutableStateOf(false) }
     var wifiSsid by remember { mutableStateOf("") }
     var wifiPassword by remember { mutableStateOf("") }
-    var panelName by remember { mutableStateOf("") }
-    var panelLocation by remember { mutableStateOf("") }
     var selectedClientName by remember { mutableStateOf("") }
     var selectedClientId by remember { mutableStateOf("") }
-    var showMenu by remember { mutableStateOf(false) }
+    var panelName by remember { mutableStateOf("") }
+    var panelLocation by remember { mutableStateOf("") }
+    var showClientMenu by remember { mutableStateOf(false) }
 
     val state by viewModel.state.collectAsState()
     val devices by viewModel.devices.collectAsState()
     val clients by viewModel.clients.collectAsState()
+    val esp32s by viewModel.esp32s.collectAsState()
+
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
+    // Monitorear cambios de estado
     LaunchedEffect(state) {
-        Log.d("BleConfigScreen", "Estado actual: $state")
+        Log.d(TAG, "Estado actual: $state")
+        when (state) {
+            is BleState.Initial -> {
+                Log.d(TAG, "Estado inicial - Verificando permisos y Bluetooth")
+                if (viewModel.hasRequiredPermissions() && viewModel.isBluetoothEnabled()) {
+                    viewModel.startScan()
+                }
+            }
+            is BleState.Error -> {
+                Log.e(TAG, "Error: ${(state as BleState.Error).message}")
+            }
+            is BleState.WifiConfigured -> {
+                Log.d(TAG, "WiFi configurado exitosamente")
+                // Iniciar temporizador de espera para confirmación de modo operación
+                viewModel.startTimeoutTimer(BleViewModel.WIFI_CONFIG_TIMEOUT)
+            }
+            is BleState.WaitingForRunningMode -> {
+                Log.d(TAG, "Esperando confirmación de modo operación")
+            }
+            is BleState.Disconnected -> {
+                Log.d(TAG, "Dispositivo desconectado")
+            }
+            is BleState.ConfigurationSuccess -> {
+                Log.d(TAG, "Configuración completada exitosamente")
+            }
+            else -> { }
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
-        Log.d("BleConfigScreen", "Permisos concedidos: $allGranted")
+        Log.d(TAG, "Permisos otorgados: $allGranted")
         if (allGranted) {
             viewModel.onPermissionsGranted()
         } else {
@@ -75,8 +105,8 @@ fun BleConfigScreen(
     }
 
     LaunchedEffect(Unit) {
+        Log.d(TAG, "Verificación inicial de permisos y Bluetooth")
         if (!viewModel.hasRequiredPermissions()) {
-            Log.d("BleConfigScreen", "Solicitando permisos iniciales")
             permissionLauncher.launch(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     arrayOf(
@@ -91,8 +121,15 @@ fun BleConfigScreen(
                 }
             )
         } else if (!viewModel.isBluetoothEnabled()) {
-            Log.d("BleConfigScreen", "Bluetooth desactivado")
             showBluetoothDialog = true
+        }
+    }
+
+    // Monitor de dispositivos encontrados
+    LaunchedEffect(devices) {
+        Log.d(TAG, "Dispositivos encontrados: ${devices.size}")
+        devices.forEach { device ->
+            Log.d(TAG, "Dispositivo: ${device.address}")
         }
     }
 
@@ -120,15 +157,11 @@ fun BleConfigScreen(
                             state = state,
                             devices = devices,
                             onScanClick = {
-                                Log.d("BleConfigScreen", "Iniciando escaneo")
-                                if (viewModel.hasRequiredPermissions()) {
-                                    viewModel.startScan()
-                                } else {
-                                    showPermissionDialog = true
-                                }
+                                Log.d(TAG, "Iniciando escaneo por solicitud del usuario")
+                                viewModel.startScan()
                             },
                             onDeviceClick = { device ->
-                                Log.d("BleConfigScreen", "Conectando a dispositivo: ${device.address}")
+                                Log.d(TAG, "Conectando a dispositivo: ${device.address}")
                                 viewModel.connectToDevice(device)
                             }
                         )
@@ -140,50 +173,74 @@ fun BleConfigScreen(
 
                     is BleState.Connected -> {
                         WifiConfigSection(
-                            wifiSsid = wifiSsid,
-                            wifiPassword = wifiPassword,
+                            ssid = wifiSsid,
+                            password = wifiPassword,
                             onSsidChange = { wifiSsid = it },
                             onPasswordChange = { wifiPassword = it },
                             onSendClick = {
-                                Log.d("BleConfigScreen", "Enviando configuración WiFi: SSID=$wifiSsid")
+                                Log.d(TAG, "Enviando configuración WiFi. SSID: $wifiSsid")
                                 viewModel.sendWifiConfiguration(wifiSsid, wifiPassword)
                             }
                         )
                     }
 
                     is BleState.WifiConfigReceived -> {
-                        LoadingSection(message = "Configuración WiFi enviada, esperando conexión...")
+                        LoadingSection(message = "Enviando configuración WiFi...")
                     }
 
-                    is BleState.WifiConnected,
-                    is BleState.WaitingPanelConfig -> {
-                        PanelConfigSection(
-                            selectedClientName = selectedClientName,
-                            showMenu = showMenu,
+                    is BleState.WifiConfiguring -> {
+                        LoadingSection(message = "Configurando WiFi en el dispositivo...")
+                    }
+
+                    is BleState.WaitingForRunningMode -> {
+                        LoadingSection(message = "Esperando confirmación de modo operación...")
+                    }
+
+                    is BleState.SelectingClient -> {
+                        val esp32Device = (state as BleState.SelectingClient).esp32Device
+                        ClientSelectionSection(
+                            esp32Device = esp32Device,
                             clients = clients,
-                            panelName = panelName,
-                            panelLocation = panelLocation,
+                            selectedClientName = selectedClientName,
+                            showClientMenu = showClientMenu,
+                            onClientMenuChange = { showClientMenu = it },
                             onClientSelect = { client ->
+                                Log.d(TAG, "Cliente seleccionado: ${client.name}")
                                 selectedClientName = client.name
                                 selectedClientId = client.documentName
-                                showMenu = false
+                                showClientMenu = false
                             },
-                            onShowMenuChange = { showMenu = it },
+                            onContinueClick = {
+                                viewModel.moveToCreatePanel(esp32Device, selectedClientId)
+                            }
+                        )
+                    }
+
+                    is BleState.CreatingPanel -> {
+                        val esp32Device = (state as BleState.CreatingPanel).esp32Device
+                        CreatePanelSection(
+                            esp32Device = esp32Device,
+                            clientId = selectedClientId,
+                            panelName = panelName,
+                            panelLocation = panelLocation,
                             onPanelNameChange = { panelName = it },
                             onPanelLocationChange = { panelLocation = it },
-                            onSendClick = {
-                                viewModel.sendPanelConfiguration(
+                            onCreateClick = {
+                                Log.d(TAG, "Creando panel: $panelName para cliente: $selectedClientId")
+                                viewModel.createNewPanel(
+                                    clientId = selectedClientId,
                                     panelName = panelName,
-                                    panelLocation = panelLocation,
-                                    clientName = selectedClientName,
-                                    clientId = selectedClientId
+                                    location = panelLocation
                                 )
                             }
                         )
                     }
 
                     is BleState.ConfigurationSuccess -> {
-                        SuccessSection(message = "¡Configuración exitosa!\nEl dispositivo se está reiniciando...")
+                        SuccessSection(
+                            message = "¡Configuración completada!\nEl panel ha sido creado exitosamente.",
+                            onFinishClick = onConfigurationComplete
+                        )
                     }
 
                     is BleState.ConfigurationError -> {
@@ -200,26 +257,15 @@ fun BleConfigScreen(
                         )
                     }
 
-                    is BleState.RequiresPermission -> {
-                        LaunchedEffect(Unit) {
-                            permissionLauncher.launch((state as BleState.RequiresPermission).permissions.toTypedArray())
-                        }
-                        LoadingSection(message = "Solicitando permisos necesarios...")
-                    }
-
-                    is BleState.Disconnected -> {
-                        Button(
-                            onClick = { viewModel.startScan() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Reintentar conexión")
-                        }
+                    else -> {
+                        LoadingSection(message = "Procesando...")
                     }
                 }
             }
         }
     }
 
+    // Diálogos
     if (showPermissionDialog) {
         PermissionDialog(
             onDismiss = { showPermissionDialog = false },
@@ -234,10 +280,7 @@ fun BleConfigScreen(
     }
 
     if (showBluetoothDialog) {
-        BluetoothDialog(
-            context = context,
-            onDismiss = { showBluetoothDialog = false }
-        )
+        BluetoothDialog(context = context, onDismiss = { showBluetoothDialog = false })
     }
 }
 
@@ -255,7 +298,7 @@ private fun ScanningSection(
         if (state is BleState.Scanning) {
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Buscando dispositivos...")
+            Text("Buscando dispositivos ESP32...")
             Spacer(modifier = Modifier.height(16.dp))
             devices.forEach { device ->
                 DeviceButton(device = device, onClick = onDeviceClick)
@@ -275,8 +318,8 @@ private fun ScanningSection(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WifiConfigSection(
-    wifiSsid: String,
-    wifiPassword: String,
+    ssid: String,
+    password: String,
     onSsidChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onSendClick: () -> Unit
@@ -293,7 +336,7 @@ private fun WifiConfigSection(
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
-            value = wifiSsid,
+            value = ssid,
             onValueChange = onSsidChange,
             label = { Text("Nombre de red WiFi") },
             modifier = Modifier.fillMaxWidth()
@@ -302,7 +345,7 @@ private fun WifiConfigSection(
         Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedTextField(
-            value = wifiPassword,
+            value = password,
             onValueChange = onPasswordChange,
             label = { Text("Contraseña WiFi") },
             modifier = Modifier.fillMaxWidth()
@@ -313,56 +356,96 @@ private fun WifiConfigSection(
         Button(
             onClick = onSendClick,
             modifier = Modifier.fillMaxWidth(),
-            enabled = wifiSsid.isNotBlank() && wifiPassword.isNotBlank()
+            enabled = ssid.isNotBlank() && password.isNotBlank()
         ) {
             Text("Configurar WiFi")
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PanelConfigSection(
-    selectedClientName: String,
-    showMenu: Boolean,
-    clients: List<Client>,
-    panelName: String,
-    panelLocation: String,
-    onClientSelect: (Client) -> Unit,
-    onShowMenuChange: (Boolean) -> Unit,
-    onPanelNameChange: (String) -> Unit,
-    onPanelLocationChange: (String) -> Unit,
-    onSendClick: () -> Unit
+private fun ESP32StatusSection(
+    esp32Device: ESP32Device,
+    onContinueClick: () -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(
-            "WiFi conectado. Configurar panel",
-            style = MaterialTheme.typography.bodyLarge,
+            "ESP32 Conectado",
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text("MAC: ${esp32Device.MAC}")
+                Text("IP: ${esp32Device.IP}")
+                Text("Estado: ${esp32Device.status}")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onContinueClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Continuar")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClientSelectionSection(
+    esp32Device: ESP32Device,
+    clients: List<Client>,
+    selectedClientName: String,
+    showClientMenu: Boolean,
+    onClientMenuChange: (Boolean) -> Unit,
+    onClientSelect: (Client) -> Unit,
+    onContinueClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            "Seleccionar Cliente",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+
         Spacer(modifier = Modifier.height(16.dp))
 
         ExposedDropdownMenuBox(
-            expanded = showMenu,
-            onExpandedChange = onShowMenuChange
+            expanded = showClientMenu,
+            onExpandedChange = onClientMenuChange
         ) {
             OutlinedTextField(
                 value = selectedClientName,
                 onValueChange = { },
                 readOnly = true,
                 label = { Text("Cliente") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showMenu) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showClientMenu) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .menuAnchor()
             )
 
             ExposedDropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { onShowMenuChange(false) }
+                expanded = showClientMenu,
+                onDismissRequest = { onClientMenuChange(false) }
             ) {
                 clients.forEach { client ->
                     DropdownMenuItem(
@@ -373,12 +456,45 @@ private fun PanelConfigSection(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onContinueClick,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = selectedClientName.isNotBlank()
+        ) {
+            Text("Continuar")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreatePanelSection(
+    esp32Device: ESP32Device,
+    clientId: String,
+    panelName: String,
+    panelLocation: String,
+    onPanelNameChange: (String) -> Unit,
+    onPanelLocationChange: (String) -> Unit,
+    onCreateClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            "Crear Panel",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
             value = panelName,
             onValueChange = onPanelNameChange,
-            label = { Text("Nombre del panel") },
+            label = { Text("Nombre del Panel") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -387,20 +503,18 @@ private fun PanelConfigSection(
         OutlinedTextField(
             value = panelLocation,
             onValueChange = onPanelLocationChange,
-            label = { Text("Ubicación del panel") },
+            label = { Text("Ubicación") },
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
-            onClick = onSendClick,
+            onClick = onCreateClick,
             modifier = Modifier.fillMaxWidth(),
-            enabled = selectedClientName.isNotBlank() &&
-                    panelName.isNotBlank() &&
-                    panelLocation.isNotBlank()
+            enabled = panelName.isNotBlank() && panelLocation.isNotBlank()
         ) {
-            Text("Configurar Panel")
+            Text("Crear Panel")
         }
     }
 }
@@ -422,7 +536,10 @@ private fun LoadingSection(message: String) {
 }
 
 @Composable
-private fun SuccessSection(message: String) {
+private fun SuccessSection(
+    message: String,
+    onFinishClick: () -> Unit
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth()
@@ -433,12 +550,23 @@ private fun SuccessSection(message: String) {
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(48.dp)
         )
+
         Spacer(modifier = Modifier.height(16.dp))
+
         Text(
             message,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyLarge
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onFinishClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Finalizar")
+        }
     }
 }
 
@@ -457,14 +585,18 @@ private fun ErrorSection(
             tint = MaterialTheme.colorScheme.error,
             modifier = Modifier.size(48.dp)
         )
+
         Spacer(modifier = Modifier.height(16.dp))
+
         Text(
             message,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.error
         )
+
         Spacer(modifier = Modifier.height(16.dp))
+
         Button(
             onClick = onRetryClick,
             modifier = Modifier.fillMaxWidth()
@@ -486,26 +618,16 @@ private fun DeviceButton(
             if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
                 PackageManager.PERMISSION_GRANTED
             ) {
-                device.name?.let { name ->
-                    val id = name.substringAfter("ESP32-", "")
-                    if (id.isNotEmpty()) {
-                        "ESP32 #$id"
-                    } else {
-                        "ESP32 (Sin ID)"
-                    }
-                } ?: "Dispositivo desconocido"
+                device.name?.takeIf { it.startsWith("ESP32-") }?.let { name ->
+                    "ESP32 #${name.substringAfter("ESP32-")}"
+                } ?: "ESP32 (Sin ID)"
             } else {
-                "Dispositivo desconocido"
+                "ESP32 (Sin permisos)"
             }
         } else {
-            device.name?.let { name ->
-                val id = name.substringAfter("ESP32-", "")
-                if (id.isNotEmpty()) {
-                    "ESP32 #$id"
-                } else {
-                    "ESP32 (Sin ID)"
-                }
-            } ?: "Dispositivo desconocido"
+            device.name?.takeIf { it.startsWith("ESP32-") }?.let { name ->
+                "ESP32 #${name.substringAfter("ESP32-")}"
+            } ?: "ESP32 (Sin ID)"
         }
     }
 
@@ -554,7 +676,7 @@ private fun BluetoothDialog(
             TextButton(
                 onClick = {
                     onDismiss()
-                    val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                    val enableBtIntent = Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)
                     if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
                         PackageManager.PERMISSION_GRANTED
                     ) {

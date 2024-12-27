@@ -16,10 +16,10 @@ class WiFiManager:
         self.WIFI_CONFIG_FILE = "wifi_config.json"
         
         # Parámetros de conexión
-        self.CONNECT_TIMEOUT = 20    # 20 segundos timeout conexión
-        self.MAX_RETRIES = 3        # 3 intentos máximo
-        self.RETRY_DELAY = 5000     # 5 segundos entre intentos
-        self.CHECK_INTERVAL = 30000  # 30 segundos entre verificaciones
+        self.CONNECT_TIMEOUT = 60    # 60 segundos timeout conexión
+        self.MAX_RETRIES = 5        # 5 intentos máximo
+        self.RETRY_DELAY = 15000     # 15 segundos entre intentos
+        self.CHECK_INTERVAL = 60000  # 60 segundos entre verificaciones
         
         self.last_check = utime.ticks_ms()
         self.last_error = None

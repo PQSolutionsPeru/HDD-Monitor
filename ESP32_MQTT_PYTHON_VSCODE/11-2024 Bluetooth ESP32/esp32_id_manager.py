@@ -19,10 +19,11 @@ class ESP32IdManager:
         self.mqtt_manager = mqtt_manager
         self.time_manager = time_manager
         
-        # Información básica
+        # Variables de control
         self.esp32_id = None
         self.mac_address = None
-        self._get_mac_address()  # Obtiene y guarda MAC address
+        self.last_sync = 0
+        self.is_synced = False
         
         # Control de errores
         self.error_count = 0
@@ -33,161 +34,144 @@ class ESP32IdManager:
         self.id_history = []
         self.MAX_HISTORY = 10
         
-        print("[ESP32_ID] Esperando sincronización horaria...")
-        # Intentar sincronizar hora primero
-        retry_count = 0
-        while retry_count < 3:
-            if self.time_manager and self.time_manager.sync_time():
-                print("[ESP32_ID] Hora sincronizada correctamente")
-                break
-            print(f"[ESP32_ID] Intento {retry_count + 1} de sincronización fallido")
-            retry_count += 1
-            utime.sleep_ms(1000)
+        # Constantes MQTT
+        self.MAC_SEARCH_TIMEOUT = 30000  # 30 segundos
+        self.SEARCH_RETRY_DELAY = 5000   # 5 segundos entre reintentos
+        self.MAX_SEARCH_RETRIES = 3      # 3 intentos máximo
         
-        print("[ESP32_ID] Cargando o generando ID...")
-        # Intentar cargar ID existente
+        # Inicialización
+        print("[ESP32_ID] Obteniendo MAC address...")
+        self._get_mac_address()
+        
+        # Primero intentar cargar ID existente
         if not self._load_or_generate_id():
             print("[ESP32_ID] Generando nuevo ID...")
             self._generate_unique_id()
             self._save_with_backup()
-        
+            
         print(f"[ESP32_ID] ID final: {self.esp32_id}")
 
+    def _get_mac_address(self):
+        """Obtiene MAC address del ESP32"""
+        try:
+            # Obtener y normalizar MAC
+            mac = ubinascii.hexlify(machine.unique_id()).decode().upper()
+            self.mac_address = mac
+            print(f"[ESP32_ID] MAC address: {self.mac_address}")
+        except Exception as e:
+            print(f"[ESP32_ID] Error obteniendo MAC: {e}")
+            self.mac_address = None
+
+    def _wait_mqtt_ready(self):
+        """Espera a que MQTT esté disponible"""
+        if not self.mqtt_manager:
+            return False
+            
+        retry_count = 0
+        while retry_count < 3:
+            if self.mqtt_manager.check_connection():
+                return True
+            print(f"[ESP32_ID] Esperando MQTT... Intento {retry_count + 1}")
+            utime.sleep_ms(1000)
+            retry_count += 1
+            
+        return False
+
     def _generate_unique_id(self):
-        """Genera ID único de 8 caracteres"""
+        """Genera ID único basado en MAC y timestamp"""
         try:
             print("[ESP32_ID] Generando ID único...")
             
-            # Validar que haya sincronización horaria
-            if self.time_manager and not self.time_manager.is_peru_time_synced():
-                print("[ESP32_ID] Error: Hora no sincronizada")
-                raise Exception("Time not synced")
+            # Validar que tenemos MAC
+            if not self.mac_address:
+                print("[ESP32_ID] Error: MAC no disponible")
+                return None
                 
-            # Usar MAC address como base
-            mac = self.mac_address or ubinascii.hexlify(machine.unique_id()).decode()
+            # Generar ID con formato específico
+            mac_part = self.mac_address[-4:]  # Últimos 4 caracteres del MAC
+            time_hex = hex(int(utime.time()) % 0x10000)[2:].upper().zfill(4)  # 4 caracteres de timestamp
             
-            # Obtener timestamp GMT-5
-            current_time = self.time_manager.get_timestamp() if self.time_manager else utime.time()
-            if not current_time:
-                raise Exception("Invalid timestamp")
+            # Combinar para ID de 8 caracteres
+            self.esp32_id = f"{mac_part}AC{time_hex}"
+            print(f"[ESP32_ID] ID generado: {self.esp32_id}")
             
-            # Usar los últimos 4 caracteres del MAC
-            mac_part = mac[-4:].upper()
-            
-            # Convertir timestamp a hex y tomar últimos 4 caracteres
-            time_hex = hex(int(current_time) % 0x10000)[2:].upper()
-            # Asegurar que tenga 4 caracteres añadiendo ceros al inicio si es necesario
-            time_part = '0' * (4 - len(time_hex)) + time_hex
-            
-            # Combinar para crear ID de 8 caracteres
-            unique_id = f"{mac_part}{time_part}"
-            
-            print(f"[ESP32_ID] ID generado: {unique_id}")
-            self.esp32_id = unique_id
-            self._add_to_history(unique_id, "generated")
-            
-            return unique_id
+            # Añadir al historial
+            self._add_to_history(self.esp32_id, "generated")
+            return self.esp32_id
             
         except Exception as e:
             print(f"[ESP32_ID] Error generando ID: {e}")
             self._handle_error("generation_error", str(e))
             return None
 
-    def _load_id_from_db(self):
-        """Intenta recuperar ID desde la BD usando MAC"""
+    def _search_mac_in_mqtt(self):
+        """Busca ID existente usando MAC vía MQTT"""
+        if not self._wait_mqtt_ready():
+            return False
+            
         try:
-            if not self.mqtt_manager:
-                return False
-
-            print(f"[ESP32_ID] Intentando recuperar ID para MAC: {self.mac_address}")
+            print(f"[ESP32_ID] Buscando ID para MAC: {self.mac_address}")
+            response_topic = f"esp32/mac_response/{self.mac_address}"
+            id_found = False
             
-            # Variable para control de respuesta
-            self.id_found = None
-            
-            # Callback para procesar respuesta
             def handle_mac_response(topic, msg):
                 try:
-                    response = json.loads(msg)
+                    response = json.loads(msg.decode())
                     if response.get('MAC') == self.mac_address:
-                        # El mensaje incluirá el esp32_id que es el nombre del documento
-                        self.id_found = response.get('esp32_id')
-                        if self.id_found:
-                            print(f"[ESP32_ID] ID recuperado: {self.id_found}")
+                        esp32_id = response.get('esp32_id')
+                        if esp32_id:
+                            nonlocal id_found
+                            self.esp32_id = esp32_id
+                            id_found = True
+                            print(f"[ESP32_ID] ID encontrado: {esp32_id}")
                 except Exception as e:
                     print(f"[ESP32_ID] Error procesando respuesta MAC: {e}")
 
             # Suscribirse al tópico de respuesta
-            self.mqtt_manager.subscribe(self.MAC_RESPONSE_TOPIC, handle_mac_response)
+            self.mqtt_manager.subscribe(response_topic, handle_mac_response)
             
-            # Publicar solicitud de búsqueda
+            # Publicar búsqueda
             search_request = {
                 'MAC': self.mac_address,
-                'response_topic': self.MAC_RESPONSE_TOPIC,
+                'response_topic': response_topic,
                 'timestamp': utime.ticks_ms()
             }
             
-            self.mqtt_manager.publish_event(
-                self.MAC_RECOVERY_TOPIC,
-                search_request,
-                retain=False,
-                qos=1
-            )
-            
-            # Esperar respuesta con timeout
-            start_time = utime.ticks_ms()
-            while not self.id_found:
-                if utime.ticks_diff(utime.ticks_ms(), start_time) > self.MAC_RECOVERY_TIMEOUT:
-                    print("[ESP32_ID] Timeout esperando respuesta de MAC")
-                    break
-                utime.sleep_ms(100)
+            retry_count = 0
+            while retry_count < self.MAX_SEARCH_RETRIES and not id_found:
+                if retry_count > 0:
+                    print(f"[ESP32_ID] Reintento {retry_count + 1} de búsqueda MAC")
+                    utime.sleep_ms(self.SEARCH_RETRY_DELAY)
+                
+                self.mqtt_manager.publish_event(
+                    "esp32/mac_search",
+                    search_request,
+                    retain=False
+                )
+                
+                # Esperar respuesta
+                start_time = utime.ticks_ms()
+                while not id_found:
+                    if utime.ticks_diff(utime.ticks_ms(), start_time) >= self.MAC_SEARCH_TIMEOUT:
+                        break
+                    utime.sleep_ms(100)
+                    self.mqtt_manager.check_msg()
+                    
+                retry_count += 1
                 
             # Limpiar suscripción
-            self.mqtt_manager.unsubscribe(self.MAC_RESPONSE_TOPIC)
+            self.mqtt_manager.unsubscribe(response_topic)
             
-            if self.id_found:
-                self.esp32_id = self.id_found
+            if id_found:
+                self._add_to_history(self.esp32_id, "recovered_from_mqtt")
                 self._save_with_backup()
-                self._add_to_history(self.id_found, "recovered_from_db")
                 return True
                 
             return False
             
         except Exception as e:
-            print(f"[ESP32_ID] Error en recuperación por MAC: {e}")
-            self._handle_error("mac_recovery_error", str(e))
+            print(f"[ESP32_ID] Error en búsqueda MAC: {e}")
             return False
-
-    def _wait_time_sync(self):
-        """Espera sincronización horaria GMT -5"""
-        print("[ESP32_ID] Esperando sincronización horaria...")
-        if not self.time_manager:
-            print("[ESP32_ID] No hay gestor de tiempo")
-            return False
-                
-        retry_count = 0
-        while retry_count < 3:
-            if retry_count > 0:
-                print(f"[ESP32_ID] Reintento {retry_count + 1} de sincronización")
-                utime.sleep_ms(1000)
-                
-            if self.time_manager.sync_time():
-                if self.time_manager.is_synced:
-                    print("[ESP32_ID] Hora sincronizada correctamente")
-                    return True
-                    
-            retry_count += 1
-            
-        print("[ESP32_ID] No se pudo sincronizar la hora")
-        return False
-
-    def _get_mac_address(self):
-        """Obtiene MAC address del ESP32"""
-        try:
-            self.mac_address = ubinascii.hexlify(machine.unique_id()).decode()
-            print(f"[ESP32_ID] MAC address: {self.mac_address}")
-        except Exception as e:
-            print(f"[ESP32_ID] Error obteniendo MAC: {e}")
-            self.mac_address = None
 
     def _save_id(self, filename):
         """Guarda ID de manera segura"""
@@ -246,39 +230,40 @@ class ESP32IdManager:
             return False
 
     def _load_or_generate_id(self):
-        """Carga ID existente o genera uno nuevo"""
+        """Carga ID existente o inicia proceso de generación"""
         try:
-            # Intentar cargar archivo principal
+            # 1. Intentar cargar de archivo principal
             if self.ID_FILE in os.listdir():
                 with open(self.ID_FILE, 'r') as f:
                     data = json.load(f)
                     if data.get('esp32_id'):
                         self.esp32_id = data['esp32_id']
                         self.id_history = data.get('history', [])
-                        self._add_to_history(self.esp32_id, "loaded")
-                        return
+                        self._add_to_history(self.esp32_id, "loaded_from_file")
+                        return True
 
-            # Intentar cargar backup
+            # 2. Intentar cargar de backup
             if self.BACKUP_FILE in os.listdir():
-                print("[ESP32_ID] Usando archivo de respaldo")
                 with open(self.BACKUP_FILE, 'r') as f:
                     data = json.load(f)
                     if data.get('esp32_id'):
                         self.esp32_id = data['esp32_id']
                         self.id_history = data.get('history', [])
-                        self._add_to_history(self.esp32_id, "loaded_backup")
-                        self._save_id(self.ID_FILE)  # Restaurar principal
-                        return
+                        self._add_to_history(self.esp32_id, "loaded_from_backup")
+                        self._save_id(self.ID_FILE)
+                        return True
 
-            # Generar nuevo ID si no existe
-            self.esp32_id = self._generate_unique_id()
-            self._save_with_backup()
+            # 3. Intentar recuperar por MQTT si está disponible
+            if self.mqtt_manager and self._search_mac_in_mqtt():
+                return True
+
+            # 4. Si todo lo anterior falla, devolver False para generar nuevo ID
+            return False
             
         except Exception as e:
             print(f"[ESP32_ID] Error cargando/generando ID: {e}")
             self._handle_error("load_error", str(e))
-            self.esp32_id = self._generate_unique_id()
-            self._save_with_backup()
+            return False
 
     def _handle_error(self, error_type, error_message):
         """Maneja errores del gestor"""
@@ -301,20 +286,27 @@ class ESP32IdManager:
     def _recover_from_errors(self):
         """Intenta recuperarse de errores críticos"""
         try:
-            # Resetear contadores
+            print("[ESP32_ID] Iniciando recuperación de errores...")
             self.error_count = 0
             
-            # Intentar cargar desde backup
+            # 1. Intentar cargar desde backup
             if self.BACKUP_FILE in os.listdir():
                 with open(self.BACKUP_FILE, 'r') as f:
                     data = json.load(f)
                     if data.get('esp32_id'):
                         self.esp32_id = data['esp32_id']
                         self._save_id(self.ID_FILE)
+                        print("[ESP32_ID] Recuperado desde backup")
                         return
-                        
-            # Si no hay backup, generar nuevo ID
-            self.esp32_id = self._generate_unique_id()
+
+            # 2. Intentar búsqueda MAC
+            if self.mqtt_manager and self._search_mac_in_mqtt():
+                print("[ESP32_ID] Recuperado vía MQTT")
+                return
+
+            # 3. Si todo falla, generar nuevo
+            print("[ESP32_ID] Generando nuevo ID en recuperación")
+            self._generate_unique_id()
             self._save_with_backup()
             
         except Exception as e:
@@ -329,6 +321,7 @@ class ESP32IdManager:
                 'timestamp': utime.ticks_ms()
             })
             
+            # Mantener límite de historial
             if len(self.id_history) > self.MAX_HISTORY:
                 self.id_history = self.id_history[-self.MAX_HISTORY:]
                 
@@ -350,7 +343,8 @@ class ESP32IdManager:
             'mac_address': self.mac_address,
             'error_count': self.error_count,
             'last_error': self.last_error,
-            'history': self.id_history
+            'history': self.id_history,
+            'is_synced': self.is_synced
         }
 
     def validate_id(self):
@@ -359,7 +353,8 @@ class ESP32IdManager:
             if not self.esp32_id:
                 return False
                 
-            if len(self.esp32_id) != 8:  # Cambiar a 8 caracteres
+            # Validar formato
+            if len(self.esp32_id) != 8:
                 return False
                 
             if not self.esp32_id.isalnum():
@@ -372,4 +367,121 @@ class ESP32IdManager:
                 
         except Exception as e:
             print(f"[ESP32_ID] Error validando ID: {e}")
+            return False
+
+    def sync(self):
+        """Sincroniza estado con la VM"""
+        if not self.mqtt_manager or not self.esp32_id:
+            return False
+            
+        try:
+            # Publicar información de dispositivo
+            self.mqtt_manager.publish_event(
+                "esp32/network_info",
+                {
+                    'esp32_id': self.esp32_id,
+                    'MAC': self.mac_address,
+                    'status': 'AWAITING_CONFIG',
+                    'timestamp': utime.ticks_ms()
+                },
+                retain=True
+            )
+            
+            self.last_sync = utime.ticks_ms()
+            self.is_synced = True
+            return True
+            
+        except Exception as e:
+            print(f"[ESP32_ID] Error en sincronización: {e}")
+            self.is_synced = False
+            return False
+
+    def check_sync(self):
+        """Verifica y mantiene sincronización con la VM"""
+        if not self.mqtt_manager or not self.esp32_id:
+            return False
+            
+        try:
+            current_time = utime.ticks_ms()
+            sync_interval = 300000  # 5 minutos
+            
+            if not self.is_synced or utime.ticks_diff(current_time, self.last_sync) >= sync_interval:
+                return self.sync()
+                
+            return True
+            
+        except Exception as e:
+            print(f"[ESP32_ID] Error verificando sync: {e}")
+            return False
+
+    def reset(self):
+        """Resetea el gestor a estado inicial"""
+        try:
+            print("[ESP32_ID] Reseteando gestor...")
+            
+            # Limpiar datos en memoria
+            self.esp32_id = None
+            self.error_count = 0
+            self.last_error = None
+            self.is_synced = False
+            
+            # Eliminar archivos
+            try:
+                os.remove(self.ID_FILE)
+            except:
+                pass
+                
+            try:
+                os.remove(self.BACKUP_FILE)
+            except:
+                pass
+                
+            # Recolectar basura
+            gc.collect()
+            
+            # Reiniciar proceso de identificación
+            return self._load_or_generate_id()
+            
+        except Exception as e:
+            print(f"[ESP32_ID] Error en reset: {e}")
+            return False
+
+    def maintenance(self):
+        """Realiza tareas de mantenimiento periódicas"""
+        try:
+            # Verificar memoria
+            gc.collect()
+            
+            # Verificar y limpiar historial si es necesario
+            if len(self.id_history) > self.MAX_HISTORY:
+                self.id_history = self.id_history[-self.MAX_HISTORY:]
+                self._save_with_backup()
+            
+            # Verificar sincronización
+            if not self.check_sync():
+                print("[ESP32_ID] Error en sincronización durante mantenimiento")
+                
+            return True
+            
+        except Exception as e:
+            print(f"[ESP32_ID] Error en mantenimiento: {e}")
+            return False
+
+    def process(self):
+        """Procesa tareas periódicas del gestor"""
+        try:
+            current_time = utime.ticks_ms()
+            maintenance_interval = 3600000  # 1 hora
+            
+            # Verificar sync más frecuentemente
+            self.check_sync()
+            
+            # Mantenimiento menos frecuente
+            if utime.ticks_diff(current_time, self.last_sync) >= maintenance_interval:
+                self.maintenance()
+                
+            return True
+            
+        except Exception as e:
+            print(f"[ESP32_ID] Error en process: {e}")
             return False

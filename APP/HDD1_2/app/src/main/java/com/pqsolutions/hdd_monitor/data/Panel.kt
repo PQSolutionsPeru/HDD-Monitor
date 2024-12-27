@@ -1,206 +1,93 @@
 package com.pqsolutions.hdd_monitor.data
 
-import com.google.firebase.firestore.PropertyName
-import com.pqsolutions.hdd_monitor.domain.model.Stateable
-import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
-import com.pqsolutions.hdd_monitor.util.Constants.Status
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
+import java.io.Serializable
 
 data class Panel(
     val documentName: String = "",
     val name: String = "",
     val location: String = "",
-    val SSID: String = "",
-    @get:PropertyName("SSID_CON")
-    @set:PropertyName("SSID_CON")
-    var SSID_CON: String? = null,
-    @get:PropertyName("SSID_PW")
-    @set:PropertyName("SSID_PW")
-    var SSID_PW: String = "",
-    @get:PropertyName("ESP32_IP")
-    @set:PropertyName("ESP32_IP")
-    var ESP32_IP: String = "",
+    val esp32_id: String = "",  // ID del ESP32 asociado
     val clientName: String = "",
+    val lastUpdate: Long = System.currentTimeMillis(),
     val relays: List<Relay> = listOf(
-        Relay(name = "Alarma"),
-        Relay(name = "Problema"),
-        Relay(name = "Supervision")
-    ),
-    @get:PropertyName("overallStatus")
-    var overallStatus: String = Status.OK
-) : Stateable {
+        Relay(RELAY_ALARM, STATUS_DISC),
+        Relay(RELAY_PROBLEM, STATUS_DISC),
+        Relay(RELAY_SUPERVISION, STATUS_DISC)
+    )
+) : Serializable {
 
-    override val status: String
-        get() = overallStatus
+    val overallStatus: String
+        get() = when {
+            relays.any { it.status == STATUS_DISC } ->
+                relays.filter { it.status == STATUS_DISC }
+                    .joinToString(", ") { it.name }
+            else -> STATUS_OK
+        }
+
+    fun toMap(): Map<String, Any?> = mapOf(
+        "documentName" to documentName,
+        "name" to name,
+        "location" to location,
+        "esp32_id" to esp32_id,
+        "clientName" to clientName,
+        "lastUpdate" to lastUpdate
+    )
+
+    fun updateRelay(relayName: String, newStatus: String): Panel {
+        val updatedRelays = relays.map { relay ->
+            if (relay.name == relayName) relay.copy(status = newStatus)
+            else relay
+        }
+        return copy(relays = updatedRelays)
+    }
+
+    fun isValid(): Boolean =
+        name.isNotBlank() && location.isNotBlank()
+
+    fun hasValidESP32(): Boolean = esp32_id.isNotEmpty()
 
     companion object {
-        private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
+        const val STATUS_OK = "OK"
+        const val STATUS_DISC = "DISC"
+
+        const val RELAY_ALARM = "Alarma"
+        const val RELAY_PROBLEM = "Problema"
+        const val RELAY_SUPERVISION = "Supervision"
 
         fun createNew(
             name: String,
             location: String,
-            ssid: String,
-            ssidPw: String,
-            esp32Ip: String,
-            clientName: String
-        ): Panel {
-            return Panel(
-                documentName = "",
-                name = name.trim(),
-                location = location.trim(),
-                SSID = ssid.trim(),
-                SSID_PW = ssidPw.trim(),
-                ESP32_IP = esp32Ip.trim(),
-                clientName = clientName,
-                SSID_CON = null,
-                overallStatus = Status.OK
-            )
-        }
-
-        fun fromMap(map: Map<String, Any?>): Panel {
-            return Panel(
-                documentName = map["documentName"] as? String ?: "",
-                name = map["name"] as? String ?: "",
-                location = map["location"] as? String ?: "",
-                SSID = map["SSID"] as? String ?: "",
-                SSID_CON = map["SSID_CON"] as? String,
-                SSID_PW = map["SSID_PW"] as? String ?: "",
-                ESP32_IP = map["ESP32_IP"] as? String ?: "",
-                clientName = map["clientDocName"] as? String ?: "",
-                overallStatus = map["overallStatus"] as? String ?: Status.OK
-            )
-        }
-
-        private fun defaultRelays() = listOf(
-            Relay(name = "Alarma"),
-            Relay(name = "Problema"),
-            Relay(name = "Supervision")
+            clientName: String,
+            esp32Id: String
+        ) = Panel(
+            name = name,
+            location = location,
+            clientName = clientName,
+            esp32_id = esp32Id
         )
-    }
-
-    fun isValid(): Boolean {
-        return name.isNotBlank() &&
-                location.isNotBlank() &&
-                SSID.isNotBlank() &&
-                SSID_PW.isNotBlank() &&
-                clientName.isNotBlank() &&
-                relays.isNotEmpty() &&
-                relays.all { it.isValid() }
-    }
-
-    private fun validateDocumentNames(): Boolean {
-        return documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.PANEL)
-        // Removida la validación de clientName ya que ahora es el nombre real
-    }
-
-    fun toMap(): Map<String, Any?> {
-        return mapOf(
-            "documentName" to documentName,
-            "name" to name,
-            "location" to location,
-            "SSID" to SSID,
-            "SSID_CON" to SSID_CON,
-            "SSID_PW" to SSID_PW,
-            "ESP32_IP" to ESP32_IP,
-            "clientDocName" to clientName,
-            "overallStatus" to overallStatus
-        )
-    }
-
-    fun updateOverallStatus() {
-        overallStatus = when {
-            relays.any { it.status == Status.DISC } -> Status.DISC
-            else -> Status.OK
-        }
-    }
-
-    fun toLogString(): String = buildString {
-        append("Panel(")
-        append("documentName='$documentName', ")
-        append("name='$name', ")
-        append("location='$location', ")
-        append("ESP32_IP='$ESP32_IP', ")
-        append("SSID_CON=${SSID_CON ?: "null"}, ")
-        append("clientDocName='$clientName', ")
-        append("status='$overallStatus', ")
-        append(")")
-    }
-
-    fun getConnectionStatus(): String {
-        return SSID_CON ?: Status.DISC
-    }
-
-    fun isConnected(): Boolean {
-        return SSID_CON == Status.OK
-    }
-
-    override fun canTransitionTo(newStatus: String): Boolean {
-        return when (status) {
-            Status.OK -> newStatus == Status.DISC
-            Status.DISC -> newStatus == Status.OK
-            else -> false
-        }
     }
 }
 
 data class Relay(
-    val name: String = "",
-    @get:PropertyName("status")
-    override val status: String = Status.OK,
-    val date_time: String = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"))
-) : Stateable {
+    val name: String,
+    val status: String,
+    val date_time: String? = null
+) : Serializable {
+
+    fun toMap(): Map<String, Any?> = mapOf(
+        "name" to name,
+        "status" to status,
+        "date_time" to date_time
+    )
 
     companion object {
-        private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
+        const val STATUS_OK = "OK"
+        const val STATUS_DISC = "DISC"
 
-        fun fromMap(map: Map<String, Any?>): Relay {
-            return Relay(
-                name = map["name"] as? String ?: "",
-                status = map["status"] as? String ?: Status.OK,
-                date_time = map["date_time"] as? String ?:
-                LocalDateTime.now().format(DATE_FORMATTER)
-            )
-        }
-    }
-
-    fun isValid(): Boolean {
-        return name.isNotBlank() &&
-                status in listOf(Status.OK, Status.DISC)
-    }
-
-    fun toMap(): Map<String, Any> {
-        return mapOf(
-            "name" to name,
-            "status" to status,
-            "date_time" to date_time
+        fun fromMap(map: Map<String, Any?>): Relay = Relay(
+            name = map["name"]?.toString() ?: "",
+            status = map["status"]?.toString() ?: STATUS_DISC,
+            date_time = map["date_time"]?.toString()
         )
     }
-
-    override fun canTransitionTo(newStatus: String): Boolean {
-        return when (status) {
-            Status.OK -> newStatus == Status.DISC
-            Status.DISC -> newStatus == Status.OK
-            else -> false
-        }
-    }
-
-    fun withUpdatedStatus(newStatus: String): Relay {
-        return if (canTransitionTo(newStatus)) {
-            copy(
-                status = newStatus,
-                date_time = LocalDateTime.now().format(DATE_FORMATTER)
-            )
-        } else {
-            this
-        }
-    }
-
-    fun withUpdatedDateTime(): Relay {
-        return copy(
-            date_time = LocalDateTime.now().format(DATE_FORMATTER)
-        )
-    }
-
-    override fun toString(): String = "$name: $status ($date_time)"
 }

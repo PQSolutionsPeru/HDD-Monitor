@@ -6,9 +6,16 @@
 # https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble
 
 import bluetooth
+from machine import Pin
+import time
+from micropython import const
+import struct
 from ble_advertising import advertising_payload
 
-from micropython import const
+# Advertising payloads are repeated packets of the following form:
+#   1 byte data length (N + 1)
+#   1 byte type (see constants below)
+#   N bytes type-specific data
 
 _IRQ_CENTRAL_CONNECT = const(1)
 _IRQ_CENTRAL_DISCONNECT = const(2)
@@ -34,42 +41,52 @@ _UART_SERVICE = (
 # org.bluetooth.characteristic.gap.appearance.xml
 _ADV_APPEARANCE_GENERIC_COMPUTER = const(128)
 
-
 class BLEUART:
     def __init__(self, ble, name="mpy-uart", rxbuf=100):
+        # Primero inicializar el flag de cierre
+        self.is_closing = False
+        
         self._ble = ble
         self._ble.active(True)
         self._ble.irq(self._irq)
         ((self._tx_handle, self._rx_handle),) = self._ble.gatts_register_services((_UART_SERVICE,))
-        # Increase the size of the rx buffer and enable append mode.
         self._ble.gatts_set_buffer(self._rx_handle, rxbuf, True)
         self._connections = set()
         self._rx_buffer = bytearray()
         self._handler = None
-        # Optionally add services=[_UART_UUID], but this is likely to make the payload too large.
         self._payload = advertising_payload(name=name, appearance=_ADV_APPEARANCE_GENERIC_COMPUTER)
+        
+        # Ahora sí llamar a _advertise
         self._advertise()
 
     def irq(self, handler):
         self._handler = handler
 
     def _irq(self, event, data):
-        # Track connections so we can send notifications.
-        if event == _IRQ_CENTRAL_CONNECT:
-            conn_handle, _, _ = data
-            self._connections.add(conn_handle)
-        elif event == _IRQ_CENTRAL_DISCONNECT:
-            conn_handle, _, _ = data
-            if conn_handle in self._connections:
-                self._connections.remove(conn_handle)
-            # Start advertising again to allow a new connection.
-            self._advertise()
-        elif event == _IRQ_GATTS_WRITE:
-            conn_handle, value_handle = data
-            if conn_handle in self._connections and value_handle == self._rx_handle:
-                self._rx_buffer += self._ble.gatts_read(self._rx_handle)
-                if self._handler:
-                    self._handler()
+        if self.is_closing:  # No procesar eventos si estamos cerrando
+            return
+
+        try:
+            if event == _IRQ_CENTRAL_CONNECT:
+                conn_handle, _, _ = data
+                self._connections.add(conn_handle)
+                
+            elif event == _IRQ_CENTRAL_DISCONNECT:
+                conn_handle, _, _ = data
+                if conn_handle in self._connections:
+                    self._connections.remove(conn_handle)
+                if not self.is_closing:
+                    self._advertise()
+                    
+            elif event == _IRQ_GATTS_WRITE:
+                conn_handle, value_handle = data
+                if conn_handle in self._connections and value_handle == self._rx_handle:
+                    self._rx_buffer += self._ble.gatts_read(self._rx_handle)
+                    if self._handler:
+                        self._handler()
+                        
+        except Exception as e:
+            print(f"[BLEUART] Error en _irq: {e}")
 
     def any(self):
         return len(self._rx_buffer)
@@ -83,15 +100,54 @@ class BLEUART:
 
     def write(self, data):
         for conn_handle in self._connections:
-            self._ble.gatts_notify(conn_handle, self._tx_handle, data)
+            try:
+                self._ble.gatts_notify(conn_handle, self._tx_handle, data)
+            except:
+                pass
 
     def close(self):
-        for conn_handle in self._connections:
-            self._ble.gap_disconnect(conn_handle)
-        self._connections.clear()
+        """Cierra conexiones BLE de manera segura"""
+        try:
+            self.is_closing = True
+            # Primero dejar de anunciar
+            try:
+                self._ble.gap_advertise(None)
+            except:
+                pass
+
+            # Esperar un momento
+            time.sleep_ms(100)
+
+            # Desconectar conexiones activas
+            for conn_handle in self._connections.copy():
+                try:
+                    self._ble.gap_disconnect(conn_handle)
+                    time.sleep_ms(100)
+                except:
+                    pass
+
+            # Limpiar buffer y conexiones
+            self._rx_buffer = bytearray()
+            self._connections.clear()
+            
+            # Desactivar BLE solo después de limpiar todo
+            try:
+                self._ble.active(False)
+            except:
+                pass
+            
+        except Exception as e:
+            print(f"[BLEUART] Error en close: {e}")
+        finally:
+            self.is_closing = False
 
     def _advertise(self, interval_us=500000):
-        self._ble.gap_advertise(interval_us, adv_data=self._payload)
+        """Inicia advertising con manejo de errores"""
+        try:
+            if not self.is_closing:
+                self._ble.gap_advertise(interval_us, adv_data=self._payload)
+        except Exception as e:
+            print(f"[BLEUART] Error en _advertise: {e}")
 
 
 def demo():

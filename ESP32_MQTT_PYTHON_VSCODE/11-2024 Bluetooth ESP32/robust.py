@@ -2,7 +2,7 @@ import utime as time
 from umqtt.simple import MQTTClient as SimpleMQTTClient
 
 class MQTTClient(SimpleMQTTClient):
-    DELAY = 2
+    DELAY = 5
     DEBUG = False
 
     def delay(self, i):

@@ -227,7 +227,7 @@ fun AdminPanelItem(panel: Panel) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
             Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
-            Text(text = "IP: ${panel.ESP32_IP}", style = MaterialTheme.typography.bodyMedium)
+            Text(text = "ID ESP32: ${panel.esp32_id}", style = MaterialTheme.typography.bodyMedium)
             Text(
                 text = "Estado: ${panel.overallStatus}",
                 color = statusColor,

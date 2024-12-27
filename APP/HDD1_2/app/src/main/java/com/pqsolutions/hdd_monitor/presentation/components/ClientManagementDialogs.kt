@@ -56,35 +56,12 @@ fun PanelDialog(
     val context = LocalContext.current
     var name by remember { mutableStateOf(panel?.name ?: "") }
     var location by remember { mutableStateOf(panel?.location ?: "") }
-    var esp32Ip by remember { mutableStateOf(panel?.ESP32_IP ?: "") }
-    var ssid by remember { mutableStateOf(panel?.SSID ?: "") }
-    var ssidPw by remember { mutableStateOf(panel?.SSID_PW ?: "") }
 
     var nameError by remember { mutableStateOf<String?>(null) }
     var locationError by remember { mutableStateOf<String?>(null) }
-    var esp32IpError by remember { mutableStateOf<String?>(null) }
-    var ssidError by remember { mutableStateOf<String?>(null) }
-    var ssidPwError by remember { mutableStateOf<String?>(null) }
 
     fun validateField(value: String, field: String): String? {
         return if (value.isBlank()) context.getString(R.string.error_required_field) else null
-    }
-
-    fun validateIp(value: String): String? {
-        return when {
-            value.isBlank() -> context.getString(R.string.error_required_field)
-            !value.matches(Regex("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\$")) ->
-                context.getString(R.string.error_invalid_ip)
-            else -> null
-        }
-    }
-
-    fun validateSsidPw(value: String): String? {
-        return when {
-            value.isBlank() -> context.getString(R.string.error_required_field)
-            value.length < 8 -> context.getString(R.string.error_ssid_password_length)
-            else -> null
-        }
     }
 
     AlertDialog(
@@ -124,56 +101,13 @@ fun PanelDialog(
                     supportingText = { ValidationError(locationError) },
                     singleLine = true
                 )
-
-                OutlinedTextField(
-                    value = esp32Ip,
-                    onValueChange = {
-                        esp32Ip = it
-                        esp32IpError = validateIp(it)
-                    },
-                    label = { Text(stringResource(R.string.field_esp32_ip)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = esp32IpError != null,
-                    supportingText = { ValidationError(esp32IpError) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = ssid,
-                    onValueChange = {
-                        ssid = it
-                        ssidError = validateField(it, "ssid")
-                    },
-                    label = { Text(stringResource(R.string.field_ssid)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = ssidError != null,
-                    supportingText = { ValidationError(ssidError) },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = ssidPw,
-                    onValueChange = {
-                        ssidPw = it
-                        ssidPwError = validateSsidPw(it)
-                    },
-                    label = { Text(stringResource(R.string.field_ssid_password)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = ssidPwError != null,
-                    supportingText = { ValidationError(ssidPwError) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
-                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     val isValid = nameError == null && locationError == null &&
-                            esp32IpError == null && ssidError == null && ssidPwError == null &&
-                            name.isNotBlank() && location.isNotBlank() &&
-                            esp32Ip.isNotBlank() && ssid.isNotBlank() && ssidPw.isNotBlank()
+                            name.isNotBlank() && location.isNotBlank()
 
                     if (isValid) {
                         performHapticFeedback(context)
@@ -183,10 +117,7 @@ fun PanelDialog(
                                 documentName = panel?.documentName ?: "",
                                 name = name.trim(),
                                 location = location.trim(),
-                                ESP32_IP = esp32Ip.trim(),
-                                SSID = ssid.trim(),
-                                SSID_PW = ssidPw.trim(),
-                                SSID_CON = panel?.SSID_CON,
+                                esp32_id = panel?.esp32_id ?: "",
                                 clientName = panel?.clientName ?: ""
                             )
                         )

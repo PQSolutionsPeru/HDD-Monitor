@@ -62,6 +62,10 @@
     <string name="panel_connection_ok">Conectado</string>
     <string name="panel_connection_error">Desconectado</string>
 
+    <!-- ESP32 Strings -->
+    <string name="panel_esp32_connected">ESP32 Conectado</string>
+    <string name="panel_esp32_disconnected">ESP32 Desconectado</string>
+
     <!-- BleConfig Strings -->
     <string name="configure_esp32">Configurar Chip Monitor</string>
     <string name="wifi_name">Nombre de red WiFi</string>

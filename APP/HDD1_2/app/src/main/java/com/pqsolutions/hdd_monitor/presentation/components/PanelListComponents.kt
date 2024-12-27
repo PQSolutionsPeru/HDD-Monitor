@@ -128,26 +128,14 @@ fun PanelCard(
                     )
                 }
                 Row {
-                    IconButton(
-                        onClick = {
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            onEditPanel()
-                        }
-                    ) {
+                    IconButton(onClick = onEditPanel) {
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = stringResource(R.string.edit),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                    IconButton(
-                        onClick = {
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            onDeletePanel()
-                        }
-                    ) {
+                    IconButton(onClick = onDeletePanel) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = stringResource(R.string.delete),
@@ -155,29 +143,17 @@ fun PanelCard(
                         )
                     }
                     IconButton(
-                        onClick = {
-                            performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
-                            expanded = !expanded
-                        }
+                        onClick = { expanded = !expanded }
                     ) {
                         Icon(
                             imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (expanded)
-                                "Mostrar menos" else "Mostrar más"
+                            contentDescription = if (expanded) "Mostrar menos" else "Mostrar más"
                         )
                     }
                 }
             }
 
-            // Información técnica
-            Text(
-                text = stringResource(R.string.field_esp32_ip, panel.ESP32_IP),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            // Estado de conexión WiFi
+            // Estado del ESP32
             Row(
                 modifier = Modifier.padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -185,17 +161,15 @@ fun PanelCard(
                 Icon(
                     imageVector = Icons.Default.Wifi,
                     contentDescription = null,
-                    tint = if (panel.SSID_CON == "OK") HddGreen else HddRed,
+                    tint = if (panel.hasValidESP32()) HddGreen else HddRed,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = stringResource(
-                        if (panel.SSID_CON == "OK")
-                            R.string.panel_connection_ok
-                        else
-                            R.string.panel_connection_error
-                    ),
+                    text = if (panel.hasValidESP32())
+                        stringResource(R.string.panel_esp32_connected)
+                    else
+                        stringResource(R.string.panel_esp32_disconnected),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -208,8 +182,7 @@ fun PanelCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = stringResource(R.string.panel_relay_status),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = MaterialTheme.typography.titleSmall
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 panel.relays.forEach { relay ->

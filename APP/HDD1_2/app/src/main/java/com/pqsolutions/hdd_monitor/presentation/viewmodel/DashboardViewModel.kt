@@ -33,25 +33,25 @@ class DashboardViewModel @Inject constructor(
     private var panelsJob: Job? = null
 
     init {
-        Log.d(TAG, "DashboardViewModel initialized")
+        //Log.d(TAG, "DashboardViewModel initialized")
         loadPanels()
     }
 
     fun loadPanels() {
-        Log.d(TAG, "loadPanels() called")
+        //Log.d(TAG, "loadPanels() called")
         panelsJob?.cancel()
         panelsJob = viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
-                Log.d(TAG, "Current user: ${currentUser?.documentName}")
+                //Log.d(TAG, "Current user: ${currentUser?.documentName}")
 
                 if (currentUser != null) {
                     val clientDocName = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientDocName
-                    Log.d(TAG, "Fetching panels for client document: $clientDocName")
+                    ////Log.d(TAG, "Fetching panels for client document: $clientDocName")
 
                     panelRepository.getPanels(clientDocName).collect { panels ->
-                        Log.d(TAG, "Received ${panels.size} panels")
+                        //Log.d(TAG, "Received ${panels.size} panels")
 
                         // Validar los nombres de documentos
                         val validPanels = panels.filter { panel ->
@@ -64,10 +64,10 @@ class DashboardViewModel @Inject constructor(
                         }
 
                         validPanels.forEach { panel ->
-                            Log.d(TAG, "Panel: ${panel.name} " +
+                            //Log.d(TAG, "Panel: ${panel.name} " +
                                     "(DocName: ${panel.documentName}, " +
-                                    "ClientDoc: ${panel.clientName})")
-                            Log.d(TAG, "Relays: ${panel.relays}")
+                                    "ClientDoc: ${panel.clientName})"
+                            //Log.d(TAG, "Relays: ${panel.relays}")
                         }
 
                         // Obtener los nombres de los clientes
@@ -92,42 +92,38 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun updatePanels(panels: List<Panel>, clientsMap: Map<String, String>) {
-        Log.d(TAG, "updatePanels called with ${panels.size} panels")
+        //Log.d(TAG, "updatePanels called with ${panels.size} panels")
         _uiState.update { currentState ->
-            Log.d(TAG, "Current state before update: $currentState")
+            //Log.d(TAG, "Current state before update: $currentState")
             val groupedPanels = panels.groupBy { clientsMap[it.clientName] ?: it.clientName }
-            Log.d(TAG, "Grouped panels by client names: ${groupedPanels.keys}")
+            //Log.d(TAG, "Grouped panels by client names: ${groupedPanels.keys}")
 
-            val updatedPanels = panels.map { panel ->
-                val newStatus = determineOverallPanelStatus(panel)
-                Log.d(TAG, "Panel ${panel.name} new status: $newStatus")
-                panel.copy(overallStatus = newStatus)
-            }
-
-            Log.d(TAG, "Updated panels: ${updatedPanels.map { it.name to it.overallStatus }}")
+            // Ya no necesitamos mapear los paneles para actualizar overallStatus
+            // porque es una propiedad calculada en la clase Panel
+            //Log.d(TAG, "Updated panels: ${panels.map { it.name to it.overallStatus }}")
 
             val newState = currentState.copy(
                 isLoading = false,
-                panels = updatedPanels,
+                panels = panels,  // Usamos los paneles directamente
                 groupedPanels = groupedPanels,
                 clientNames = clientsMap,
                 error = null,
                 lastUpdate = System.currentTimeMillis()
             )
-            Log.d(TAG, "New state: $newState")
+            //Log.d(TAG, "New state: $newState")
             newState
         }
         logPanelState("After updatePanels")
     }
 
     private fun determineOverallPanelStatus(panel: Panel): String {
-        Log.d(TAG, "Determining overall status for panel: ${panel.name}")
+        //Log.d(TAG, "Determining overall status for panel: ${panel.name}")
         val discRelays = panel.relays.filter { it.status == "DISC" }
         val status = when {
             discRelays.isNotEmpty() -> discRelays.joinToString(", ") { it.name }
             else -> "OK"
         }
-        Log.d(TAG, "Overall status for panel ${panel.name}: $status")
+        //Log.d(TAG, "Overall status for panel ${panel.name}: $status")
         return status
     }
 
@@ -148,27 +144,27 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun logPanelState(context: String) {
-        Log.d(TAG, "$context - Panels state:")
+        //Log.d(TAG, "$context - Panels state:")
         _uiState.value.panels.forEach { panel ->
-            Log.d(TAG, "Panel ${panel.name} " +
+            //Log.d(TAG, "Panel ${panel.name} " +
                     "(DocName: ${panel.documentName}, " +
                     "ClientDoc: ${panel.clientName}) " +
-                    "Relays: ${panel.relays.size}")
+                    "Relays: ${panel.relays.size}"
             panel.relays.forEach { relay ->
-                Log.d(TAG, "  Relay: ${relay.name}, " +
+                //Log.d(TAG, "  Relay: ${relay.name}, " +
                         "Status: ${relay.status}, " +
-                        "DateTime: ${relay.date_time}")
+                        "DateTime: ${relay.date_time}"
             }
         }
     }
 
     fun refreshPanels() {
-        Log.d(TAG, "refreshPanels() called")
+        //Log.d(TAG, "refreshPanels() called")
         loadPanels()
     }
 
     fun cancelCurrentJob() {
-        Log.d(TAG, "cancelCurrentJob() called")
+        //Log.d(TAG, "cancelCurrentJob() called")
         panelsJob?.cancel()
         panelsJob = null
     }
@@ -176,7 +172,7 @@ class DashboardViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         cancelCurrentJob()
-        Log.d(TAG, "ViewModel cleared")
+        //Log.d(TAG, "ViewModel cleared")
     }
 
     companion object {

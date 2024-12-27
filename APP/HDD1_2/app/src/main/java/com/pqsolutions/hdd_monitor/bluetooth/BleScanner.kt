@@ -1,10 +1,13 @@
 package com.pqsolutions.hdd_monitor.bluetooth
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.*
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,13 +31,17 @@ class BleScanner @Inject constructor(
     val foundDevices: StateFlow<Set<BluetoothDevice>> = _foundDevices.asStateFlow()
 
     private val scanCallback = object : ScanCallback() {
+        @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device
-            if (device.name?.startsWith("ESP32-") == true) {
-                val currentDevices = _foundDevices.value.toMutableSet()
-                currentDevices.add(device)
-                _foundDevices.value = currentDevices
-                Log.d(TAG, "ESP32 encontrado: ${device.name}")
+            if (hasBluetoothPermissions()) {
+                val deviceName = device.name
+                if (deviceName?.startsWith("ESP32-") == true) {
+                    val currentDevices = _foundDevices.value.toMutableSet()
+                    currentDevices.add(device)
+                    _foundDevices.value = currentDevices
+                    Log.d(TAG, "ESP32 encontrado: $deviceName")
+                }
             }
         }
 
@@ -54,7 +61,7 @@ class BleScanner @Inject constructor(
 
     @SuppressLint("MissingPermission")
     fun startScan() {
-        if (_isScanning.value) return
+        if (_isScanning.value || !hasBluetoothPermissions()) return
 
         try {
             _foundDevices.value = emptySet()
@@ -62,10 +69,17 @@ class BleScanner @Inject constructor(
 
             val settings = ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+                .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+                .setNumOfMatches(ScanSettings.MATCH_NUM_MAX_ADVERTISEMENT)
+                .setReportDelay(0L)
                 .build()
 
             bleScanner?.startScan(null, settings, scanCallback)
             Log.d(TAG, "Escaneo BLE iniciado")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Error de permisos al iniciar escaneo", e)
+            stopScan()
         } catch (e: Exception) {
             Log.e(TAG, "Error iniciando escaneo", e)
             stopScan()
@@ -85,6 +99,16 @@ class BleScanner @Inject constructor(
 
     fun clearDevices() {
         _foundDevices.value = emptySet()
+    }
+
+    private fun hasBluetoothPermissions(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
+                    PackageManager.PERMISSION_GRANTED
+        } else {
+            context.checkSelfPermission(Manifest.permission.BLUETOOTH) ==
+                    PackageManager.PERMISSION_GRANTED
+        }
     }
 
     companion object {

@@ -29,6 +29,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
+/**
+ * ViewModel principal que maneja la lógica de negocio de la aplicación
+ */
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository,
@@ -50,7 +53,7 @@ class MainViewModel @Inject constructor(
     companion object {
         private const val TAG = "MainViewModel"
         const val PANEL_UPDATE_ACTION = "com.pqsolutions.hdd_monitor.PANEL_UPDATE"
-        const val CLIENT_MANAGEMENT_ROUTE = "client_management" // Nueva constante
+        const val CLIENT_MANAGEMENT_ROUTE = "client_management"
     }
 
     private val panelUpdateReceiver = object : BroadcastReceiver() {
@@ -153,7 +156,7 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun updateRelay(clientDocName: String, panelDocName: String, relayName: String, relayStatus: String) {
+    private fun updateRelay(clientDocName: String, panelDocName: String, relayName: String, relayStatus: String) {
         viewModelScope.launch {
             try {
                 panelRepository.updateRelayStatus(clientDocName, panelDocName, relayName, relayStatus)
@@ -315,12 +318,12 @@ class MainViewModel @Inject constructor(
     private suspend fun updateFCMToken() {
         try {
             val token = FirebaseMessaging.getInstance().token.await()
-            Log.d(TAG, "Token FCM obtenido: $token")  // Añadir este log
+            Log.d(TAG, "FCM Token obtenido: $token")
             val currentUser = userRepository.getCurrentUser()
             if (currentUser != null) {
-                Log.d(TAG, "Actualizando token para usuario: ${currentUser.documentName}")  // Añadir este log
+                Log.d(TAG, "Actualizando token para usuario: ${currentUser.documentName}")
                 userRepository.updateFcmToken(currentUser.documentName, token)
-                Log.d(TAG, "Token FCM actualizado exitosamente")  // Añadir este log
+                Log.d(TAG, "Token FCM actualizado exitosamente")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error updating FCM token: ${e.message}", e)

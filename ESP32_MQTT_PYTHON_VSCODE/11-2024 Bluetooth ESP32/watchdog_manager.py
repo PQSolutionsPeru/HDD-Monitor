@@ -5,21 +5,21 @@ import gc
 
 class WatchdogManager:
     def __init__(self):
-        """Inicializa el watchdog con timeout de 30 segundos"""
-        self.TIMEOUT = 120000  # 30 segundos
+        """Inicializa el watchdog con timeout aumentado"""
+        self.TIMEOUT = 600000  # 600 segundos (10 minutos)
         self.watchdog = WDT(timeout=self.TIMEOUT)
         
         # Intervalos críticos
         self.last_feed = utime.ticks_ms()
-        self.FEED_INTERVAL = 10000  # 10 segundos
+        self.FEED_INTERVAL = 60000  # 60 segundos
         
         # Control de resets
         self.reset_count = 0
-        self.MAX_RESETS = 3        # Máximo de resets antes de hard reset
+        self.MAX_RESETS = 3
         self.last_reset = 0
-        self.RESET_WINDOW = 60000  # 1 minuto
+        self.RESET_WINDOW = 600000  # 10 minutos
         
-        print("[WATCHDOG] Iniciado")
+        print("[WATCHDOG] Iniciado con timeout extendido")
 
     def feed(self):
         """Alimenta al watchdog si ha pasado el intervalo"""
