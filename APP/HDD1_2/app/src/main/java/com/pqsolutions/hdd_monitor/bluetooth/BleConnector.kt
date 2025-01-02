@@ -3,6 +3,7 @@ package com.pqsolutions.hdd_monitor.bluetooth
 import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,9 @@ class BleConnector @Inject constructor(
     private val _wifiConfigState = MutableStateFlow<WifiConfigState>(WifiConfigState.Initial)
     val wifiConfigState: StateFlow<WifiConfigState> = _wifiConfigState.asStateFlow()
 
+    private var currentResponseBuffer = StringBuilder()
+    private val ESP32_CONFIG_RESPONSE_TIMEOUT = 30000L  // 30 segundos timeout
+
     private val gattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -34,7 +38,6 @@ class BleConnector @Inject constructor(
                     Log.d(TAG, "Conectado al dispositivo GATT")
                     _connectionState.value = BleConnectionState.Connected
 
-                    // Verificar permisos antes de descubrir servicios
                     if (checkBluetoothPermission()) {
                         try {
                             gatt.discoverServices()
@@ -61,16 +64,6 @@ class BleConnector @Inject constructor(
             }
         }
 
-        private fun checkBluetoothPermission(): Boolean {
-            return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) ==
-                        android.content.pm.PackageManager.PERMISSION_GRANTED
-            } else {
-                context.checkSelfPermission(android.Manifest.permission.BLUETOOTH) ==
-                        android.content.pm.PackageManager.PERMISSION_GRANTED
-            }
-        }
-
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 findCharacteristics(gatt)
@@ -87,17 +80,9 @@ class BleConnector @Inject constructor(
             status: Int
         ) {
             val success = status == BluetoothGatt.GATT_SUCCESS
-            Log.d(TAG, "Escritura ${if (success) "exitosa" else "fallida"}")
+            Log.d(TAG, if (success) "Escritura exitosa" else "Escritura fallida")
 
-            if (success) {
-                // Habilitar notificaciones para recibir respuesta
-                notifyCharacteristic?.let { char ->
-                    gatt.setCharacteristicNotification(char, true)
-                    val descriptor = char.getDescriptor(CCCD_UUID)
-                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    gatt.writeDescriptor(descriptor)
-                }
-            } else {
+            if (!success) {
                 _wifiConfigState.value = WifiConfigState.Error("Error enviando configuración")
             }
         }
@@ -107,21 +92,39 @@ class BleConnector @Inject constructor(
             characteristic: BluetoothGattCharacteristic
         ) {
             val message = characteristic.value.toString(Charsets.UTF_8)
-            Log.d(TAG, "Respuesta recibida: $message")
+            Log.d(TAG, "Respuesta recibida en BLE: $message")
 
-            when {
-                message.contains("ok:wifi_configurado") -> {
-                    val ip = if (message.contains("|ip:")) {
-                        message.substringAfter("|ip:").trim()
-                    } else ""
-                    Log.d(TAG, "IP extraída: $ip")  // Para debug
-                    _wifiConfigState.value = WifiConfigState.Success(ip)
-                }
-                message.contains("error:") -> {
-                    val errorMsg = message.substringAfter("error:")
-                    _wifiConfigState.value = WifiConfigState.Error(errorMsg)
-                }
+            // Procesar respuesta inmediatamente
+            processCompleteResponse(message.trim())
+        }
+    }
+
+    private fun processCompleteResponse(response: String) {
+        Log.d(TAG, "Procesando respuesta BLE: $response")
+        when {
+            response.startsWith("ready:wifi_config") -> {
+                Log.d(TAG, "ESP32 listo para configuración WiFi")
             }
+            response.startsWith("ok:wifi_configurado") -> {
+                Log.d(TAG, "WiFi configurado exitosamente, notificando Success")
+                _wifiConfigState.value = WifiConfigState.Success()
+                Log.d(TAG, "Estado Success emitido")
+            }
+            response.startsWith("error:") -> {
+                val errorMsg = response.substringAfter("error:")
+                Log.e(TAG, "Error recibido: $errorMsg")
+                _wifiConfigState.value = WifiConfigState.Error(errorMsg)
+            }
+        }
+    }
+
+    private fun checkBluetoothPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -139,6 +142,9 @@ class BleConnector @Inject constructor(
 
         // Habilitar notificaciones
         gatt.setCharacteristicNotification(notifyCharacteristic!!, true)
+        val descriptor = notifyCharacteristic!!.getDescriptor(CCCD_UUID)
+        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        gatt.writeDescriptor(descriptor)
     }
 
     @SuppressLint("MissingPermission")
@@ -153,6 +159,7 @@ class BleConnector @Inject constructor(
             """.trimIndent()
 
             return writeCharacteristic?.let { characteristic ->
+                currentResponseBuffer.clear()
                 characteristic.value = message.toByteArray()
                 bluetoothGatt?.writeCharacteristic(characteristic) == true
             } ?: false
@@ -179,7 +186,7 @@ class BleConnector @Inject constructor(
                     retryCount++
                     if (retryCount < 3) {
                         Log.d(TAG, "Reintentando conexión... Intento $retryCount")
-                        Thread.sleep(2000) // Esperar 2 segundos entre intentos
+                        Thread.sleep(2000)
                     } else {
                         throw e
                     }
@@ -187,7 +194,8 @@ class BleConnector @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error conectando después de 3 intentos", e)
-            _connectionState.value = BleConnectionState.Error("Error de conexión: ${e.message}")
+            _connectionState.value = BleConnectionState.Error(e.message ?: "Error de conexión")
+            disconnect()
         }
     }
 
@@ -197,7 +205,9 @@ class BleConnector @Inject constructor(
             bluetoothGatt?.close()
             bluetoothGatt = null
             writeCharacteristic = null
+            notifyCharacteristic = null
             _connectionState.value = BleConnectionState.Disconnected
+            currentResponseBuffer.clear()
         } catch (e: Exception) {
             Log.e(TAG, "Error desconectando", e)
         }
@@ -215,6 +225,6 @@ class BleConnector @Inject constructor(
 sealed class WifiConfigState {
     object Initial : WifiConfigState()
     object Sending : WifiConfigState()
-    data class Success(val ip: String = "") : WifiConfigState()
+    data class Success(val ip: String = "", val esp32Id: String = "") : WifiConfigState()
     data class Error(val message: String) : WifiConfigState()
 }

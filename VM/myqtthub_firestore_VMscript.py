@@ -24,10 +24,13 @@ MQTT_PASSWORD = 'compute_engine'
 db = firestore.Client(project='fir-hdd-monitor-d00de')
 
 def on_connect(client, userdata, flags, rc):
-    """Callback de conexión MQTT"""
     if rc == 0:
         logging.info("Conectado al Broker MQTT!")
-        # Suscribirse a todos los tópicos relevantes
+        
+        # Limpiar mensajes retain al conectar
+        clean_all_retained_messages(client)
+        
+        # Suscribirse a los tópicos
         topics = [
             ("esp32/mac_search", 1),
             ("esp32/network_info", 1),
@@ -41,6 +44,44 @@ def on_connect(client, userdata, flags, rc):
             logging.info(f"Suscrito a: {topic}")
     else:
         logging.error(f"Error al conectar, código: {rc}")
+
+def clean_retained_message(client, esp32_id):
+    """Limpia mensajes retain específicos para un ESP32"""
+    try:
+        topics_to_clean = [
+            f"esp32/config/{esp32_id}",
+            f"system/status/{esp32_id}",
+            f"esp32/network_info",  # Removido /{esp32_id}
+            f"esp32/config_ack/{esp32_id}"
+        ]
+        
+        for topic in topics_to_clean:
+            # Verificar que el tópico no contenga wildcards
+            if '+' not in topic and '#' not in topic:
+                client.publish(topic, "", qos=1, retain=False)
+                time.sleep(0.1)  # Pequeña pausa entre publicaciones
+            
+        logging.info(f"Mensajes retain limpiados para ESP32 {esp32_id}")
+    except Exception as e:
+        logging.error(f"Error limpiando mensajes retain: {e}")
+
+def clean_all_retained_messages(client):
+    """Limpia todos los mensajes retain relevantes al iniciar"""
+    try:
+        # Tópicos base sin wildcards
+        topics_to_clean = [
+            "esp32/network_info",
+            "esp32/config_ack",
+            "esp32/panel_assignment"
+        ]
+        
+        for topic in topics_to_clean:
+            client.publish(topic, "", qos=1, retain=False)
+            time.sleep(0.1)
+        
+        logging.info("Limpieza inicial de mensajes retain completada")
+    except Exception as e:
+        logging.error(f"Error en limpieza inicial de mensajes retain: {e}")
 
 def normalize_mac(mac: str) -> str:
     """Normaliza formato MAC address"""
@@ -73,37 +114,174 @@ def handle_mac_search(client, payload: Dict[str, Any]):
     except Exception as e:
         logging.error(f"Error en búsqueda MAC: {e}", exc_info=True)
 
-def handle_network_info(client, payload: Dict[str, Any]):
-    """Registra o actualiza información de red del ESP32 y envía configuración"""
+def handle_network_info(client, payload: Dict[str, Any], message):
+    """Maneja mensajes de información de red de los ESP32"""
     try:
+        # Verificar si es un mensaje retain antiguo
+        if message.retain:
+            logging.info(f"Ignorando mensaje retain antiguo de ESP32")
+            esp32_id = payload.get('esp32_id')
+            if esp32_id:
+                clean_retained_message(client, esp32_id)
+            return
+
         logging.debug(f"Procesando network_info: {payload}")
+        
+        # Validar formato del timestamp
+        timestamp = payload.get('timestamp', {})
+        if not isinstance(timestamp, dict):
+            logging.warning("Mensaje con formato de timestamp inválido")
+            return
+
+        # Verificar tipo del timestamp
+        timestamp_type = timestamp.get('type')
+        if timestamp_type != 'realtime':
+            logging.warning("Mensaje no es en tiempo real - ignorando")
+            return
+
+        # Extraer campos principales
         mac = normalize_mac(payload.get('MAC', ''))
         ip = payload.get('IP')
         esp32_id = payload.get('esp32_id')
         status = payload.get('status')
+        client_id = payload.get('client_id')
+        panel_id = payload.get('panel_id')
 
-        if not all([mac, ip, esp32_id]):
-            logging.error("Información faltante en payload")
+        if not all([mac, ip, esp32_id, status]):
+            logging.warning(f"Información faltante: MAC={mac}, IP={ip}, ESP32_ID={esp32_id}, STATUS={status}")
             return
+
+        logging.info(f"Procesando mensaje válido de ESP32 {esp32_id}")
 
         esp32_ref = db.collection('hdd-monitor/esp32/registered')
         esp32_doc = esp32_ref.document(esp32_id)
 
-        update_data = {
-            'MAC': mac,
-            'IP': ip,
-            'status': status,
-            'lastUpdate': firestore.SERVER_TIMESTAMP
-        }
-        
+        # Obtener datos actuales del ESP32
+        current_data = esp32_doc.get().to_dict() or {}
+        current_client_id = current_data.get('client_id', '')
+        current_panel_id = current_data.get('panel_id', '')
+        current_status = current_data.get('status', '')
+
+        # Manejar cambio a estado RUNNING
+        if status == 'RUNNING':
+            logging.info(f"ESP32 {esp32_id} reportando estado RUNNING")
+            if client_id and panel_id:
+                update_data = {
+                    'MAC': mac,
+                    'IP': ip,
+                    'status': status,
+                    'client_id': client_id,
+                    'panel_id': panel_id,
+                    'lastUpdate': firestore.SERVER_TIMESTAMP
+                }
+            else:
+                logging.warning("Falta client_id o panel_id para estado RUNNING")
+                return
+
+        # Manejar configuración con panel asignado
+        elif status == 'AWAITING_CONFIG' and current_panel_id and current_client_id:
+            logging.info(f"ESP32 {esp32_id} con panel asignado, enviando configuración")
+            config_message = {
+                'client_id': current_client_id,
+                'panel_id': current_panel_id,
+                'esp32_id': esp32_id,
+                'message_id': f"config-{int(time.time())}-{esp32_id}",
+                'timestamp': {
+                    'value': int(time.time() * 1000),
+                    'type': 'realtime'
+                }
+            }
+            
+            client.publish(
+                f"esp32/config/{esp32_id}",
+                json.dumps(config_message),
+                qos=2,
+                retain=False
+            )
+            
+            update_data = {
+                'MAC': mac,
+                'IP': ip,
+                'status': 'CONFIG_SENT',
+                'lastUpdate': firestore.SERVER_TIMESTAMP
+            }
+
+        # Estado normal sin panel asignado
+        else:
+            update_data = {
+                'MAC': mac,
+                'IP': ip,
+                'status': status,
+                'lastUpdate': firestore.SERVER_TIMESTAMP
+            }
+
+        # Actualizar Firestore
         esp32_doc.set(update_data, merge=True)
         logging.info(f"ESP32 {esp32_id} actualizado con status: {status}")
 
-        if status == 'AWAITING_CONFIG':
-            handle_awaiting_config(client, esp32_id, esp32_doc)
+        # Configurar listener para cambios futuros si no es RUNNING
+        if status != 'RUNNING':
+            def document_snapshot_handler(doc_snapshot, changes, read_time):
+                try:
+                    for change in changes:
+                        if change.type.name == 'MODIFIED':
+                            data = change.document.to_dict()
+                            logging.info(f"Documento modificado: {data}")
+                            
+                            if (data.get('status') == 'AWAITING_CONFIG' and 
+                                data.get('panel_id') and 
+                                data.get('client_id')):
+                                logging.info("ESP32 esperando configuración y tiene panel asignado")
+                                
+                                config_message = {
+                                    'client_id': data['client_id'],
+                                    'panel_id': data['panel_id'],
+                                    'esp32_id': esp32_id,
+                                    'message_id': f"config-{int(time.time())}-{esp32_id}",
+                                    'timestamp': {
+                                        'value': int(time.time() * 1000),
+                                        'type': 'realtime'
+                                    }
+                                }
+                                
+                                logging.info(f"Enviando configuración: {config_message}")
+                                
+                                client.publish(
+                                    f"esp32/config/{esp32_id}",
+                                    json.dumps(config_message),
+                                    qos=2,
+                                    retain=False
+                                )
+                                
+                                time.sleep(1)
+                                
+                                esp32_doc.set({
+                                    'status': 'CONFIG_SENT',
+                                    'lastUpdate': firestore.SERVER_TIMESTAMP
+                                }, merge=True)
+                                
+                                logging.info(f"Estado actualizado a CONFIG_SENT para {esp32_id}")
+                            else:
+                                logging.info("Cambio detectado pero no requiere envío de configuración")
+                                logging.info(f"Status: {data.get('status')}")
+                                logging.info(f"Panel ID: {data.get('panel_id')}")
+                                logging.info(f"Client ID: {data.get('client_id')}")
+                except Exception as e:
+                    logging.error(f"Error en document_snapshot_handler: {e}", exc_info=True)
+
+            esp32_doc.on_snapshot(document_snapshot_handler)
+            logging.info(f"Listener configurado para {esp32_id}")
+
+        # Limpiar mensajes retained después de procesar
+        clean_retained_message(client, esp32_id)
 
     except Exception as e:
         logging.error(f"Error en handle_network_info: {e}", exc_info=True)
+        try:
+            if esp32_id:
+                clean_retained_message(client, esp32_id)
+        except:
+            pass
 
 def handle_awaiting_config(client, esp32_id: str, esp32_doc):
     """Maneja ESP32s en estado AWAITING_CONFIG"""
@@ -324,7 +502,8 @@ def handle_config_request(client, payload: Dict[str, Any]):
             client.publish(
                 f"esp32/config/{esp32_id}",
                 json.dumps(config_message),
-                qos=2
+                qos=2,
+                retain=False
             )
             logging.info(f"Configuración reenviada a ESP32 {esp32_id}")
 
@@ -343,17 +522,10 @@ def handle_config_ack(payload: Dict[str, Any]):
 
         esp32_ref = db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
         
-        if status == 'config_received':
-            esp32_ref.set({
-                'status': 'CONFIG',
-                'last_config_id': config_id,
-                'lastUpdate': firestore.SERVER_TIMESTAMP
-            }, merge=True)
-
-        elif status == 'config_applied':
+        if status == 'config_applied':
+            logging.info(f"ESP32 {esp32_id} confirmó configuración")
             esp32_ref.set({
                 'status': 'RUNNING',
-                'last_config_id': config_id,
                 'lastUpdate': firestore.SERVER_TIMESTAMP
             }, merge=True)
 
@@ -369,7 +541,7 @@ def on_message(client, userdata, msg):
 
         handlers = {
             "esp32/mac_search": lambda: handle_mac_search(client, payload),
-            "esp32/network_info": lambda: handle_network_info(client, payload),
+            "esp32/network_info": lambda: handle_network_info(client, payload, msg),
             "esp32/config_request/+": lambda: handle_config_request(client, payload),
             "esp32/config_ack/+": lambda: handle_config_ack(payload),
             "esp32/panel_assignment": lambda: handle_panel_assignment(payload)

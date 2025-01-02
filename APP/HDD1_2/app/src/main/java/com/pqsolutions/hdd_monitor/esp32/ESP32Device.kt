@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor.esp32
 
 import com.google.firebase.firestore.PropertyName
 
+
 data class ESP32Device(
     val documentName: String = "",
     val MAC: String = "",
@@ -20,6 +21,7 @@ data class ESP32Device(
     companion object {
         const val STATUS_WIFI_CONFIG = "WIFI_CONFIG"
         const val STATUS_AWAITING_CONFIG = "AWAITING_CONFIG"
+        const val STATUS_PENDING_ASSIGNMENT = "PENDING_ASSIGNMENT"
         const val STATUS_RUNNING = "RUNNING"
         const val STATUS_OFFLINE = "OFFLINE"
     }

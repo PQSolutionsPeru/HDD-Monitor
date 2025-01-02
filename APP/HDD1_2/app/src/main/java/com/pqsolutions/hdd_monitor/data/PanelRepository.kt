@@ -91,6 +91,22 @@ class PanelRepository @Inject constructor(
             throw IllegalArgumentException("Panel data is invalid")
         }
 
+        // Verificar si el ESP32 ya está asignado a otro panel
+        if (esp32Id != null) {
+            val esp32Doc = firestore
+                .collection("hdd-monitor/esp32/registered")
+                .document(esp32Id)
+                .get()
+                .await()
+
+            if (esp32Doc.exists()) {
+                val existingPanelId = esp32Doc.getString("panel_id")
+                if (!existingPanelId.isNullOrEmpty()) {
+                    throw IllegalStateException("ESP32 ya está asignado a otro panel")
+                }
+            }
+        }
+
         val panelDocName = IdManager.generatePanelDocumentName(clientDocName)
         Log.d(TAG, "Creating new panel: $panelDocName")
 
@@ -126,6 +142,9 @@ class PanelRepository @Inject constructor(
             esp32Repository.assignToPanelAndClient(it, clientDocName, panelDocName)
                 .onFailure { e ->
                     Log.e(TAG, "Error assigning ESP32 to panel", e)
+                    // Si falla la asignación, eliminar el panel
+                    panelRef.delete().await()
+                    throw e
                 }
         }
 

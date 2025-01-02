@@ -300,7 +300,7 @@ import machine
 from ble_uart_peripheral import BLEUART
 
 class BluetoothManager:
-    def __init__(self, esp32_id=None, config_manager=None, wifi_manager=None):
+    def __init__(self, esp32_id=None, config_manager=None, wifi_manager=None, mqtt_manager=None):
         """Inicializa BLE solo para configuración WiFi"""
         print("[BLE] Iniciando BLE...")
         self.ble = bluetooth.BLE()
@@ -331,6 +331,7 @@ class BluetoothManager:
         # Gestores
         self.config_manager = config_manager
         self.wifi_manager = wifi_manager
+        self.mqtt_manager = mqtt_manager
         
         # Callback WiFi
         self.wifi_callback = None
@@ -380,7 +381,7 @@ class BluetoothManager:
             self.write_response("error:rx_error")
 
     def _process_wifi_config(self, data):
-        """Procesa datos JSON de configuración WiFi"""
+        """Procesa configuración WiFi y maneja la conexión MQTT"""
         try:
             json_text = data.split("{START}")[1].split("{END}")[0].strip()
             config = json.loads(json_text)
@@ -392,63 +393,84 @@ class BluetoothManager:
                 # Validación básica
                 if len(ssid) == 0:
                     self.write_response("error:ssid_invalido")
-                    return
+                    return False
                     
                 if len(password) < 8:
                     self.write_response("error:password_corto")
-                    return
+                    return False
                 
-                if not self.wifi_callback:
-                    self.write_response("error:no_callback")
-                    return
-                
-                # Enviar confirmación inicial con el ID del ESP32
-                self.write_response(f"ready:wifi_config|esp32_id:{self.esp32_id}")
+                # Enviar confirmación inicial con ID
+                confirmation = f"ready:wifi_config|esp32_id:{self.esp32_id}\n"
+                self.uart.write(confirmation.encode())
                 utime.sleep_ms(500)
                 
-                # Intentar conectar WiFi con reintentos
-                for attempt in range(self.MAX_RETRIES):
-                    if attempt > 0:
-                        print(f"[BLE] Intento {attempt + 1} de conexión WiFi")
-                        utime.sleep_ms(self.CONNECT_RETRY_DELAY)
+                # Intentar conexión WiFi
+                if self.wifi_callback(ssid, password):
+                    ip = self.wifi_manager.get_ip_address()
+                    if not ip:
+                        self.write_response("error:no_ip_address")
+                        return False
+                        
+                    print("[BLE] Conectado a WiFi, intentando MQTT...")
+                    mqtt_retry_count = 0
+                    max_retries = 3
                     
-                    if not self.wifi_callback(ssid, password):
-                        print("[BLE] Fallo en conexión")
-                        continue
+                    while mqtt_retry_count < max_retries:
+                        print(f"[BLE] Intento MQTT {mqtt_retry_count + 1}/{max_retries}")
+                        utime.sleep_ms(2000)
+                        
+                        if self.mqtt_manager and self.mqtt_manager.connect():
+                            print("[BLE] Conexión MQTT exitosa")
+                            
+                            # Configurar ESP32_ID en MQTT Manager
+                            self.mqtt_manager.esp32_id = self.esp32_id
+                            
+                            # Publicar estado AWAITING_CONFIG
+                            network_info = {
+                                'esp32_id': self.esp32_id,
+                                'MAC': self.mqtt_manager.mac_address,
+                                'IP': ip,
+                                'status': 'AWAITING_CONFIG',
+                                'timestamp': utime.ticks_ms()
+                            }
+                            
+                            # Publicar info de red con retain
+                            self.mqtt_manager.publish_event(
+                                "esp32/network_info",
+                                network_info,
+                                retain=True,
+                                qos=1
+                            )
+                            
+                            # Suscribirse al tópico de configuración
+                            config_topic = f"esp32/config/{self.esp32_id}"
+                            self.mqtt_manager.subscribe(
+                                config_topic, 
+                                self.mqtt_manager._handle_config_message
+                            )
+                            
+                            print("[BLE] Publicada info de red y suscrito a config")
+                            success_msg = f"ok:wifi_configurado|ip:{ip}|esp32_id:{self.esp32_id}\n"
+                            self.uart.write(success_msg.encode())
+                            return True
+                            
+                        mqtt_retry_count += 1
+                        print(f"[BLE] Fallo en intento MQTT {mqtt_retry_count}")
                     
-                    # Esperar a que se obtenga IP válida
-                    start_time = utime.ticks_ms()
-                    while utime.ticks_diff(utime.ticks_ms(), start_time) < self.WIFI_CONNECT_TIMEOUT:
-                        if self.wifi_manager and self.wifi_manager.check_connection():
-                            ip = self.wifi_manager.get_ip_address()
-                            if ip and ip != "0.0.0.0":
-                                print(f"[BLE] WiFi conectado con IP: {ip}")
-                                self.is_configured = True
-                                
-                                # Enviar confirmación con IP y ESP32 ID
-                                self.write_response(f"ok:wifi_configurado|ip:{ip}|esp32_id:{self.esp32_id}")
-                                
-                                # Esperar configuración del panel (aumentar tiempo si es necesario)
-                                print("[BLE] Esperando configuración del panel...")
-                                
-                                # NO cerrar BLE aquí, mantenerlo activo hasta recibir comando de cierre
-                                # o hasta que se complete la configuración del panel
-                                return True
-                        utime.sleep_ms(100)
+                    self.write_response("error:mqtt_no_disponible")
+                    return False
                     
-                    print("[BLE] Timeout esperando IP")
-                
-                # Si llegamos aquí, todos los intentos fallaron
-                print("[BLE] Todos los intentos de conexión fallaron")
-                self.write_response("error:conexion_fallida")
+                self.write_response("error:wifi_connection_failed")
                 return False
+                            
+        except Exception as e:
+            print(f"[BLE] Error en proceso: {e}")
+            self.write_response(f"error:proceso_fallido|{str(e)}")
+            return False
                         
         except ValueError as e:
             print(f"[BLE] Error en datos: {e}")
             self.write_response("error:formato_invalido")
-        except Exception as e:
-            print(f"[BLE] Error procesando datos: {e}")
-            self.write_response("error:error_proceso")
 
     def write_response(self, message):
         """Envía respuesta de manera segura"""
@@ -579,30 +601,14 @@ class ConfigManager:
             print("[CONFIG] Configurando gestor MQTT")
             self.mqtt_manager = mqtt_manager
             
-            # Verificar conexión MQTT
             if not self.mqtt_manager.check_connection():
                 print("[CONFIG] Error: MQTT no conectado")
                 return False
-            
-            # Suscribirse al tópico de configuración
-            if self.esp32_id:
-                config_topic = f"esp32/config/{self.esp32_id}"
-                print(f"[CONFIG] Suscribiendo a: {config_topic}")
-                if not self.mqtt_manager.subscribe(config_topic, self.handle_config_message):
-                    print("[CONFIG] Error en suscripción MQTT")
-                    return False
-            
-            # Procesar configuración pendiente
-            if self.config.get("pending_config"):
-                print("[CONFIG] Procesando configuración pendiente...")
-                result = self.handle_config_message(None, self.config["pending_config"])
-                self.config["pending_config"] = None
-                self._save_config()
-                return result
                 
+            # Configuración adicional si es necesaria
             return True
         except Exception as e:
-            print(f"[CONFIG] Error en set_mqtt_manager: {e}")
+            print(f"[CONFIG] Error configurando MQTT: {e}")
             return False
 
     def set_esp32_id(self, esp32_id):
@@ -936,18 +942,75 @@ class ConfigManager:
     def _load_config(self):
         """Carga la configuración desde archivo"""
         try:
+            config_found = False
+            
+            # Intentar cargar configuración principal
             if self.CONFIG_FILE in os.listdir():
+                print("[CONFIG] Intentando cargar configuración guardada...")
                 with open(self.CONFIG_FILE, 'r') as f:
                     stored_config = json.load(f)
                     if self._validate_config(stored_config):
                         self.config = stored_config
+                        config_found = True
                         print("[CONFIG] Configuración cargada exitosamente")
-                        return True
+
+            # Intentar cargar configuración del panel si existe
+            try:
+                if 'panel_config.json' in os.listdir():
+                    with open('panel_config.json', 'r') as f:
+                        panel_config = json.load(f)
+                        if panel_config.get('client_id') and panel_config.get('panel_id'):
+                            # Actualizar configuración con datos del panel
+                            self.config['panel']['client_id'] = panel_config['client_id']
+                            self.config['panel']['panel_id'] = panel_config['panel_id']
+                            self.config['configured'] = True
+                            self.config['mode'] = self.MODES['RUNNING']
+                            print("[CONFIG] Configuración del panel cargada")
+                            # Guardar configuración actualizada
+                            self._save_config()
+            except Exception as e:
+                print(f"[CONFIG] Error cargando config panel: {e}")
+                        
+            if config_found:
+                if (self.config.get("configured") and 
+                    self.config.get("panel") and 
+                    self.config["panel"].get("client_id") and 
+                    self.config["panel"].get("panel_id")):
+                    print("[CONFIG] Configuración completa encontrada")
+                    self.current_mode = self.MODES['RUNNING']
+                    return True
+                            
+                elif self.config.get("wifi") and self.config["wifi"].get("ssid"):
+                    print("[CONFIG] Solo configuración WiFi encontrada")
+                    self.current_mode = self.MODES['AWAITING_CONFIG']
+                    return True
+                        
+            print("[CONFIG] No se encontró configuración válida")
+            self.current_mode = self.MODES['WIFI_CONFIG']
             return False
-            
+                
         except Exception as e:
             print(f"[CONFIG] Error cargando config: {e}")
+            self.current_mode = self.MODES['WIFI_CONFIG']
             return False
+
+    def get_operation_topic(self):
+        """Obtiene el tópico de operación basado en la configuración actual"""
+        try:
+            if not self.config.get('panel'):
+                return None
+                
+            client_id = self.config['panel'].get('client_id')
+            panel_id = self.config['panel'].get('panel_id')
+            
+            if not client_id or not panel_id:
+                return None
+                
+            return f"clients/{client_id}/panels/{panel_id}"
+            
+        except Exception as e:
+            print(f"[CONFIG] Error obteniendo tópico de operación: {e}")
+            return None
 
     def _validate_config(self, config):
         """Valida estructura completa de la configuración"""
@@ -1526,36 +1589,41 @@ def setup_relays(relay_manager, mqtt_manager, esp32_id, time_manager):
     """Configura los relés y sus callbacks"""
     try:
         print("\n[RELAY] Configurando relés...")
-        for pin in RELAY_PINS:
-            def create_callback(pin_num):
-                def callback(pin, pin_number=pin_num, timestamp=None):
-                    state = "DISC" if pin.value() else "OK"
-                    pin_name = RELAY_NAMES.get(pin_number, str(pin_number))
-                    print(f"[RELAY] Cambio en relé {pin_number} ({pin_name}): {state}")
-                    
-                    # Mensaje con timestamp GMT-5
-                    message = {
-                        "esp32_id": esp32_id,
-                        "relay": pin_name,
-                        "state": state
-                    }
-                    
-                    # Añadir timestamp si está disponible
-                    if timestamp:
-                        message["date_time"] = timestamp
-                    
+        
+        # Definir callback fuera del loop para evitar crear múltiples instancias
+        def relay_callback(pin, pin_number, timestamp=None):
+            try:
+                state = "DISC" if pin.value() else "OK"
+                pin_name = RELAY_NAMES.get(pin_number, str(pin_number))
+                print(f"[RELAY] Cambio en relé {pin_number} ({pin_name}): {state}")
+                
+                message = {
+                    "esp32_id": esp32_id,
+                    "relay": pin_name,
+                    "state": state
+                }
+                
+                if timestamp:
+                    message["date_time"] = timestamp
+                
+                if mqtt_manager.client_id and mqtt_manager.panel_id:
                     mqtt_manager.publish_event(
                         f"clients/{mqtt_manager.client_id}/panels/{mqtt_manager.panel_id}",
                         message,
                         retain=True,
                         qos=1
                     )
-                return callback
-            
-            relay_manager.setup_relay(pin_num=pin, callback=create_callback(pin))
+            except Exception as e:
+                print(f"[RELAY] Error en callback: {e}")
+        
+        # Configurar cada relé
+        for pin in RELAY_PINS:
+            relay_manager.setup_relay(
+                pin_num=pin,
+                callback=lambda p, pin=pin: relay_callback(p, pin, time_manager.get_datetime_str() if time_manager else None)
+            )
             print(f"[RELAY] Configurado relé en pin {pin} ({RELAY_NAMES[pin]})")
-            
-        # Asignar time_manager al relay_manager
+        
         relay_manager.time_manager = time_manager
         return True
         
@@ -1564,9 +1632,8 @@ def setup_relays(relay_manager, mqtt_manager, esp32_id, time_manager):
         return False
 
 def handle_critical_error(error_type, error_message, managers):
-    """Maneja errores críticos del sistema"""
+    """Maneja errores críticos del sistema con intentos de recuperación"""
     watchdog = managers["watchdog"]
-    
     try:
         print(f"[MAIN] Error crítico: {error_type} - {error_message}")
         
@@ -1574,28 +1641,109 @@ def handle_critical_error(error_type, error_message, managers):
             gc.collect()
             utime.sleep_ms(100)
             if gc.mem_free() < MIN_MEMORY_THRESHOLD:
+                try:
+                    # Intentar liberar recursos no esenciales
+                    if "ble" in managers:
+                        managers["ble"].close()
+                        del managers["ble"]
+                    gc.collect()
+                    if gc.mem_free() >= MIN_MEMORY_THRESHOLD:
+                        return True
+                except:
+                    pass
                 watchdog.force_reset("low_memory")
                 
         elif error_type == "wifi_critical":
-            # Intentar reconexión WiFi
-            if not managers["wifi"].check_connection():
-                watchdog.force_reset("wifi_failure")
+            # Intentar reconexión WiFi antes de reset
+            try:
+                if managers["wifi"].recover_from_disconnect():
+                    print("[MAIN] Recuperación WiFi exitosa")
+                    return True
+            except:
+                pass
+            watchdog.force_reset("wifi_failure")
                 
         elif error_type == "mqtt_critical":
-            # Intentar reconexión MQTT
-            if not managers["mqtt"].check_connection():
-                watchdog.force_reset("mqtt_failure")
+            # Intentar reconexión MQTT antes de reset
+            try:
+                if managers["mqtt"].reconnect():
+                    print("[MAIN] Recuperación MQTT exitosa")
+                    return True
+            except:
+                pass
+            watchdog.force_reset("mqtt_failure")
                 
         elif error_type == "time_critical":
-            # Intentar resincronizar hora
-            if not managers["time"].sync_time():
-                watchdog.force_reset("time_sync_failure")
-                
-        watchdog.force_reset(error_type)
+            # Reintento de sincronización
+            try:
+                if managers["time"].check_sync():
+                    print("[MAIN] Sincronización de tiempo exitosa")
+                    return True
+            except:
+                pass
+            watchdog.force_reset("time_sync_failure")
+        
+        return False
             
     except Exception as e:
         print(f"[MAIN] Error en manejador de errores: {e}")
         watchdog.force_reset("error_handler_failed")
+        return False
+
+def wifi_callback(managers, ssid, password):
+    """Callback para configuración WiFi con mejor manejo de errores"""
+    try:
+        print(f"[MAIN] Intentando conexión WiFi a {ssid}")
+        
+        # Primero validar los parámetros
+        if not ssid or not password or len(password) < 8:
+            print("[MAIN] Credenciales WiFi inválidas")
+            return False
+            
+        # Intentar conexión WiFi
+        success = managers["wifi"].connect_wifi(ssid, password)
+        
+        if success:
+            print("[MAIN] Conexión WiFi exitosa")
+            if managers["config"].save_wifi_config(ssid, password):
+                print("[MAIN] Configuración WiFi guardada")
+                
+                # Intentar conexión MQTT después de WiFi exitoso
+                mqtt_retries = 3
+                retry_delay = 2000  # 2 segundos
+                
+                while mqtt_retries > 0:
+                    print(f"[MAIN] Intento MQTT {4-mqtt_retries}/3")
+                    
+                    try:
+                        if managers["mqtt"].connect():
+                            print("[MAIN] Conexión MQTT exitosa")
+                            return True
+                    except Exception as mqtt_error:
+                        print(f"[MAIN] Error MQTT: {mqtt_error}")
+                    
+                    print(f"[MAIN] Fallo en intento MQTT {4-mqtt_retries}")
+                    mqtt_retries -= 1
+                    
+                    if mqtt_retries > 0:  # No esperar en el último intento
+                        gc.collect()  # Limpiar memoria entre intentos
+                        utime.sleep_ms(retry_delay)
+                        retry_delay *= 2  # Backoff exponencial
+                
+                print("[MAIN] Error en registro MQTT después de reintentos")
+                return False
+                
+            print("[MAIN] Error guardando configuración WiFi")
+            return False
+        
+        print("[MAIN] Conexión WiFi fallida")
+        return False
+        
+    except Exception as e:
+        print(f"[MAIN] Error en callback WiFi: {e}")
+        if hasattr(e, '__class__'):
+            print(f"[MAIN] Tipo de error: {e.__class__.__name__}")
+        return False
 
 def main():
     """Función principal del sistema"""
@@ -1606,73 +1754,52 @@ def main():
     esp32_id = None
     
     try:
-        # Inicialización básica
         print("\n[INIT] Iniciando sistema...")
+        print(f"[INIT] Memoria libre inicial: {gc.mem_free()} bytes")
         utime.sleep_ms(STARTUP_DELAY)
         
-        # Inicializar gestor de WiFi
         managers["wifi"] = WiFiManager()
-        
-        # Inicializar gestor de configuración
         managers["config"] = ConfigManager()
         
-        # Verificar configuración y conectar WiFi
+        print(f"[MAIN] Modo actual: {managers['config'].get_mode()}")
+        
         if managers["config"].is_configured():
-            print("[MAIN] Configuración encontrada, conectando WiFi...")
+            print("[MAIN] Configuración encontrada...")
             wifi_config = managers["config"].get_wifi_config()
             
             if managers["wifi"].connect_wifi(wifi_config["ssid"], wifi_config["password"]):
-                current_state = SystemState.RUNNING
+                current_mode = managers["config"].get_mode()
+                if current_mode == managers["config"].MODES['RUNNING']:
+                    print("[MAIN] Iniciando en modo RUNNING...")
+                    current_state = SystemState.RUNNING
+                elif current_mode == managers["config"].MODES['AWAITING_CONFIG']:
+                    print("[MAIN] Iniciando en modo AWAITING_CONFIG...")
+                    current_state = SystemState.CONFIG
+                else:
+                    print("[MAIN] Iniciando en modo CONFIG (WiFi)...")
+                    current_state = SystemState.CONFIG
             else:
+                print("[MAIN] Error conectando WiFi, iniciando BLE...")
                 current_state = SystemState.CONFIG
         else:
             print("[MAIN] No hay configuración, iniciando BLE...")
             current_state = SystemState.CONFIG
 
-        # Inicializar watchdog antes de operaciones críticas
         managers["watchdog"] = WatchdogManager()
-        
-        # Inicializar gestor de tiempo después de conectar WiFi
         managers["time"] = TimeManager(managers["wifi"])
-        
-        # Inicializar MQTT después de tiempo
         managers["mqtt"] = MQTTManager(managers["wifi"])
         
         if current_state == SystemState.CONFIG:
-            # Solo crear BLE si realmente lo necesitamos
             if not managers["wifi"].check_connection():
                 print("[MAIN] Iniciando BLE para configuración WiFi")
                 managers["ble"] = BluetoothManager(
                     esp32_id=None, 
                     config_manager=managers["config"],
-                    wifi_manager=managers["wifi"]
+                    wifi_manager=managers["wifi"],
+                    mqtt_manager=managers["mqtt"]
                 )
-                
-                def wifi_callback(ssid, password):
-                    try:
-                        print(f"[MAIN] Intentando conexión WiFi a {ssid}")
-                        success = managers["wifi"].connect_wifi(ssid, password)
-                        
-                        if success:
-                            print("[MAIN] Conexión WiFi exitosa")
-                            if managers["config"].save_wifi_config(ssid, password):
-                                print("[MAIN] Configuración WiFi guardada")
-                                managers["config"].wifi_configured()
-                                return True
-                            else:
-                                print("[MAIN] Error guardando configuración WiFi")
-                                return False
-                        
-                        print("[MAIN] Conexión WiFi fallida")
-                        return False
-                        
-                    except Exception as e:
-                        print(f"[MAIN] Error en conexión WiFi: {e}")
-                        return False
-                
-                managers["ble"].set_wifi_callback(wifi_callback)
+                managers["ble"].set_wifi_callback(lambda ssid, password: wifi_callback(managers, ssid, password))
             
-            # Esperar a que se complete la configuración WiFi y del panel
             ble_timeout = BLE_CONFIG_TIMEOUT
             start_time = utime.ticks_ms()
             wifi_connected = False
@@ -1682,25 +1809,23 @@ def main():
             while utime.ticks_diff(utime.ticks_ms(), start_time) < ble_timeout:
                 managers["watchdog"].feed()
                 
-                # Procesar BLE
                 if "ble" in managers:
                     managers["ble"].process()
+
+                if managers["mqtt"].client:
+                    managers["mqtt"].check_msg()
+                    managers["mqtt"].check_status_report()
                 
-                # Verificar conexión WiFi
                 if not wifi_connected and managers["wifi"].check_connection():
                     wifi_connected = True
                     print("[MAIN] WiFi conectado, manteniendo BLE activo para configuración del panel...")
-                    
-                    # Dar tiempo para que se envíe la respuesta BLE
                     managers["watchdog"].feed()
                     utime.sleep_ms(2000)
                     
-                # Verificar configuración del panel
                 if not panel_configured and managers["config"].is_configured():
                     panel_configured = True
                     print("[MAIN] Panel configurado, cerrando BLE...")
                     
-                    # Cerrar BLE
                     if "ble" in managers:
                         print("[MAIN] Desactivando BLE...")
                         try:
@@ -1726,10 +1851,8 @@ def main():
                 handle_critical_error("panel_timeout", "Timeout esperando configuración del panel", managers)
         
         if current_state == SystemState.RUNNING:
-            # Alimentar watchdog antes de operaciones largas
             managers["watchdog"].feed()
             
-            # Obtener ID del ESP32 o generarlo si no existe
             managers["esp32_id"] = ESP32IdManager(managers["mqtt"], managers["time"])
             managers["watchdog"].feed()
             
@@ -1740,18 +1863,14 @@ def main():
                 managers["esp32_id"]._save_with_backup()
             
             managers["watchdog"].feed()
-            
-            # Configurar resto de gestores con el ID del ESP32
             managers["config"].set_esp32_id(esp32_id)
             managers["relay"] = RelayManager()
             
-            # Preparar conexión MQTT
             print(f"[MAIN] Memoria libre antes de MQTT: {gc.mem_free()}")
             managers["watchdog"].feed()
             gc.collect()
             utime.sleep_ms(1000)
 
-            # Intentar conexión MQTT con reintentos
             mqtt_connected = False
             for retry in range(MQTT_RETRY_COUNT):
                 managers["watchdog"].feed()
@@ -1770,7 +1889,6 @@ def main():
             if not mqtt_connected:
                 raise Exception(f"No se pudo conectar a MQTT después de {MQTT_RETRY_COUNT} intentos")
 
-            # Configurar callback MQTT
             def config_callback(topic, msg):
                 try:
                     print(f"[MQTT] Mensaje recibido en {topic}: {msg}")
@@ -1778,7 +1896,6 @@ def main():
                 except Exception as e:
                     print(f"[MQTT] Error en callback: {e}")
 
-            # Suscribirse al tópico específico
             print("[MAIN] Suscribiendo a tópico de configuración...")
             config_topic = f"esp32/config/{esp32_id}"
             if not managers["mqtt"].subscribe(config_topic, config_callback):
@@ -1789,8 +1906,6 @@ def main():
                     raise Exception("No se pudo suscribir a tema de configuración")
 
             print("[MAIN] Suscripción completada exitosamente")
-
-            # Publicar estado inicial
             network_info = {
                 "esp32_id": esp32_id,
                 "MAC": managers["esp32_id"].get_mac(),
@@ -1799,7 +1914,6 @@ def main():
                 "lastUpdate": utime.ticks_ms()
             }
             
-            # Publicar con retain=True para asegurar entrega
             if not managers["mqtt"].publish_event(
                 "esp32/network_info",
                 network_info,
@@ -1808,28 +1922,22 @@ def main():
             ):
                 raise Exception("No se pudo publicar información de red")
 
-            # Entrar en modo espera de configuración
             managers["config"].current_mode = managers["config"].MODES['AWAITING_CONFIG']
             managers["watchdog"].feed()
         
-        # Bucle principal con tiempo extendido para operaciones
         while True:
             try:
                 loop_start = utime.ticks_ms()
                 managers["watchdog"].feed()
                 
-                # GC periódico
-                if utime.ticks_diff(loop_start, last_gc_time) >= 300000:  # 5 minutos
+                if utime.ticks_diff(loop_start, last_gc_time) >= 300000:
                     gc.collect()
                     last_gc_time = loop_start
                 
-                # Procesar según estado
                 if current_state == SystemState.RUNNING:
-                    # Verificar memoria
                     if gc.mem_free() < MIN_MEMORY_THRESHOLD:
                         handle_critical_error("memory_critical", "Memoria bajo nivel crítico", managers)
                     
-                    # Verificar conexiones
                     if managers["time"].is_synced:
                         if not managers["wifi"].check_connection():
                             handle_critical_error("wifi_critical", "Pérdida de conexión WiFi", managers)
@@ -1837,22 +1945,18 @@ def main():
                         if not managers["mqtt"].check_connection():
                             handle_critical_error("mqtt_critical", "Pérdida de conexión MQTT", managers)
                     
-                    # Verificar hora cada minuto
                     if utime.ticks_diff(loop_start, last_time_check) >= 60000:
                         if not managers["time"].check_sync():
                             print("[MAIN] Reintentando sincronización horaria...")
                         last_time_check = loop_start
                     
-                    # Procesar mensajes MQTT
                     if managers["mqtt"].client:
                         managers["mqtt"].check_msg()
                         managers["mqtt"].check_status_report()
 
-                    # Configurar relés
                     if not setup_relays(managers["relay"], managers["mqtt"], esp32_id, managers["time"]):
                         raise Exception("Error configurando relés")
                         
-                    # Entrar en modo de operación normal
                     managers["config"].enter_running_mode()
                         
                 elif current_state == SystemState.CONFIG:
@@ -1866,7 +1970,6 @@ def main():
                     else:
                         managers["watchdog"].force_reset("recovery_failed")
                 
-                # Control de tiempo de bucle
                 loop_time = utime.ticks_diff(utime.ticks_ms(), loop_start)
                 if loop_time < MAX_LOOP_TIME:
                     utime.sleep_ms(MAX_LOOP_TIME - loop_time)
@@ -1878,7 +1981,10 @@ def main():
     except KeyboardInterrupt:
         print("\n[MAIN] Programa interrumpido por usuario")
     except Exception as e:
-        print(f"\n[MAIN] Error fatal: {e}")
+        print("\n[MAIN] Error fatal:")
+        print(f"[MAIN] - Mensaje: {str(e)}")
+        if hasattr(e, '__class__'):
+            print(f"[MAIN] - Tipo: {e.__class__.__name__}")
     finally:
         if managers:
             try:
@@ -1905,7 +2011,6 @@ import utime
 import machine
 import ubinascii
 import random
-from typing import Optional, Dict, Any
 
 class MQTTManager:
     def __init__(self, wifi_manager):
@@ -1920,22 +2025,23 @@ class MQTTManager:
         self.panel_id = None
         self.operation_mode = 'CONFIG'
         self.message_queue = []
-        self._processed_ids = set()  # Para control de duplicados
+        self._processed_ids = set()
         
         # Control de reportes
         self.last_status_report = 0
         self.STATUS_REPORT_INTERVAL = 3600000  # 60 minutos
         
-        # Credenciales del broker
+        # Credenciales del broker - Para puerto no seguro
         self.MQTT_BROKER = "node02.myqtthub.com"
-        self.MQTT_PORT = 8883
+        self.MQTT_PORT = 1883  # Puerto no seguro
+        self.MQTT_CLIENT_ID = "ESP32-PQ1"
         self.MQTT_USER = "ESP32-1"
         self.MQTT_PASSWORD = "esp32"
 
         # Control de reconexión y timeouts
         self.last_connection_attempt = 0
         self.RECONNECT_DELAY = 15000      # 15 segundos entre intentos
-        self.MQTT_CONNECT_TIMEOUT = 60000  # 60 segundos timeout para conexión
+        self.MQTT_CONNECT_TIMEOUT = 60000  # 60 segundos timeout conexión
         self.MQTT_TIMEOUT = 10000         # 10 segundos para operaciones MQTT
         self.MAX_RECONNECT_ATTEMPTS = 3    # 3 intentos máximos de reconexión
         
@@ -1989,18 +2095,16 @@ class MQTTManager:
         try:
             print(f"[MQTT] Intentando suscribirse a: {topic}")
             
-            # Asegurar conexión antes de suscribir
-            if not self.client:
-                print("[MQTT] No hay conexión para suscribirse")
+            if not self.ensure_connection():
+                print("[MQTT] Error: No hay conexión para suscribirse")
                 return False
-                    
+                
             if callback:
                 print("[MQTT] Configurando callback")
                 self.client.set_callback(callback)
                 
             print("[MQTT] Ejecutando suscripción...")
-            topic_bytes = topic.encode() if isinstance(topic, str) else topic
-            self.client.subscribe(topic_bytes)
+            self.client.subscribe(topic.encode(), qos=1)
             print("[MQTT] Suscripción exitosa")
             return True
                 
@@ -2008,106 +2112,66 @@ class MQTTManager:
             print(f"[MQTT] Error suscribiendo: {e}")
             return False
 
-    def configure(self, esp32_id=None):
-        """Configura el dispositivo y establece conexión inicial"""
-        try:
-            if esp32_id:
-                self.esp32_id = esp32_id
-            else:
-                if not self.recover_id_by_mac():
-                    return False
-            
-            if self.connect():
-                # Suscribirse al tópico de configuración
-                config_topic = f"esp32/config/{self.esp32_id}"
-                self.subscribe(config_topic, self._handle_config_message)
-                
-                # Publicar información de red
-                self._publish_network_info()
-                return True
-            return False
-            
-        except Exception as e:
-            print(f"[MQTT] Error en configure: {e}")
-            return False
-
-    def recover_id_by_mac(self):
-        """Recupera ESP32 ID usando MAC address"""
-        try:
-            if not self.ensure_connection():
-                return False
-            
-            response_topic = f"esp32/mac_response/{self.mac_address}"
-            response_received = False
-            
-            def mac_callback(topic, msg):
-                try:
-                    response = json.loads(msg.decode())
-                    if response.get('MAC') == self.mac_address:
-                        self.esp32_id = response.get('esp32_id')
-                        nonlocal response_received
-                        response_received = True
-                except:
-                    pass
-            
-            self.subscribe(response_topic, mac_callback)
-            
-            # Publicar búsqueda MAC
-            self.publish_event(
-                "esp32/mac_search",
-                {
-                    'MAC': self.mac_address,
-                    'response_topic': response_topic
-                }
-            )
-            
-            # Esperar respuesta con timeout aumentado
-            start_time = utime.ticks_ms()
-            while not response_received:
-                if utime.ticks_diff(utime.ticks_ms(), start_time) > self.MQTT_CONNECT_TIMEOUT:
-                    return False
-                self.check_msg()
-                utime.sleep_ms(100)
-            
-            return True
-            
-        except Exception as e:
-            print(f"[MQTT] Error recuperando ID: {e}")
-            return False
-
     def connect(self):
-        """Conecta al broker MQTT con SSL"""
+        """Conecta al broker MQTT"""
         try:
             print("[MQTT] Iniciando conexión...")
             gc.collect()
             utime.sleep_ms(1000)
             
+            print(f"[MQTT] Conectando como {self.MQTT_CLIENT_ID}")
             print("[MQTT] Creando cliente...")
-            import ssl
-            self.client = MQTTClient(
-                b"ESP32-PQ1",
-                self.MQTT_BROKER,
-                port=self.MQTT_PORT,
-                user=b"ESP32-1",
-                password=b"esp32",
-                keepalive=60,
-                ssl=ssl
-            )
             
-            # Configurar LWT antes de conectar
-            self._setup_lwt()
-            
-            print("[MQTT] Conectando...")
-            self.client.connect(clean_session=True)
-            print("[MQTT] Conectado exitosamente")
-            
-            # Publicar estado actual
-            self._publish_network_info()
-            
-            return True
+            try:
+                if self.client:
+                    try:
+                        self.client.disconnect()
+                    except:
+                        pass
+                    self.client = None
+                    gc.collect()
+                
+                # Crear nuevo cliente
+                self.client = MQTTClient(
+                    client_id=self.MQTT_CLIENT_ID,
+                    server=self.MQTT_BROKER,
+                    port=self.MQTT_PORT,
+                    user=self.MQTT_USER,
+                    password=self.MQTT_PASSWORD,
+                    keepalive=30
+                )
+                
+                if self.esp32_id:
+                    print("[MQTT] Configurando LWT...")
+                    self._setup_lwt()
+                
+                print("[MQTT] Intentando conexión...")
+                self.client.connect()
+                print("[MQTT] Conectado exitosamente!")
+                
+                if self.esp32_id:
+                    print("[MQTT] Configurando suscripciones...")
+                    # Suscribirse a tópico de configuración
+                    config_topic = f"esp32/config/{self.esp32_id}"
+                    if not self.subscribe(config_topic, self._handle_config_message):
+                        print("[MQTT] Error en suscripción config")
+                        return False
+                    
+                    print("[MQTT] Publicando info de red...")
+                    if not self._publish_network_info():
+                        print("[MQTT] Error publicando info de red")
+                        return False
+                    
+                    print("[MQTT] Configuración inicial completada")
+                
+                return True
+                
+            except Exception as e:
+                print(f"[MQTT] Error en conexión MQTT: {e}")
+                return False
                 
         except Exception as e:
-            print(f"[MQTT] Error conectando: {e}")
+            print(f"[MQTT] Error en proceso de conexión: {e}")
             if self.client:
                 try:
                     self.client.disconnect()
@@ -2118,174 +2182,111 @@ class MQTTManager:
             return False
 
     def _handle_config_message(self, topic, msg):
-        """Maneja mensajes de configuración"""
+        """Procesa mensajes de configuración"""
         try:
-            config = json.loads(msg.decode())
+            print(f"[MQTT] Mensaje de configuración recibido: {msg}")
+            
+            if isinstance(msg, bytes):
+                msg = msg.decode('utf-8')
+            
+            try:
+                config = json.loads(msg)
+            except Exception as e:
+                print(f"[MQTT] Error decodificando JSON: {e}")
+                return
+            
+            client_id = config.get('client_id')
+            panel_id = config.get('panel_id')
+            
+            if not client_id or not panel_id:
+                print("[MQTT] client_id o panel_id faltante")
+                return
+            
             message_id = config.get('message_id')
+            if not message_id:
+                print("[MQTT] Message ID no encontrado")
+                return
             
             # Validar mensaje no duplicado
-            if message_id and not self.validate_message_id(message_id):
+            if not self._validate_message_id(message_id):
                 print("[MQTT] Mensaje duplicado ignorado")
                 return
             
-            if config.get('client_id') and config.get('panel_id'):
-                self.client_id = config['client_id']
-                self.panel_id = config['panel_id']
-                self.operation_mode = 'RUNNING'
-                
-                # Confirmar recepción
-                self.publish_event(
-                    f"esp32/config_ack/{self.esp32_id}",
-                    {
-                        'esp32_id': self.esp32_id,
-                        'status': 'config_received',
-                        'config_id': message_id
-                    },
-                    qos=2
-                )
-                
-                # Aplicar configuración y confirmar
-                self.publish_event(
-                    f"esp32/config_ack/{self.esp32_id}",
-                    {
-                        'esp32_id': self.esp32_id,
-                        'status': 'config_applied',
-                        'client_id': self.client_id,
-                        'panel_id': self.panel_id,
-                        'config_id': message_id
-                    },
-                    qos=2
-                )
-                
-                # Actualizar estado
-                self.publish_event(
-                    f"system/status/{self.esp32_id}",
-                    {
-                        "esp32_id": self.esp32_id,
-                        "status": "RUNNING",
-                        "timestamp": utime.ticks_ms()
-                    },
-                    qos=2
-                )
-                
-                # Esperar envío de mensajes
-                utime.sleep_ms(2000)
-                machine.reset()
-                
-        except Exception as e:
-            print(f"[MQTT] Error procesando configuración: {e}")
-
-    def start_normal_operation(self):
-        """Inicia operación normal después de configuración"""
-        if not self.client_id or not self.panel_id:
-            return False
+            print(f"[MQTT] Procesando configuración - Client: {client_id}, Panel: {panel_id}")
             
-        try:
-            # Suscribirse al tópico de operación
-            operation_topic = f"clients/{self.client_id}/panels/{self.panel_id}"
-            self.subscribe(operation_topic, self._handle_operation_message)
-            
-            self.operation_mode = 'RUNNING'
-            self._publish_network_info()
-            return True
-            
-        except Exception as e:
-            print(f"[MQTT] Error iniciando operación: {e}")
-            return False
-
-    def _handle_operation_message(self, topic, msg):
-        """Maneja mensajes en modo operación"""
-        try:
-            message = json.loads(msg.decode())
-            
-            if message.get('command') == 'enter_config_mode':
-                self.operation_mode = 'CONFIG'
-                # Desuscribirse del tópico de operación
-                self.unsubscribe(f"clients/{self.client_id}/panels/{self.panel_id}")
-                # Volver a modo configuración
-                self.configure(self.esp32_id)
-                
-        except Exception as e:
-            print(f"[MQTT] Error en mensaje de operación: {e}")
-
-    def publish_status(self, relay_states):
-        """Publica estado de relés y sistema"""
-        if not self.client_id or not self.panel_id:
-            return False
-            
-        try:
-            gc.collect()
-            message = {
+            # Confirmar recepción antes de aplicar cambios
+            ack_response = {
                 'esp32_id': self.esp32_id,
-                'relay_states': relay_states,
-                'system': {
-                    'memory_free': gc.mem_free(),
-                    'memory_alloc': gc.mem_alloc(),
-                    'uptime': utime.ticks_ms() // 1000
-                },
-                'timestamp': utime.ticks_ms()
+                'status': 'config_received',
+                'config_id': message_id,
+                'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
             }
-            
-            return self.publish_event(
-                f"clients/{self.client_id}/panels/{self.panel_id}",
-                message,
+            print("[MQTT] Enviando confirmación de recepción...")
+            self.publish_event(
+                f"esp32/config_ack/{self.esp32_id}",
+                ack_response,
                 qos=1
             )
             
-        except Exception as e:
-            print(f"[MQTT] Error publicando estado: {e}")
-            return False
-
-    def check_status_report(self):
-        """Verifica si es momento de enviar reporte de estado"""
-        current_time = utime.ticks_ms()
-        if utime.ticks_diff(current_time, self.last_status_report) >= self.STATUS_REPORT_INTERVAL:
-            if self.publish_status({}):
-                self.last_status_report = current_time
-
-    def _publish_network_info(self):
-        """Publica información de red"""
-        try:
-            info = {
-                'esp32_id': self.esp32_id,
-                'MAC': self.mac_address,
-                'IP': self.wifi_manager.get_ip_address(),
-                'status': self.operation_mode,
-                'timestamp': utime.ticks_ms()
-            }
+            # Guardar configuración del panel
+            self.client_id = client_id
+            self.panel_id = panel_id
             
-            return self.publish_event(
-                f"esp32/network_info/{self.esp32_id}",
-                info,
-                retain=False
+            # NUEVO: Guardar la configuración en un archivo propio
+            try:
+                panel_config = {
+                    'client_id': client_id,
+                    'panel_id': panel_id,
+                    'status': 'RUNNING',
+                    'timestamp': utime.ticks_ms()
+                }
+                with open('panel_config.json', 'w') as f:
+                    json.dump(panel_config, f)
+                print("[MQTT] Configuración del panel guardada")
+            except Exception as e:
+                print(f"[MQTT] Error guardando config panel: {e}")
+                return
+                
+            # Enviar confirmación de aplicación
+            apply_response = {
+                'esp32_id': self.esp32_id,
+                'status': 'config_applied',
+                'client_id': self.client_id,
+                'panel_id': self.panel_id,
+                'config_id': message_id,
+                'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
+            }
+            print("[MQTT] Enviando confirmación de aplicación...")
+            self.publish_event(
+                f"esp32/config_ack/{self.esp32_id}",
+                apply_response,
+                qos=1
             )
             
-        except Exception as e:
-            print(f"[MQTT] Error publicando info de red: {e}")
-            return False
-
-    def _setup_lwt(self):
-        """Configura Last Will Testament"""
-        if not self.esp32_id:
-            return
-            
-        try:
-            offline_msg = {
-                'esp32_id': self.esp32_id,
-                'status': 'OFFLINE',
-                'timestamp': utime.ticks_ms(),
-                'message_id': f"lwt-{utime.ticks_ms()}"
+            # Actualizar estado
+            status_update = {
+                "esp32_id": self.esp32_id,
+                "status": "RUNNING",
+                "message_id": f"{utime.ticks_ms()}-{random.randint(1000,9999)}",
+                "timestamp": utime.ticks_ms()
             }
-            
-            self.client.set_last_will(
+            print("[MQTT] Actualizando estado...")
+            self.publish_event(
                 f"system/status/{self.esp32_id}",
-                json.dumps(offline_msg),
-                qos=2
+                status_update,
+                qos=1
             )
+            
+            # Esperar que los mensajes se envíen
+            utime.sleep_ms(2000)
+            
+            print("[MQTT] Configuración completada, reiniciando...")
+            machine.reset()
+            
         except Exception as e:
-            print(f"[MQTT] Error en LWT: {e}")
+            print(f"[MQTT] Error procesando configuración: {e}")
 
-    def validate_message_id(self, message_id: str) -> bool:
+    def _validate_message_id(self, message_id: str) -> bool:
         """Valida ID de mensaje para evitar duplicados"""
         if message_id in self._processed_ids:
             return False
@@ -2296,47 +2297,41 @@ class MQTTManager:
             
         return True
 
-    def publish_event(self, topic: str, message: Dict[str, Any], qos: int = 2, retain: bool = False):
-        """Publica mensaje MQTT con control de errores y confirmación"""
+    def publish_event(self, topic, message, qos=1, retain=False):
         try:
             if not self.ensure_connection():
+                print("[MQTT] No hay conexión al intentar publicar")
                 if len(self.message_queue) < self.MAX_QUEUE_SIZE:
                     self.message_queue.append((topic, message, qos, retain))
                 return False
 
             # Generar ID único para el mensaje
-            message_id = f"{utime.ticks_ms()}-{random.getrandbits(16)}"
+            message_id = f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
             message['message_id'] = message_id
 
-            # Control de QoS y retain según tipo de mensaje
-            if topic.endswith('/status') or 'status' in message:
-                retain = False
-                qos = min(qos, 1)  # QoS máximo 1 para estados
-            elif topic.startswith('esp32/config/'):
-                qos = 2  # QoS 2 para config
-
             print(f"[MQTT] Publicando en {topic} (QoS: {qos})")
-            result = self.client.publish(
-                topic.encode(),
-                json.dumps(message).encode(),
-                qos=qos,
-                retain=retain
-            )
+            print(f"[MQTT] Mensaje: {message}")
 
-            # Esperar confirmación para QoS > 0
-            if qos > 0:
-                start_time = utime.ticks_ms()
-                while not result.is_published():
-                    if utime.ticks_diff(utime.ticks_ms(), start_time) > self.MQTT_TIMEOUT:
-                        raise Exception("Timeout esperando confirmación")
-                    utime.sleep_ms(100)
+            try:
+                msg_json = json.dumps(message)
+                self.client.publish(
+                    topic.encode(),
+                    msg_json.encode(),
+                    qos=qos,
+                    retain=retain
+                )
+                print("[MQTT] Publicación enviada exitosamente")
+                utime.sleep_ms(100)
+                return True
 
-            return True
+            except Exception as e:
+                print(f"[MQTT] Error específico de publicación: {str(e)}")
+                if len(self.message_queue) < self.MAX_QUEUE_SIZE:
+                    self.message_queue.append((topic, message, qos, retain))
+                return False
 
         except Exception as e:
-            print(f"[MQTT] Error publicando: {e}")
-            if len(self.message_queue) < self.MAX_QUEUE_SIZE:
-                self.message_queue.append((topic, message, qos, retain))
+            print(f"[MQTT] Error general en publish_event: {str(e)}")
             return False
 
     def reconnect(self):
@@ -2374,46 +2369,95 @@ class MQTTManager:
             print(f"[MQTT] Error en reconnect: {e}")
             return False
 
-    def subscribe(self, topic, callback):
-        """Suscribe a tópico con verificación de conexión"""
-        try:
-            print(f"[MQTT] Intentando suscribirse a: {topic}")
-            
-            if not self.ensure_connection():
-                print("[MQTT] Error: No hay conexión para suscribirse")
-                return False
-                
-            if callback:
-                print("[MQTT] Configurando callback")
-                self.client.set_callback(callback)
-                
-            print("[MQTT] Ejecutando suscripción...")
-            self.client.subscribe(topic.encode(), qos=1)
-            print("[MQTT] Suscripción exitosa")
-            return True
-                
-        except Exception as e:
-            print(f"[MQTT] Error suscribiendo: {e}")
-            return False
-
-    def unsubscribe(self, topic):
-        """Desuscribe de tópico con verificación de conexión"""
-        try:
-            if not self.ensure_connection():
-                return False
-            return self.client.unsubscribe(topic.encode())
-        except Exception as e:
-            print(f"[MQTT] Error desuscribiendo: {e}")
-            return False
-
     def check_msg(self):
-        """Verifica mensajes pendientes con manejo de errores"""
+        """Verifica mensajes pendientes"""
         try:
             if self.ensure_connection():
                 return self.client.check_msg()
         except:
             pass
         return None
+
+    def check_status_report(self):
+        """Verifica si es momento de enviar reporte de estado"""
+        current_time = utime.ticks_ms()
+        if utime.ticks_diff(current_time, self.last_status_report) >= self.STATUS_REPORT_INTERVAL:
+            if self.publish_status({}):
+                self.last_status_report = current_time
+
+    def _publish_network_info(self):
+        """Publica información de red"""
+        try:
+            info = {
+                'esp32_id': self.esp32_id,
+                'MAC': self.mac_address,
+                'IP': self.wifi_manager.get_ip_address(),
+                'status': 'AWAITING_CONFIG',
+                'timestamp': utime.ticks_ms(),
+                'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
+            }
+            
+            return self.publish_event(
+                "esp32/network_info",
+                info,
+                qos=1
+            )
+            
+        except Exception as e:
+            print(f"[MQTT] Error publicando info de red: {e}")
+            return False
+
+    def _setup_lwt(self):
+        """Configura Last Will Testament"""
+        if not self.esp32_id:
+            return
+
+        try:
+            offline_msg = {
+                'esp32_id': self.esp32_id,
+                'status': 'OFFLINE',
+                'timestamp': utime.ticks_ms(),
+                'message_id': f"lwt-{utime.ticks_ms()}"
+            }
+            
+            self.client.set_last_will(
+                f"system/status/{self.esp32_id}",
+                json.dumps(offline_msg),
+                retain=False,
+                qos=1
+            )
+            
+        except Exception as e:
+                print(f"[MQTT] Error en LWT: {e}")
+
+    def publish_status(self, relay_states):
+        """Publica estado de relés y sistema"""
+        if not self.client_id or not self.panel_id:
+            return False
+            
+        try:
+            gc.collect()
+            message = {
+                'esp32_id': self.esp32_id,
+                'relay_states': relay_states,
+                'system': {
+                    'memory_free': gc.mem_free(),
+                    'memory_alloc': gc.mem_alloc(),
+                    'uptime': utime.ticks_ms() // 1000
+                },
+                'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}",
+                'timestamp': utime.ticks_ms()
+            }
+            
+            return self.publish_event(
+                f"clients/{self.client_id}/panels/{self.panel_id}",
+                message,
+                qos=1
+            )
+            
+        except Exception as e:
+            print(f"[MQTT] Error publicando estado: {e}")
+            return False
 
     def close(self):
         """Cierra conexión MQTT y limpia recursos"""
@@ -2425,9 +2469,10 @@ class MQTTManager:
                     {
                         "esp32_id": self.esp32_id,
                         "status": "OFFLINE",
+                        "message_id": f"{utime.ticks_ms()}-{random.randint(1000,9999)}",
                         "timestamp": utime.ticks_ms()
                     },
-                    qos=2
+                    qos=1
                 )
                 utime.sleep_ms(500)  # Esperar envío
                 self.client.disconnect()
@@ -2438,32 +2483,44 @@ class MQTTManager:
         self.message_queue.clear()
         gc.collect()
 
-    def start_registration(self):
-        """Publica información inicial del ESP32"""
+    def unsubscribe(self, topic):
+        """Desuscribe de tópico con verificación de conexión"""
         try:
-            print("[MQTT] Iniciando registro del dispositivo...")
-            
-            # Publicar info del dispositivo
-            network_info = {
-                'esp32_id': self.esp32_id,
-                'MAC': self.mac_address,
-                'IP': self.wifi_manager.get_ip_address(),
-                'status': 'AWAITING_CONFIG',
-                'lastUpdate': int(time.time() * 1000)  # Timestamp en milisegundos
-            }
-            
-            # Publicar en tópico de registro
-            self.publish_event(
-                f"esp32/network_info",  # Tópico general de registro
-                network_info,
-                retain=False
-            )
-            
-            print("[MQTT] Información de registro publicada")
-            return True
+            if not self.ensure_connection():
+                return False
+            return self.client.unsubscribe(topic.encode())
         except Exception as e:
-            print(f"[MQTT] Error en registro: {e}")
+            print(f"[MQTT] Error desuscribiendo: {e}")
             return False
+
+    def get_mac(self):
+        """Obtiene MAC address"""
+        return self.mac_address
+
+    def get_ip_address(self):
+        """Obtiene IP actual"""
+        return self.wifi_manager.get_ip_address() if self.wifi_manager else None
+
+
+--- Contenido de mqtt_ssl_setup.py ---
+
+import os
+
+def get_ssl_params():
+    """
+    Retorna los parámetros SSL para la conexión MQTT.
+    SSL sin verificación de certificado pero con cifrado.
+    """
+    import ssl
+    try:
+        return {
+            'cert_reqs': ssl.CERT_NONE,  # No verificar certificado
+            'do_handshake': True,
+            'ciphers': None  # Usar ciphers por defecto
+        }
+    except Exception as e:
+        print(f"[MQTT] Error en parámetros SSL: {e}")
+        return None
 
 
 
@@ -3020,7 +3077,7 @@ class WiFiManager:
         print("[WIFI] Gestor WiFi iniciado")
 
     def connect_wifi(self, ssid, password):
-        """Conecta al WiFi con reintentos"""
+        """Conecta al WiFi con reintentos más robustos"""
         try:
             if not ssid or not password:
                 self.last_error = "credenciales_invalidas"
@@ -3030,28 +3087,28 @@ class WiFiManager:
             gc.collect()
 
             # Desconectar si hay conexión previa
-            if self.sta_if.isconnected():
-                self.sta_if.disconnect()
-                utime.sleep_ms(100)
+            try:
+                if self.sta_if.isconnected():
+                    self.sta_if.disconnect()
+                    utime.sleep_ms(500)  # Dar más tiempo para la desconexión
+            except:
+                pass
 
             self.sta_if.connect(ssid, password)
             
-            # Esperar conexión con timeout
+            # Esperar conexión con timeout y reintentos
             retry_count = 0
             while retry_count < self.MAX_RETRIES:
                 start_time = utime.time()
+                connection_timeout = start_time + self.CONNECT_TIMEOUT
                 
-                while not self.sta_if.isconnected():
-                    if utime.time() - start_time > self.CONNECT_TIMEOUT:
-                        break
-                        
+                while not self.sta_if.isconnected() and utime.time() < connection_timeout:
                     status = self.sta_if.status()
                     if status == network.STAT_WRONG_PASSWORD:
                         self.last_error = "password_incorrecto"
                         return False
                     elif status == network.STAT_NO_AP_FOUND:
-                        self.last_error = "red_no_encontrada"
-                        break
+                        break  # Salir del bucle interno para reintentar
                     
                     utime.sleep_ms(100)
                 
@@ -3066,10 +3123,17 @@ class WiFiManager:
                 
                 retry_count += 1
                 if retry_count < self.MAX_RETRIES:
-                    print(f"[WIFI] Reintento {retry_count}")
+                    print(f"[WIFI] Reintento {retry_count} de {self.MAX_RETRIES}")
+                    # Reintentar la conexión
+                    try:
+                        self.sta_if.disconnect()
+                    except:
+                        pass
                     utime.sleep_ms(self.RETRY_DELAY)
+                    self.sta_if.connect(ssid, password)
 
             self.last_error = "timeout_conexion"
+            print("[WIFI] No se pudo establecer conexión después de reintentos")
             return False
 
         except Exception as e:

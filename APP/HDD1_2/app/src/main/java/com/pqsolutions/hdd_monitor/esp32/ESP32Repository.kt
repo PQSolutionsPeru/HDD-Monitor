@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.SetOptions
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -65,8 +66,10 @@ class ESP32Repository @Inject constructor(
 
         try {
             listenerRegistration = firestore.collection(ESP32_COLLECTION)
-                .whereEqualTo("status", ESP32Device.STATUS_AWAITING_CONFIG)
-                .whereEqualTo("panel_id", "")
+                .whereIn("status", listOf(
+                    ESP32Device.STATUS_AWAITING_CONFIG,
+                    ESP32Device.STATUS_PENDING_ASSIGNMENT
+                ))
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         Log.e(TAG, "Error al observar ESP32s no asignados", error)
@@ -161,25 +164,35 @@ class ESP32Repository @Inject constructor(
         Log.d(TAG, "ESP32 assigned successfully")
     }
 
-    suspend fun updateNetworkInfo(
-        esp32Id: String,
-        ip: String,
-        mac: String
-    ): Result<Unit> = runCatching {
+    suspend fun updateNetworkInfo(esp32Id: String, ip: String, mac: String): Result<Unit> = runCatching {
         Log.d(TAG, "Updating network info for ESP32: $esp32Id")
 
-        val updateData = mapOf(
-            "IP" to ip,
-            "MAC" to mac.uppercase().replace(":", ""),
-            "status" to ESP32Device.STATUS_AWAITING_CONFIG,
-            "lastUpdate" to com.google.firebase.Timestamp.now()
-        )
+        // Primero verificar si existe el documento
+        val esp32Ref = firestore.document("$ESP32_COLLECTION/$esp32Id")
+        val doc = esp32Ref.get().await()
 
-        firestore.document("$ESP32_COLLECTION/$esp32Id")
-            .update(updateData)
-            .await()
+        val updateData = if (!doc.exists()) {
+            // Si no existe, crear documento con todos los campos necesarios
+            mapOf(
+                "MAC" to mac.uppercase().replace(":", ""),
+                "IP" to ip,
+                "status" to ESP32Device.STATUS_AWAITING_CONFIG,
+                "client_id" to "",
+                "panel_id" to "",
+                "lastUpdate" to Timestamp.now()
+            )
+        } else {
+            // Si existe, solo actualizar campos necesarios
+            mapOf(
+                "IP" to ip,
+                "MAC" to mac.uppercase().replace(":", ""),
+                "status" to ESP32Device.STATUS_AWAITING_CONFIG,
+                "lastUpdate" to Timestamp.now()
+            )
+        }
 
-        Log.d(TAG, "Network info updated successfully")
+        // Usar set con merge para crear o actualizar
+        esp32Ref.set(updateData, SetOptions.merge()).await()
     }
 
     suspend fun updateStatus(

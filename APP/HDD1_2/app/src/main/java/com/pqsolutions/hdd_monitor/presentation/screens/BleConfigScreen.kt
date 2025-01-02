@@ -76,8 +76,7 @@ fun BleConfigScreen(
             }
             is BleState.WifiConfigured -> {
                 Log.d(TAG, "WiFi configurado exitosamente")
-                // Iniciar temporizador de espera para confirmación de modo operación
-                viewModel.startTimeoutTimer(BleViewModel.WIFI_CONFIG_TIMEOUT)
+                viewModel.startWifiConfigTimeout()  // Usar la función en lugar de acceder directamente a la constante
             }
             is BleState.WaitingForRunningMode -> {
                 Log.d(TAG, "Esperando confirmación de modo operación")
@@ -315,7 +314,6 @@ private fun ScanningSection(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WifiConfigSection(
     ssid: String,
@@ -333,6 +331,16 @@ private fun WifiConfigSection(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.primary
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            "Por favor ingresa las credenciales de WiFi.\n" +
+                    "Este proceso puede tomar hasta 2 minutos.",
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium
+        )
+
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
