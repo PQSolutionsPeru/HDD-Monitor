@@ -15,17 +15,8 @@ class RelayManager:
         return pin
 
     def debounce(self, pin_num, pin, callback):
-        """Maneja cambios en los relays con debounce"""
-        current_time = utime.ticks_ms()
-        if (utime.ticks_diff(current_time, self.last_trigger_time.get(pin_num, 0)) > 300 and 
-            self.relay_states[pin_num] != pin.value()):
-            
-            self.relay_states[pin_num] = pin.value()  # Actualizar estado
+        current_time = time.ticks_ms()
+        if current_time - self.last_trigger_time.get(pin_num, 0) > 300 and self.relay_states[pin_num] != pin.value():  # 300 ms debounce period
+            self.relay_states[pin_num] = pin.value()  # Actualizar el estado del relay
+            callback(pin, pin_num)
             self.last_trigger_time[pin_num] = current_time
-            
-            # Obtener hora actual en GMT-5 si hay time_manager disponible
-            current_datetime = None
-            if hasattr(self, 'time_manager') and self.time_manager:
-                current_datetime = self.time_manager.get_datetime_str()
-                
-            callback(pin, pin_num, current_datetime)

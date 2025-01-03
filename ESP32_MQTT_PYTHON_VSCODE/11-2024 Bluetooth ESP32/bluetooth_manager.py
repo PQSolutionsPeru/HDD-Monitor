@@ -1,91 +1,183 @@
-import bluetooth
-from machine import Pin
-import json
-import utime
 from ble_uart_peripheral import BLEUART
+import bluetooth
+import json
+import gc
+import utime
+import ubinascii
+import machine
 
 class BluetoothManager:
-    def __init__(self, name="ESP32-Monitor"):
-        print("[BT] Iniciando BLE...")
-        self.ble = bluetooth.BLE()
-        self.ble.active(True)
+    def __init__(self, esp32_id=None):
+        """Initializes BLE for WiFi configuration only"""
+        print("[BLE] Starting BLE...")
         
-        # Crear UART con buffer pequeño
-        self.uart = BLEUART(self.ble, name=name, rxbuf=100)
-        self.uart.irq(self._on_uart_rx)
+        # Force garbage collection before BLE initialization
+        gc.collect()
+        utime.sleep_ms(1000)
         
-        self._connected = False
-        self.last_parsed_data = None
-        print("[BT] BLE activo y listo - Nombre:", name)
-        print("[BT] Esperando conexión BLE...")
-
-    def _on_uart_rx(self):
-        """Callback cuando se reciben datos por UART"""
         try:
-            # Leer datos disponibles
-            data = self.uart.read().decode().strip()
-            print(f"[BT] Datos recibidos: '{data}'")
+            self.ble = bluetooth.BLE()
+            self.ble.active(True)
             
-            if data:
-                # Intentar parsear los datos
-                parsed = self._parse_data(data)
-                if parsed:
-                    print(f"[BT] Datos parseados: {parsed}")
-                    self.last_parsed_data = parsed
-                    # Enviar confirmación
-                    self.write_data("status:received")
+            # Generate ID from MAC if not provided
+            if not esp32_id:
+                mac = ubinascii.hexlify(machine.unique_id()).decode().upper()
+                esp32_id = mac[-4:] + "AC" + mac[:2]
+                print(f"[BLE] ID generated from MAC: {esp32_id}")
+                # Save ID for ESP32IdManager to use later
+                try:
+                    with open("esp32_id.json", 'w') as f:
+                        json.dump({
+                            'esp32_id': esp32_id,
+                            'mac': mac,
+                            'timestamp': utime.ticks_ms(),
+                            'history': [{'id': esp32_id, 'event': 'generated_by_ble', 'timestamp': utime.ticks_ms()}]
+                        }, f)
+                except Exception as e:
+                    print(f"[BLE] Error saving ID: {e}")
+            
+            # Device identification
+            self.esp32_id = esp32_id
+            self.device_name = f"ESP32-{esp32_id}"
+            
+            print(f"[BLE] Initializing UART with name: {self.device_name}")
+            self.uart = BLEUART(self.ble, name=self.device_name)
+            
+            # Control and state
+            self.is_configured = False
+            self.current_state = 'waiting'
+            self.last_activity = utime.ticks_ms()
+            
+            # Constants
+            self.TIMEOUT = 300000           # 5 minutes timeout
+            self.CONNECT_RETRY_DELAY = 30000   # 30 seconds between retries
+            self.MAX_RETRIES = 5               # 5 maximum attempts
+            self.MAX_MSG_SIZE = 1024           # 1KB maximum message
+            
+            print(f"[BLE] BLE active - Name: {self.device_name}")
+            
         except Exception as e:
-            print(f"[BT] Error en rx callback: {e}")
+            print(f"[BLE] Initialization error: {e}")
+            self.cleanup()
+            raise
 
-    def _parse_data(self, text):
-        """Parsea los datos recibidos"""
+    def _extract_json(self, data):
+        """Extracts JSON content between {START} and {END} markers"""
         try:
-            if not text:
+            if "{START}" not in data or "{END}" not in data:
                 return None
                 
-            text = text.strip()
-            pairs = [pair.strip() for pair in text.split(',') if ':' in pair]
-            result = {}
-            
-            for pair in pairs:
-                key, value = pair.split(':', 1)
-                key = key.strip()
-                value = value.strip()
-                if key and value:
-                    result[key] = value
-                    
-            return result if result else None
+            # Extract content between markers
+            start_idx = data.find("{START}") + 7
+            end_idx = data.find("{END}")
+            if start_idx >= end_idx:
+                return None
+                
+            json_str = data[start_idx:end_idx].strip()
+            return json.loads(json_str)
             
         except Exception as e:
-            print(f"[BT] Error parseando datos: {e}")
+            print(f"[BLE] JSON extraction error: {e}")
             return None
 
-    def write_data(self, data):
-        """Envía datos a través de BLE"""
+    def wait_for_data(self):
+        """Waits for and processes incoming data"""
         try:
-            if isinstance(data, dict):
-                text = ','.join(f"{k}:{v}" for k, v in data.items())
-            else:
-                text = str(data)
-            print(f"[BT] Enviando: {text}")
-            self.uart.write(text.encode() + b'\n')
-            return True
+            if self.uart.any():
+                data = self.uart.read().decode().strip()
+                if not data:
+                    return None
+                    
+                print(f"[BLE] Data received: {data}")
+                
+                # Check maximum size
+                if len(data) > self.MAX_MSG_SIZE:
+                    self.write_data("error:message_too_large")
+                    return None
+                
+                # Process JSON data
+                try:
+                    config = self._extract_json(data)
+                    if config and 'ssid' in config and 'password' in config:
+                        return config
+                    else:
+                        self.write_data("error:invalid_format")
+                        return None
+                except Exception as e:
+                    print(f"[BLE] JSON parsing error: {e}")
+                    self.write_data("error:invalid_format")
+                    return None
+                    
+                self.last_activity = utime.ticks_ms()
+                
+            return None
+            
         except Exception as e:
-            print(f"[BT] Error enviando datos: {e}")
+            print(f"[BLE] Error in data processing: {e}")
+            self.write_data("error:processing_failed")
+            return None
+
+    def write_data(self, message):
+        """Safely sends data through BLE"""
+        try:
+            if not message.endswith('\n'):
+                message += '\n'
+                
+            print(f"[BLE] Sending response: {message.strip()}")
+            self.uart.write(message.encode())
+                
+        except Exception as e:
+            print(f"[BLE] Error sending response: {e}")
+
+    def cleanup(self):
+        """Cleans up BLE resources"""
+        try:
+            print("[BLE] Cleaning up BLE resources...")
+            
+            if hasattr(self, 'uart') and self.uart:
+                try:
+                    self.write_data("bye:closing_connection")
+                    utime.sleep_ms(500)
+                except:
+                    pass
+                    
+                try:
+                    self.uart.close()
+                    utime.sleep_ms(500)
+                except:
+                    pass
+                self.uart = None
+            
+            # Force garbage collection
+            gc.collect()
+            utime.sleep_ms(500)
+            
+            if hasattr(self, 'ble') and self.ble:
+                try:
+                    self.ble.active(False)
+                    utime.sleep_ms(500)
+                except:
+                    pass
+                self.ble = None
+            
+            # Final garbage collection
+            gc.collect()
+            print("[BLE] BLE cleanup completed")
+            
+            return True
+                
+        except Exception as e:
+            print(f"[BLE] Error in cleanup: {e}")
             return False
 
-    def wait_for_data(self, timeout=1):
-        """Espera y retorna datos si están disponibles"""
-        if self.last_parsed_data is not None:
-            data = self.last_parsed_data
-            self.last_parsed_data = None
-            return data
-        return None
-
-    def close(self):
-        """Cierra la conexión BLE"""
+    def check_timeout(self):
+        """Checks for BLE timeout"""
         try:
-            self.uart.close()
-            self.ble.active(False)
-        except:
-            pass
+            current_time = utime.ticks_ms()
+            if utime.ticks_diff(current_time, self.last_activity) > self.TIMEOUT:
+                print("[BLE] Activity timeout - Closing BLE")
+                return True
+            return False
+        except Exception as e:
+            print(f"[BLE] Error checking timeout: {e}")
+            return True  # Return True to force cleanup
