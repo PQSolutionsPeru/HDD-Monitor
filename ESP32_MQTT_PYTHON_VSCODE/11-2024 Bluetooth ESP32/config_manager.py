@@ -123,12 +123,12 @@ class ConfigManager:
                 status_message = {
                     "esp32_id": self.esp32_id,
                     "status": "AWAITING_CONFIG",
-                    "MAC": self.mqtt_manager.get_mac(),
+                    "MAC": self.mqtt_manager.get_mac().upper(),  # Asegurar mayúsculas
                     "IP": self.mqtt_manager.get_ip_address(),
                     "timestamp": utime.ticks_ms(),
                     "wifi_ssid": self.config['wifi']['ssid']  # Añadir para debug
                 }
-                
+
                 result = self.mqtt_manager.publish_event(
                     "esp32/network_info",
                     status_message,

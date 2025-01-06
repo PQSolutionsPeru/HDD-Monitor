@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import org.eclipse.paho.android.service.MqttAndroidClient
 import org.eclipse.paho.client.mqttv3.IMqttActionListener
@@ -57,6 +58,8 @@ class BleViewModel @Inject constructor(
 
     private val _state = MutableStateFlow<BleState>(BleState.Initial)
     val state: StateFlow<BleState> = _state.asStateFlow()
+
+    private var currentMac: String? = null
 
     private val _devices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
     val devices: StateFlow<List<BluetoothDevice>> = _devices.asStateFlow()
@@ -232,13 +235,17 @@ class BleViewModel @Inject constructor(
                 return@launch
             }
 
+            // Guardar MAC address al conectar
+            currentMac = device.address
             _state.value = BleState.Connecting
-            startTimeoutTimer(CONNECTION_TIMEOUT)  // Especificamos el timeout
+            startTimeoutTimer(CONNECTION_TIMEOUT)
+
             try {
                 bleConnector.connect(device)
             } catch (e: Exception) {
                 Log.e(TAG, "Error conectando al dispositivo", e)
                 _state.value = BleState.Error("Error conectando al dispositivo: ${e.message}")
+                currentMac = null  // Limpiar MAC en caso de error
             }
         }
     }
@@ -372,7 +379,7 @@ class BleViewModel @Inject constructor(
         }
     }
 
-    fun observeWifiConfigState() {
+    private fun observeWifiConfigState() {
         viewModelScope.launch {
             bleConnector.wifiConfigState.collect { wifiState ->
                 Log.d(TAG, "Nuevo estado WiFi recibido: $wifiState")
@@ -386,36 +393,40 @@ class BleViewModel @Inject constructor(
                     }
                     is WifiConfigState.Success -> {
                         Log.d(TAG, "WiFi configurado exitosamente")
+                        Log.d(TAG, "Estado actual de _state: ${_state.value}")
                         timeoutJob?.cancel()
 
-                        val device = devices.value.firstOrNull()
-                        if (device != null) {
-                            // Extraer ID directamente del nombre del dispositivo
-                            val deviceName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
-                                    PackageManager.PERMISSION_GRANTED) {
-                                    device.name
-                                } else null
-                            } else {
-                                device.name
-                            }
-
-                            if (deviceName?.startsWith("ESP32-") == true) {
-                                val esp32Id = deviceName.substringAfter("ESP32-")
-                                Log.d(TAG, "ESP32 ID extraído del nombre: $esp32Id")
-
-                                // Esperar un momento para que Firestore se actualice
-                                delay(2000)
-
-                                // Buscar en los ESP32s no asignados
-                                startObservingESP32ById(esp32Id)
-                            } else {
-                                Log.e(TAG, "No se pudo extraer ESP32 ID del nombre: $deviceName")
-                                _state.value = BleState.Error("No se pudo identificar el dispositivo ESP32")
-                            }
+                        // Usar el ID del ESP32 de la respuesta directamente
+                        val esp32Id = wifiState.esp32Id
+                        if (esp32Id.isNotEmpty()) {
+                            Log.d(TAG, "ESP32 ID recibido: $esp32Id")
+                            // Esperar un momento para que Firestore se actualice
+                            delay(2000)
+                            startObservingESP32ById(esp32Id)
                         } else {
-                            Log.e(TAG, "No se encontró el dispositivo BLE")
-                            _state.value = BleState.Error("No se pudo identificar el dispositivo")
+                            // Fallback a extraer el ID del nombre BLE
+                            val deviceId = devices.value.firstOrNull()?.let { device ->
+                                try {
+                                    if (Build.VERSION.SDK_INT >= VERSION_CODES.S) {
+                                        if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
+                                            PackageManager.PERMISSION_GRANTED) {
+                                            device.name?.substringAfter("ESP32-")
+                                        } else null
+                                    } else {
+                                        device.name?.substringAfter("ESP32-")
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error extrayendo ESP32 ID", e)
+                                    null
+                                }
+                            }
+
+                            if (deviceId != null) {
+                                Log.d(TAG, "ESP32 ID extraído: $deviceId")
+                                startObservingESP32ById(deviceId)
+                            } else {
+                                _state.value = BleState.Error("No se pudo obtener ID del ESP32")
+                            }
                         }
                     }
                     is WifiConfigState.Error -> {
@@ -433,26 +444,37 @@ class BleViewModel @Inject constructor(
             try {
                 startTimeoutTimer(FIRESTORE_TIMEOUT)
 
-                esp32Repository.observeUnassignedESP32s().collect { unassignedESP32s ->
+                esp32Repository.observeUnassignedESP32s(esp32Id).collect { unassignedESP32s ->
                     Log.d(TAG, "Recibida actualización de ESP32s no asignados: ${unassignedESP32s.size}")
+                    unassignedESP32s.forEach { esp32 ->
+                        Log.d(TAG, "ESP32: ${esp32.documentName}, Estado: ${esp32.status}")
+                    }
 
-                    val esp32 = unassignedESP32s.find { it.documentName == esp32Id }
+                    val esp32 = unassignedESP32s.find { device ->
+                        device.documentName == esp32Id
+                    }
 
                     if (esp32 != null) {
                         Log.d(TAG, "ESP32 encontrado! Estado: ${esp32.status}")
-                        // Si está en AWAITING_CONFIG o PENDING_ASSIGNMENT, proceder con la selección
+
+                        // Verificar que el estado sea válido para configuración
                         if (esp32.status == ESP32Device.STATUS_AWAITING_CONFIG ||
-                            esp32.status == ESP32Device.STATUS_PENDING_ASSIGNMENT) {
+                            esp32.status == ESP32Device.STATUS_PENDING_ASSIGNMENT ||
+                            esp32.status == ESP32Device.STATUS_WIFI_CONFIG) {
+
                             Log.d(TAG, "ESP32 en estado válido para configuración")
                             currentESP32 = esp32
                             _state.value = BleState.SelectingClient(esp32)
                             timeoutJob?.cancel()
                             return@collect
+                        } else {
+                            Log.d(TAG, "ESP32 encontrado pero en estado inválido: ${esp32.status}")
                         }
                     } else {
                         Log.d(TAG, "ESP32 $esp32Id aún no encontrado")
                     }
                 }
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error observando ESP32 en Firestore", e)
                 _state.value = BleState.Error("Error verificando estado del dispositivo: ${e.message}")
@@ -509,6 +531,7 @@ class BleViewModel @Inject constructor(
     }
 
     fun disconnect() {
+        currentMac = null  // Limpiar MAC al desconectar
         bleConnector.disconnect()
         timeoutJob?.cancel()
     }
@@ -554,15 +577,19 @@ class BleViewModel @Inject constructor(
                 val jsonObject = JSONObject(payload)
                 val esp32Id = jsonObject.getString("esp32_id")
                 val status = jsonObject.getString("status")
+                val mac = jsonObject.getString("MAC")
                 val timestamp = jsonObject.getJSONObject("timestamp")
 
                 // Solo procesar mensajes en tiempo real
                 if (timestamp.getString("type") == "realtime" && status == "AWAITING_CONFIG") {
+                    // Usar el MAC que viene del ESP32
+                    currentMac = mac  // Actualizar el MAC guardado con el que viene del ESP32
+
                     viewModelScope.launch {
-                        esp32Repository.observeUnassignedESP32s().collect { unassignedESP32s ->
+                        esp32Repository.observeUnassignedESP32s(mac).collect { unassignedESP32s ->
                             unassignedESP32s.find { it.documentName == esp32Id }?.let { esp32Device ->
                                 _state.value = BleState.SelectingClient(esp32Device)
-                                timeoutJob?.cancel() // Cancelar el timeout
+                                timeoutJob?.cancel()
                             }
                         }
                     }
@@ -575,15 +602,56 @@ class BleViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        currentMac = null  // Limpiar MAC al destruir ViewModel
         disconnect()
         stopScan()
         scanJob?.cancel()
         timeoutJob?.cancel()
     }
 
-    // En BleViewModel.kt
     fun startWifiConfigTimeout() {
-        startTimeoutTimer(WIFI_CONFIG_TIMEOUT)
+        viewModelScope.launch {
+            delay(WIFI_CONFIG_TIMEOUT)
+
+            if (_state.value is BleState.WifiConfiguring) {
+                Log.d(TAG, "Verificando estado de ESP32...")
+
+                currentMac?.let { mac ->
+                    esp32Repository.observeUnassignedESP32s()
+                        .take(1)
+                        .collect { devices ->
+                            val esp32 = devices.find { it.MAC.equals(mac, ignoreCase = true) }
+
+                            if (esp32 != null) {
+                                when (esp32.status) {
+                                    ESP32Device.STATUS_AWAITING_CONFIG -> {
+                                        Log.d(TAG, "ESP32 encontrado en Firestore esperando configuración")
+                                        onWifiConfigured(esp32)
+                                    }
+                                    ESP32Device.STATUS_WIFI_CONFIG -> {
+                                        Log.d(TAG, "ESP32 en estado WIFI_CONFIG, asumiendo error de contraseña")
+                                        _state.value = BleState.Error("Error de contraseña WiFi")
+                                    }
+                                    else -> {
+                                        Log.d(TAG, "ESP32 en estado inesperado: ${esp32.status}")
+                                        _state.value = BleState.ConfigurationError(
+                                            "Estado inesperado del ESP32: ${esp32.status}"
+                                        )
+                                    }
+                                }
+                            } else {
+                                _state.value = BleState.ConfigurationError(
+                                    "Timeout configurando WiFi"
+                                )
+                            }
+                        }
+                } ?: run {
+                    _state.value = BleState.ConfigurationError(
+                        "Error interno: MAC no disponible"
+                    )
+                }
+            }
+        }
     }
 
     companion object {

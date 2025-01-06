@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.SetOptions
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,6 +25,8 @@ class ESP32Repository @Inject constructor(
 
     private fun DocumentSnapshot.toESP32Device(): ESP32Device? {
         return try {
+            if (!exists()) return null
+
             toObject(ESP32Device::class.java)?.copy(
                 documentName = id
             )
@@ -61,34 +64,49 @@ class ESP32Repository @Inject constructor(
         }
     }
 
-    fun observeUnassignedESP32s(): Flow<List<ESP32Device>> = callbackFlow {
-        var listenerRegistration: ListenerRegistration? = null
-
+    fun observeUnassignedESP32s(deviceId: String? = null): Flow<List<ESP32Device>> = callbackFlow {
         try {
-            listenerRegistration = firestore.collection(ESP32_COLLECTION)
-                .whereIn("status", listOf(
+            Log.d(TAG, "Iniciando observación de ESP32s no asignados. DeviceId: $deviceId")
+
+            val baseQuery = firestore.collection(ESP32_COLLECTION).whereIn(
+                "status",
+                listOf(
                     ESP32Device.STATUS_AWAITING_CONFIG,
-                    ESP32Device.STATUS_PENDING_ASSIGNMENT
-                ))
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        Log.e(TAG, "Error al observar ESP32s no asignados", error)
-                        return@addSnapshotListener
-                    }
+                    ESP32Device.STATUS_PENDING_ASSIGNMENT,
+                    ESP32Device.STATUS_WIFI_CONFIG
+                )
+            )
 
-                    val devices = snapshot?.documents?.mapNotNull { doc ->
-                        doc.toESP32Device()
-                    } ?: emptyList()
+            // Si hay deviceId, buscar por el ID del documento directamente
+            val finalQuery = if (deviceId != null) {
+                Log.d(TAG, "Buscando ESP32 con ID: $deviceId")
+                // Primero filtramos por status y luego por ID
+                baseQuery.whereEqualTo(FieldPath.documentId(), deviceId)
+            } else {
+                baseQuery
+            }
 
-                    trySend(devices)
+            val listenerRegistration = finalQuery.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Error observando ESP32s", error)
+                    return@addSnapshotListener
                 }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al configurar listener de ESP32s no asignados", e)
-            close(e)
-        }
 
-        awaitClose {
-            listenerRegistration?.remove()
+                val devices = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toESP32Device()?.also {
+                        Log.d(TAG, "ESP32 encontrado - ID: ${doc.id}, Status: ${it.status}, MAC: ${it.MAC}")
+                    }
+                } ?: emptyList()
+
+                trySend(devices)
+            }
+
+            awaitClose {
+                listenerRegistration?.remove()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error configurando listener", e)
+            close(e)
         }
     }
 
@@ -96,7 +114,8 @@ class ESP32Repository @Inject constructor(
         var listenerRegistration: ListenerRegistration? = null
 
         try {
-            listenerRegistration = firestore.collection(ESP32_COLLECTION).document(esp32Id)
+            listenerRegistration = firestore.collection(ESP32_COLLECTION)
+                .document(esp32Id)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         Log.e(TAG, "Error al observar estado de ESP32 $esp32Id", error)
@@ -105,9 +124,17 @@ class ESP32Repository @Inject constructor(
 
                     val status = snapshot?.getString("status") ?: "UNKNOWN"
                     trySend(status)
+
+                    if (status == ESP32Device.STATUS_RUNNING) {
+                        snapshot?.getString("client_id")?.let { clientId ->
+                            snapshot.getString("panel_id")?.let { panelId ->
+                                observeRelayStates(clientId, panelId)
+                            }
+                        }
+                    }
                 }
         } catch (e: Exception) {
-            Log.e(TAG, "Error al configurar listener de estado de ESP32 $esp32Id", e)
+            Log.e(TAG, "Error al configurar listener de estado de ESP32", e)
             close(e)
         }
 
@@ -116,8 +143,28 @@ class ESP32Repository @Inject constructor(
         }
     }
 
+    private fun observeRelayStates(clientId: String, panelId: String) {
+        val relaysRef = firestore
+            .collection("hdd-monitor/accounts/clients")
+            .document(clientId)
+            .collection("panels")
+            .document(panelId)
+            .collection("relays")
+
+        relaysRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.e(TAG, "Error observando relays", error)
+                return@addSnapshotListener
+            }
+
+            snapshot?.documentChanges?.forEach { change ->
+                val relay = change.document
+                Log.d(TAG, "Cambio en relay ${relay.id}: ${relay.getString("status")}")
+            }
+        }
+    }
+
     private fun generateESP32Id(mac: String): String {
-        // Convertir a formato que usa el ESP32: tomar los últimos 4 caracteres del MAC
         val normalizedMAC = mac.uppercase().replace(":", "").replace("-", "")
         return normalizedMAC.takeLast(4) + "AC" + normalizedMAC.take(2)
     }
@@ -134,9 +181,7 @@ class ESP32Repository @Inject constructor(
                 .await()
                 .documents
                 .firstOrNull()
-                ?.let { doc ->
-                    doc.toObject(ESP32Device::class.java)?.copy(documentName = esp32Id)
-                }
+                ?.toESP32Device()
         } catch (e: Exception) {
             Log.e(TAG, "Error finding ESP32 by MAC", e)
             null
@@ -150,29 +195,40 @@ class ESP32Repository @Inject constructor(
     ): Result<Unit> = runCatching {
         Log.d(TAG, "Assigning ESP32 $esp32Id to panel $panelId")
 
+        val esp32Ref = firestore.document("$ESP32_COLLECTION/$esp32Id")
+        val esp32Doc = esp32Ref.get().await()
+
+        if (!esp32Doc.exists()) {
+            throw IllegalStateException("ESP32 $esp32Id no encontrado")
+        }
+
+        esp32Doc.data?.let { currentData ->
+            val currentClientId = currentData["client_id"] as? String
+            val currentPanelId = currentData["panel_id"] as? String
+
+            if (!currentClientId.isNullOrEmpty() && !currentPanelId.isNullOrEmpty()) {
+                throw IllegalStateException("ESP32 ya está asignado a otro panel")
+            }
+        }
+
         val updateData = mapOf(
             "client_id" to clientId,
             "panel_id" to panelId,
             "status" to ESP32Device.STATUS_AWAITING_CONFIG,
-            "lastUpdate" to com.google.firebase.Timestamp.now()
+            "lastUpdate" to Timestamp.now()
         )
 
-        firestore.document("$ESP32_COLLECTION/$esp32Id")
-            .update(updateData)
-            .await()
-
+        esp32Ref.set(updateData, SetOptions.merge()).await()
         Log.d(TAG, "ESP32 assigned successfully")
     }
 
     suspend fun updateNetworkInfo(esp32Id: String, ip: String, mac: String): Result<Unit> = runCatching {
         Log.d(TAG, "Updating network info for ESP32: $esp32Id")
 
-        // Primero verificar si existe el documento
         val esp32Ref = firestore.document("$ESP32_COLLECTION/$esp32Id")
         val doc = esp32Ref.get().await()
 
         val updateData = if (!doc.exists()) {
-            // Si no existe, crear documento con todos los campos necesarios
             mapOf(
                 "MAC" to mac.uppercase().replace(":", ""),
                 "IP" to ip,
@@ -182,7 +238,6 @@ class ESP32Repository @Inject constructor(
                 "lastUpdate" to Timestamp.now()
             )
         } else {
-            // Si existe, solo actualizar campos necesarios
             mapOf(
                 "IP" to ip,
                 "MAC" to mac.uppercase().replace(":", ""),
@@ -191,19 +246,15 @@ class ESP32Repository @Inject constructor(
             )
         }
 
-        // Usar set con merge para crear o actualizar
         esp32Ref.set(updateData, SetOptions.merge()).await()
     }
 
-    suspend fun updateStatus(
-        esp32Id: String,
-        status: String
-    ): Result<Unit> = runCatching {
+    suspend fun updateStatus(esp32Id: String, status: String): Result<Unit> = runCatching {
         Log.d(TAG, "Updating status for ESP32: $esp32Id to $status")
 
         val updateData = mapOf(
             "status" to status,
-            "lastUpdate" to com.google.firebase.Timestamp.now()
+            "lastUpdate" to Timestamp.now()
         )
 
         firestore.document("$ESP32_COLLECTION/$esp32Id")
@@ -222,7 +273,7 @@ class ESP32Repository @Inject constructor(
             "status" to ESP32Device.STATUS_WIFI_CONFIG,
             "client_id" to "",
             "panel_id" to "",
-            "lastUpdate" to com.google.firebase.Timestamp.now()
+            "lastUpdate" to Timestamp.now()
         )
 
         firestore.collection(ESP32_COLLECTION).document(esp32Id)
@@ -240,13 +291,13 @@ class ESP32Repository @Inject constructor(
             "client_id" to "",
             "panel_id" to "",
             "status" to ESP32Device.STATUS_AWAITING_CONFIG,
-            "lastUpdate" to com.google.firebase.Timestamp.now()
+            "lastUpdate" to Timestamp.now()
         )
 
         firestore.document("$ESP32_COLLECTION/$esp32Id")
             .update(updateData)
             .await()
 
-        Log.d(TAG, "ESP32 assigned successfully")
+        Log.d(TAG, "ESP32 unassigned successfully")
     }
 }

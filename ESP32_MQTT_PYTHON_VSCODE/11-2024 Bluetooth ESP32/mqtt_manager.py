@@ -140,8 +140,25 @@ class MQTTManager:
                 self.client.set_callback(self._handle_config_message)
                 self.client.subscribe(config_topic.encode())
 
-                # Publicar estado inicial
-                self._publish_network_info()
+                # Publicar estado inicial una sola vez
+                info = {
+                    'esp32_id': self.esp32_id,
+                    'MAC': self.mac_address,
+                    'IP': self.wifi_manager.current_ip,
+                    'status': 'AWAITING_CONFIG',
+                    'timestamp': {
+                        'value': utime.ticks_ms(),
+                        'type': 'realtime'
+                    },
+                    'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
+                }
+                
+                self.publish_event(
+                    "esp32/network_info",
+                    info,
+                    qos=1,
+                    retain=False
+                )
 
             return True
 

@@ -82,66 +82,102 @@ def setup_relay_monitoring(managers, esp32_id):
         print(f"[RELAY] Setup error: {e}")
         return False
 
-def initialize_system():
-    """Initializes basic system managers"""
-    managers = {}
-    
+def pre_init_cleanup():
+    """Limpieza inicial del sistema antes de cualquier inicialización"""
     try:
-        print("\n[INIT] Starting system initialization...")
-        print(f"[INIT] Initial free memory: {gc.mem_free()} bytes")
-        
-        # Initial memory cleanup
+        # Forzar recolección de basura inicial
         gc.collect()
         utime.sleep_ms(1000)
         
-        # 1. Initialize ConfigManager
-        print("[INIT] Starting ConfigManager...")
-        managers["config"] = ConfigManager()
-        utime.sleep_ms(100)
+        # Intentar liberar recursos WiFi previos
+        try:
+            import network
+            sta_if = network.WLAN(network.STA_IF)
+            if sta_if:
+                sta_if.active(False)
+                utime.sleep_ms(1000)
+                del sta_if
+        except:
+            pass
         
-        # 2. Initialize WatchdogManager
-        print("[INIT] Starting WatchdogManager...")
+        # Segunda recolección después de liberar WiFi
+        gc.collect()
+        utime.sleep_ms(1000)
+        
+        print(f"[INIT] Memoria disponible después de limpieza: {gc.mem_free()} bytes")
+        return True
+    except Exception as e:
+        print(f"[INIT] Error en limpieza inicial: {e}")
+        return False
+
+def initialize_system():
+    """Inicializa el sistema con manejo mejorado de recursos"""
+    managers = {}
+    
+    try:
+        print("\n[INIT] Iniciando sistema...")
+        print(f"[INIT] Memoria inicial: {gc.mem_free()} bytes")
+        
+        # Limpieza previa
+        if not pre_init_cleanup():
+            raise Exception("Fallo en limpieza inicial")
+            
+        # 1. Iniciar WatchdogManager primero
+        print("[INIT] Iniciando WatchdogManager...")
         managers["watchdog"] = WatchdogManager()
         managers["watchdog"].feed()
-        utime.sleep_ms(100)
-        
-        # 3. Initialize WiFiManager
-        print("[INIT] Starting WiFiManager...")
-        managers["wifi"] = WiFiManager()
         utime.sleep_ms(500)
-            
-        # Feed watchdog
+        
+        # 2. Iniciar ConfigManager
+        print("[INIT] Iniciando ConfigManager...")
+        managers["config"] = ConfigManager()
         managers["watchdog"].feed()
+        utime.sleep_ms(500)
         
-        # 4. Initialize TimeManager
-        print("[INIT] Starting TimeManager...")
-        managers["time"] = TimeManager(managers["wifi"])
-        utime.sleep_ms(100)
-        
-        # 5. Initialize ESP32IdManager
-        print("[INIT] Starting ESP32IdManager...")
-        managers["esp32_id"] = ESP32IdManager()
-        esp32_id = managers["esp32_id"].get_id()
-        if not esp32_id:
-            esp32_id = managers["esp32_id"]._generate_unique_id()
-            managers["esp32_id"]._save_with_backup()
-        print(f"[INIT] ESP32 ID: {esp32_id}")
-        
-        # 6. Initialize MQTTManager
-        print("[INIT] Starting MQTTManager...")
-        managers["mqtt"] = MQTTManager(managers["wifi"])
-        managers["mqtt"].esp32_id = esp32_id
-        utime.sleep_ms(100)
-        
-        # Check memory
+        # Forzar GC antes de WiFi
         gc.collect()
-        print(f"[INIT] Memory after basic initializations: {gc.mem_free()} bytes")
+        utime.sleep_ms(1000)
         
-        print("[INIT] Basic initialization completed")
+        # 3. Iniciar WiFiManager con más tiempo entre intentos
+        print("[INIT] Iniciando WiFiManager...")
+        for attempt in range(3):
+            try:
+                print(f"[INIT] Intento WiFi {attempt + 1}/3")
+                managers["watchdog"].feed()
+                managers["wifi"] = WiFiManager()
+                if managers["wifi"].sta_if:
+                    print("[INIT] WiFiManager iniciado correctamente")
+                    break
+            except Exception as e:
+                print(f"[INIT] Error en intento WiFi {attempt + 1}: {e}")
+                gc.collect()
+                utime.sleep_ms(2000)  # Más tiempo entre intentos
+                
+        if "wifi" not in managers:
+            raise Exception("No se pudo iniciar WiFiManager")
+            
+        # 4. Resto de managers
+        for manager_init in [
+            ("time", lambda: TimeManager(managers["wifi"])),
+            ("esp32_id", lambda: ESP32IdManager()),
+            ("mqtt", lambda: MQTTManager(managers["wifi"]))
+        ]:
+            name, init_func = manager_init
+            print(f"[INIT] Iniciando {name}Manager...")
+            managers["watchdog"].feed()
+            managers[name] = init_func()
+            utime.sleep_ms(500)
+            gc.collect()
+        
+        # Configuración final de MQTT
+        if managers.get("esp32_id"):
+            managers["mqtt"].esp32_id = managers["esp32_id"].get_id()
+            
+        print("[INIT] Inicialización completada")
         return managers
         
     except Exception as e:
-        print(f"[INIT] Fatal initialization error: {e}")
+        print(f"[INIT] Error fatal en inicialización: {e}")
         if "watchdog" in managers:
             try:
                 managers["watchdog"].force_reset("init_error")
@@ -246,74 +282,52 @@ def wait_for_mqtt_config(managers, timeout=300000):
     return False
 
 def setup_mqtt_connection(managers):
-    """Sets up MQTT connection and waits for VM configuration"""
-    try:
-        managers["watchdog"].feed()
-        esp32_id = managers["esp32_id"].get_id()
-        
-        if not esp32_id:
-            print("[MQTT] Error: No ESP32 ID available")
-            return False
-            
-        print(f"[MQTT] Setting up connection for ESP32 ID: {esp32_id}")
-        managers["mqtt"].esp32_id = esp32_id
-        
-        # Un solo intento de conexión MQTT
-        if not managers["mqtt"].connect():
-            print("[MQTT] Could not establish MQTT connection")
-            return False
-            
-        # Suscripción al tópico de configuración
-        config_topic = f"esp32/config/{esp32_id}"
-        if not managers["mqtt"].subscribe(config_topic):
-            print("[MQTT] Subscription failed")
-            return False
-            
-        # Un solo mensaje de estado inicial
-        network_info = {
-            "esp32_id": esp32_id,
-            "MAC": managers["esp32_id"].get_mac(),
-            "IP": managers["wifi"].get_current_ip(),
-            "status": "AWAITING_CONFIG",
-            "timestamp": {
-                "value": utime.ticks_ms(),
-                "type": "realtime"
-            }
-        }
-        
-        # Publicar una sola vez con QoS 1
-        if not managers["mqtt"].publish_event(
-            "esp32/network_info",
-            network_info,
-            retain=True,
-            qos=1
-        ):
-            print("[MQTT] Failed to publish network info")
-            return False
-            
-        print("[MQTT] Setup completed successfully")
-        print("[MQTT] Waiting for VM to send configuration...")
-        
-        # Esperar la configuración del panel
-        start_time = utime.ticks_ms()
-        max_wait = 300000  # 5 minutos
-        
-        while utime.ticks_diff(utime.ticks_ms(), start_time) < max_wait:
+        """Sets up MQTT connection and waits for VM configuration"""
+        try:
             managers["watchdog"].feed()
-            managers["mqtt"].check_msg()
+            esp32_id = managers["esp32_id"].get_id()
             
-            if not managers["wifi"].check_connection():
-                print("[MQTT] WiFi connection lost while waiting for config")
+            if not esp32_id:
+                print("[MQTT] Error: No ESP32 ID available")
                 return False
                 
-            utime.sleep_ms(100)
+            print(f"[MQTT] Setting up connection for ESP32 ID: {esp32_id}")
+            managers["mqtt"].esp32_id = esp32_id
             
-        print("[MQTT] Configuration wait timeout")
-        return False
-        
-    except Exception as e:
-        print(f"[MQTT] Setup error: {e}")
-        return False
+            # Un solo intento de conexión MQTT
+            if not managers["mqtt"].connect():
+                print("[MQTT] Could not establish MQTT connection")
+                return False
+                
+            # Suscripción al tópico de configuración
+            config_topic = f"esp32/config/{esp32_id}"
+            if not managers["mqtt"].subscribe(config_topic):
+                print("[MQTT] Subscription failed")
+                return False
+            
+            print("[MQTT] Setup completed successfully")
+            print("[MQTT] Waiting for VM to send configuration...")
+            
+            # Esperar la configuración del panel
+            start_time = utime.ticks_ms()
+            max_wait = 300000  # 5 minutos
+            
+            while utime.ticks_diff(utime.ticks_ms(), start_time) < max_wait:
+                managers["watchdog"].feed()
+                managers["mqtt"].check_msg()
+                
+                if not managers["wifi"].check_connection():
+                    print("[MQTT] WiFi connection lost while waiting for config")
+                    return False
+                    
+                utime.sleep_ms(100)
+                
+            print("[MQTT] Configuration wait timeout")
+            return False
+            
+        except Exception as e:
+            print(f"[MQTT] Setup error: {e}")
+            return False
 
 def handle_running_mode(managers):
     """Handles system in running mode"""

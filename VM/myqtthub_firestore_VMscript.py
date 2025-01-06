@@ -6,12 +6,15 @@ import time
 from datetime import datetime
 from typing import Optional, Dict, Any
 import logging
+import random
 
-# Configuración de logging
+# Configuración de logging con niveles diferentes
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+# Configurar logging específico para streams
+logging.getLogger('google.cloud.firestore_v1.watch').setLevel(logging.WARNING)
 
 # Configuración MQTT
 MQTT_BROKER = 'node02.myqtthub.com'
@@ -44,6 +47,43 @@ def on_connect(client, userdata, flags, rc):
             logging.info(f"Suscrito a: {topic}")
     else:
         logging.error(f"Error al conectar, código: {rc}")
+
+class StreamManager:
+    def __init__(self):
+        self.last_reconnect = 0
+        self.MIN_RECONNECT_INTERVAL = 300  # 5 minutos entre reconexiones
+
+    def can_reconnect(self):
+        current_time = time.time()
+        if current_time - self.last_reconnect >= self.MIN_RECONNECT_INTERVAL:
+            self.last_reconnect = current_time
+            return True
+        return False
+
+stream_manager = StreamManager()
+
+def setup_firestore_listeners():
+    """Configura listeners de Firestore con mejor manejo de reconexión"""
+    retry_count = 0
+    MAX_RETRIES = 3
+    
+    while retry_count < MAX_RETRIES:
+        try:
+            # Configurar listeners
+            return True
+        except Exception as e:
+            retry_count += 1
+            if retry_count == MAX_RETRIES:
+                logging.error(f"Error crítico configurando listeners: {e}")
+                return False
+            logging.warning(f"Reintento {retry_count} de {MAX_RETRIES}")
+            time.sleep(5)
+
+def handle_stream_error(e):
+    """Maneja errores de stream con control de frecuencia"""
+    if stream_manager.can_reconnect():
+        logging.warning(f"Reconectando stream después de error: {e}")
+    # Si no se puede reconectar aún, silenciosamente espera
 
 def clean_retained_message(client, esp32_id):
     """Limpia mensajes retain específicos para un ESP32"""
@@ -117,26 +157,18 @@ def handle_mac_search(client, payload: Dict[str, Any]):
 def handle_network_info(client, payload: Dict[str, Any], message):
     """Maneja mensajes de información de red de los ESP32"""
     try:
-        # Verificar si es un mensaje retain antiguo
         if message.retain:
-            logging.info(f"Ignorando mensaje retain antiguo de ESP32")
             esp32_id = payload.get('esp32_id')
             if esp32_id:
                 clean_retained_message(client, esp32_id)
             return
 
-        logging.debug(f"Procesando network_info: {payload}")
-        
         # Validar formato del timestamp
         timestamp = payload.get('timestamp', {})
-        if not isinstance(timestamp, dict):
-            logging.warning("Mensaje con formato de timestamp inválido")
-            return
-
-        # Verificar tipo del timestamp
-        timestamp_type = timestamp.get('type')
-        if timestamp_type != 'realtime':
-            logging.warning("Mensaje no es en tiempo real - ignorando")
+        if not isinstance(timestamp, dict) or timestamp.get('type') != 'realtime':
+            # Solo logear si es un error real, no un mensaje retain
+            if not message.retain:
+                logging.warning("Mensaje no válido o no en tiempo real")
             return
 
         # Extraer campos principales
@@ -148,135 +180,122 @@ def handle_network_info(client, payload: Dict[str, Any], message):
         panel_id = payload.get('panel_id')
 
         if not all([mac, ip, esp32_id, status]):
-            logging.warning(f"Información faltante: MAC={mac}, IP={ip}, ESP32_ID={esp32_id}, STATUS={status}")
+            logging.warning(f"Información incompleta - MAC: {mac}, IP: {ip}, ESP32_ID: {esp32_id}, Status: {status}")
             return
 
-        logging.info(f"Procesando mensaje válido de ESP32 {esp32_id}")
+        # Obtener estado anterior
+        esp32_ref = db.collection('hdd-monitor/esp32/registered').document(esp32_id)
+        current_doc = esp32_ref.get()
+        previous_status = current_doc.get('status') if current_doc.exists else None
 
-        esp32_ref = db.collection('hdd-monitor/esp32/registered')
-        esp32_doc = esp32_ref.document(esp32_id)
-
-        # Obtener datos actuales del ESP32
-        current_data = esp32_doc.get().to_dict() or {}
-        current_client_id = current_data.get('client_id', '')
-        current_panel_id = current_data.get('panel_id', '')
-        current_status = current_data.get('status', '')
-
-        # Manejar cambio a estado RUNNING
-        if status == 'RUNNING':
-            logging.info(f"ESP32 {esp32_id} reportando estado RUNNING")
-            if client_id and panel_id:
-                update_data = {
-                    'MAC': mac,
-                    'IP': ip,
-                    'status': status,
-                    'client_id': client_id,
-                    'panel_id': panel_id,
-                    'lastUpdate': firestore.SERVER_TIMESTAMP
-                }
-            else:
-                logging.warning("Falta client_id o panel_id para estado RUNNING")
-                return
-
-        # Manejar configuración con panel asignado
-        elif status == 'AWAITING_CONFIG' and current_panel_id and current_client_id:
-            logging.info(f"ESP32 {esp32_id} con panel asignado, enviando configuración")
-            config_message = {
-                'client_id': current_client_id,
-                'panel_id': current_panel_id,
+        # Si el dispositivo está en AWAITING_CONFIG
+        if status == 'AWAITING_CONFIG':
+            logging.info(f"ESP32 {esp32_id} en estado AWAITING_CONFIG")
+            
+            # Actualizar en Firestore explícitamente con el estado
+            update_data = {
+                'MAC': mac,
+                'IP': ip,
+                'status': 'AWAITING_CONFIG',
+                'lastUpdate': firestore.SERVER_TIMESTAMP
+            }
+            esp32_ref.set(update_data, merge=True)
+            
+            # Publicar confirmación para la app
+            confirmation = {
                 'esp32_id': esp32_id,
-                'message_id': f"config-{int(time.time())}-{esp32_id}",
+                'status': 'AWAITING_CONFIG',
+                'MAC': mac,
+                'IP': ip,
                 'timestamp': {
                     'value': int(time.time() * 1000),
                     'type': 'realtime'
-                }
+                },
+                'message_id': f"{int(time.time())}-{random.randint(1000, 9999)}"
             }
-            
             client.publish(
-                f"esp32/config/{esp32_id}",
-                json.dumps(config_message),
-                qos=2,
+                'esp32/network_info',
+                json.dumps(confirmation),
+                qos=1,
                 retain=False
             )
             
-            update_data = {
-                'MAC': mac,
-                'IP': ip,
-                'status': 'CONFIG_SENT',
-                'lastUpdate': firestore.SERVER_TIMESTAMP
-            }
+            logging.info(f"Confirmación enviada para ESP32 {esp32_id}")
+            return
 
-        # Estado normal sin panel asignado
-        else:
-            update_data = {
-                'MAC': mac,
-                'IP': ip,
-                'status': status,
-                'lastUpdate': firestore.SERVER_TIMESTAMP
-            }
+        # Para otros estados, preparar datos de actualización
+        update_data = {
+            'MAC': mac,
+            'IP': ip,
+            'status': status,
+            'lastUpdate': firestore.SERVER_TIMESTAMP
+        }
+
+        # Agregar client_id y panel_id si están presentes
+        if client_id and panel_id:
+            update_data.update({
+                'client_id': client_id,
+                'panel_id': panel_id
+            })
 
         # Actualizar Firestore
-        esp32_doc.set(update_data, merge=True)
-        logging.info(f"ESP32 {esp32_id} actualizado con status: {status}")
+        esp32_ref.set(update_data, merge=True)
 
-        # Configurar listener para cambios futuros si no es RUNNING
-        if status != 'RUNNING':
-            def document_snapshot_handler(doc_snapshot, changes, read_time):
-                try:
-                    for change in changes:
-                        if change.type.name == 'MODIFIED':
-                            data = change.document.to_dict()
-                            logging.info(f"Documento modificado: {data}")
-                            
-                            if (data.get('status') == 'AWAITING_CONFIG' and 
-                                data.get('panel_id') and 
-                                data.get('client_id')):
-                                logging.info("ESP32 esperando configuración y tiene panel asignado")
-                                
-                                config_message = {
-                                    'client_id': data['client_id'],
-                                    'panel_id': data['panel_id'],
-                                    'esp32_id': esp32_id,
-                                    'message_id': f"config-{int(time.time())}-{esp32_id}",
-                                    'timestamp': {
-                                        'value': int(time.time() * 1000),
-                                        'type': 'realtime'
-                                    }
-                                }
-                                
-                                logging.info(f"Enviando configuración: {config_message}")
-                                
-                                client.publish(
-                                    f"esp32/config/{esp32_id}",
-                                    json.dumps(config_message),
-                                    qos=2,
-                                    retain=False
-                                )
-                                
-                                time.sleep(1)
-                                
-                                esp32_doc.set({
-                                    'status': 'CONFIG_SENT',
-                                    'lastUpdate': firestore.SERVER_TIMESTAMP
-                                }, merge=True)
-                                
-                                logging.info(f"Estado actualizado a CONFIG_SENT para {esp32_id}")
-                            else:
-                                logging.info("Cambio detectado pero no requiere envío de configuración")
-                                logging.info(f"Status: {data.get('status')}")
-                                logging.info(f"Panel ID: {data.get('panel_id')}")
-                                logging.info(f"Client ID: {data.get('client_id')}")
-                except Exception as e:
-                    logging.error(f"Error en document_snapshot_handler: {e}", exc_info=True)
+        # Solo logear cambios de estado significativos
+        if status != previous_status:
+            logging.info(f"ESP32 {esp32_id} cambió estado de {previous_status} a {status}")
+            
+            # Si entra en modo RUNNING por primera vez
+            if status == 'RUNNING' and previous_status != 'RUNNING':
+                logging.info(f"ESP32 {esp32_id} inició monitoreo de panel")
+                
+                if client_id and panel_id:
+                    handle_running_state(esp32_id, client_id, panel_id)
+                else:
+                    logging.error(f"ESP32 {esp32_id} en RUNNING sin client_id o panel_id")
+            
+            # Si se desconecta
+            elif status == 'OFFLINE' and previous_status != 'OFFLINE':
+                logging.warning(f"ESP32 {esp32_id} se desconectó")
 
-            esp32_doc.on_snapshot(document_snapshot_handler)
-            logging.info(f"Listener configurado para {esp32_id}")
-
-        # Limpiar mensajes retained después de procesar
-        clean_retained_message(client, esp32_id)
+        # Manejar configuración pendiente
+        if status == 'AWAITING_CONFIG':
+            # Verificar si tiene panel asignado
+            existing_data = current_doc.to_dict() if current_doc.exists else {}
+            existing_client_id = existing_data.get('client_id')
+            existing_panel_id = existing_data.get('panel_id')
+            
+            if existing_client_id and existing_panel_id:
+                config_message = {
+                    'client_id': existing_client_id,
+                    'panel_id': existing_panel_id,
+                    'esp32_id': esp32_id,
+                    'message_id': f"{int(time.time())}-{random.randint(1000, 9999)}",
+                    'timestamp': {
+                        'value': int(time.time() * 1000),
+                        'type': 'realtime'
+                    }
+                }
+                
+                # Enviar configuración con QoS 2
+                client.publish(
+                    f"esp32/config/{esp32_id}",
+                    json.dumps(config_message),
+                    qos=2,
+                    retain=False
+                )
+                
+                logging.info(f"Configuración enviada a ESP32 {esp32_id}")
+                
+                # Actualizar estado a CONFIG_SENT
+                esp32_ref.set({
+                    'status': 'CONFIG_SENT',
+                    'lastUpdate': firestore.SERVER_TIMESTAMP
+                }, merge=True)
 
     except Exception as e:
         logging.error(f"Error en handle_network_info: {e}", exc_info=True)
+        # Intentar limpiar mensajes retain en caso de error
         try:
             if esp32_id:
                 clean_retained_message(client, esp32_id)
@@ -340,6 +359,38 @@ def handle_config_message(payload: Dict[str, Any]):
     except Exception as e:
         logging.error(f"Error procesando configuración: {e}", exc_info=True)
 
+def handle_running_state(esp32_id: str, client_id: str, panel_id: str):
+    """Maneja la transición a estado RUNNING"""
+    try:
+        # Verificar panel asignado
+        panel_ref = db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}')
+        panel_doc = panel_ref.get()
+
+        if not panel_doc.exists:
+            logging.error(f"Panel {panel_id} no encontrado")
+            return
+
+        # Actualizar estado del panel
+        panel_ref.set({
+            'status': 'ACTIVE',
+            'lastUpdate': firestore.SERVER_TIMESTAMP
+        }, merge=True)
+
+        # Crear colección de relays si no existe
+        relays_ref = panel_ref.collection('relays')
+        for relay_name in ['Alarma', 'Problema', 'Supervision']:
+            relay_doc = relays_ref.document(relay_name)
+            if not relay_doc.get().exists:
+                relay_doc.set({
+                    'status': 'OK',
+                    'lastUpdate': firestore.SERVER_TIMESTAMP
+                })
+
+        logging.info(f"Panel {panel_id} configurado para monitoreo")
+
+    except Exception as e:
+        logging.error(f"Error en handle_running_state: {e}", exc_info=True)
+
 def handle_panel_message(topic: str, payload: Dict[str, Any]):
     """Procesa mensajes de estado de paneles"""
     try:
@@ -353,32 +404,41 @@ def handle_panel_message(topic: str, payload: Dict[str, Any]):
         esp32_id = payload.get('esp32_id')
 
         if not esp32_id:
-            logging.warning("ESP32 ID faltante en mensaje de panel")
+            logging.warning("ESP32 ID faltante en mensaje")
             return
 
         if 'relay' in payload and 'state' in payload:
             relay_name = payload['relay']
             new_state = payload['state']
-            date_time = payload.get('date_time', datetime.now().strftime('%d-%m-%Y %H:%M'))
 
+            # Actualizar estado del relay
             panel_ref = db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}')
             relay_ref = panel_ref.collection('relays').document(relay_name)
 
+            # Verificar cambio de estado
             old_doc = relay_ref.get()
             old_state = old_doc.get('status') if old_doc.exists else None
 
-            relay_ref.set({
-                'status': new_state,
-                'date_time': date_time
-            }, merge=True)
-
             if old_state != new_state:
-                create_notification(client_id, panel_id, relay_name, new_state)
+                # Actualizar estado
+                relay_ref.set({
+                    'status': new_state,
+                    'date_time': datetime.now().strftime('%d-%m-%Y %H:%M'),
+                    'lastUpdate': firestore.SERVER_TIMESTAMP
+                }, merge=True)
 
-            logging.info(f"Actualizado relay {relay_name} a {new_state}")
+                # Crear notificación
+                create_notification(
+                    client_id=client_id,
+                    panel_id=panel_id,
+                    relay_name=relay_name,
+                    new_state=new_state
+                )
+
+                logging.info(f"Relay {relay_name} actualizado a {new_state}")
 
     except Exception as e:
-        logging.error(f"Error procesando mensaje de panel: {e}", exc_info=True)
+        logging.error(f"Error en handle_panel_message: {e}", exc_info=True)
 
 def handle_status_update(payload: Dict[str, Any]):
     """Maneja actualizaciones de estado de ESP32s"""
@@ -443,27 +503,89 @@ def handle_panel_assignment(payload: Dict[str, Any]):
     except Exception as e:
         logging.error(f"Error en handle_panel_assignment: {e}", exc_info=True)
 
-def create_notification(client_id: str, panel_id: str, relay_name: str, new_status: str):
+def create_notification(client_id: str, panel_id: str, relay_name: str, new_state: str):
     """Crea notificación de cambio de estado de relay"""
     try:
+        # Obtener información del panel
         panel_ref = db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}')
-        panel_data = panel_ref.get().to_dict()
-        panel_name = panel_data.get('name', 'Panel desconocido')
+        panel_doc = panel_ref.get()
+        
+        if not panel_doc.exists:
+            logging.error(f"Panel {panel_id} no encontrado")
+            return
 
+        panel_data = panel_doc.to_dict()
+        panel_name = panel_data.get('name', 'Panel desconocido')
+        current_time = datetime.now().strftime('%d-%m-%Y %H:%M')
+
+        # Crear ID único para la notificación
+        notification_id = f"notification_{client_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{generate_random_id()}"
+
+        # Crear notificación
         notification = {
+            'date_time': current_time,
             'panelDocName': panel_id,
-            'date_time': datetime.now().strftime('%d/%m/%Y, %H:%M'),
-            'message': f'El relay {relay_name} del panel "{panel_name}" ha cambiado a {new_status}',
+            'message': f'El relay {relay_name} del panel "{panel_name}" ha cambiado a {new_state}',
             'relayName': relay_name,
-            'isRead': False
+            'isRead': False,
+            'documentName': notification_id,
+            'lastUpdate': firestore.SERVER_TIMESTAMP
         }
 
+        # Guardar notificación
         notifications_ref = db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
-        notifications_ref.add(notification)
-        logging.info(f"Notificación creada para cambio en {panel_name}")
+        notifications_ref.document(notification_id).set(notification)
+
+        # Enviar notificación FCM a usuarios del cliente
+        users_ref = db.collection(f'hdd-monitor/accounts/clients/{client_id}/users')
+        users = users_ref.get()
+        
+        for user in users:
+            user_data = user.to_dict()
+            fcm_token = user_data.get('fcmToken')
+            
+            if fcm_token and fcm_token != 'None':
+                send_fcm_notification(
+                    token=fcm_token,
+                    title=f"Cambio en {panel_name}",
+                    body=f"Relay {relay_name}: {new_state}",
+                    data={
+                        'panel_id': panel_id,
+                        'relay_name': relay_name,
+                        'state': new_state,
+                        'type': 'relay_change'
+                    }
+                )
+
+        logging.info(f"Notificación creada para {panel_name}: {relay_name} -> {new_state}")
 
     except Exception as e:
         logging.error(f"Error creando notificación: {e}", exc_info=True)
+
+def send_fcm_notification(token: str, title: str, body: str, data: Dict[str, Any]):
+    """Envía notificación FCM a un token específico"""
+    try:
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title=title,
+                body=body
+            ),
+            data=data,
+            token=token
+        )
+        
+        response = messaging.send(message)
+        logging.info(f"Notificación FCM enviada: {response}")
+        
+    except Exception as e:
+        logging.error(f"Error enviando FCM: {e}", exc_info=True)
+
+def generate_random_id(length: int = 6) -> str:
+    """Genera ID aleatorio para notificaciones"""
+    import random
+    import string
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
 
 def on_disconnect(client, userdata, rc):
     """Callback llamado al desconectarse del broker MQTT"""

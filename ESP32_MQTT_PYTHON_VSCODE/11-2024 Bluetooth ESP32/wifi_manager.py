@@ -55,6 +55,12 @@ class WiFiManager:
         try:
             # Disable any existing WiFi instance
             try:
+                from esp import esp_wifi_deinit
+                esp_wifi_deinit()  # Desregistra la tarea WiFi
+            except:
+                pass
+
+            try:
                 wlan = network.WLAN(network.STA_IF)
                 if wlan:
                     wlan.active(False)
@@ -63,6 +69,13 @@ class WiFiManager:
             except:
                 pass
             
+            # Limpiar NVS
+            try:
+                import esp
+                esp.nvs_erase_all()
+            except:
+                pass
+
             gc.collect()
             utime.sleep_ms(500)
             
@@ -75,33 +88,33 @@ class WiFiManager:
             try:
                 print(f"[WIFI] Interface initialization attempt {attempt + 1}/3")
                 
-                # Clean previous state
+                # Ensure WiFi is deregistered and NVS is clean
                 self._clean_wifi_state()
                 gc.collect()
                 utime.sleep_ms(1000)
                 
+                # Initialize NVS before creating WiFi interface
+                try:
+                    import esp
+                    esp.nvs_flash_init()
+                except:
+                    pass
+
                 # Create new interface
                 self.sta_if = network.WLAN(network.STA_IF)
                 if not self.sta_if:
                     print("[WIFI] Error: Could not create interface")
                     continue
-                
-                # Deactivate first
+
+                # Ensure interface is deactivated before configuration
                 self.sta_if.active(False)
-                utime.sleep_ms(500)
+                utime.sleep_ms(1000)
                 
-                # Try basic configurations
-                try:
-                    if hasattr(self.sta_if, 'config'):
-                        self.sta_if.config(reconnects=3)
-                except Exception as e:
-                    print(f"[WIFI] Warning in basic config: {e}")
-                
-                # Buffer configuration in stages
+                # Try buffer configurations from smallest to largest
                 buffer_configs = [
-                    {"rxbuf": 128, "txbuf": 128},  # Start with smaller buffers
-                    {"rxbuf": 256, "txbuf": 256},
-                    {"rxbuf": 512, "txbuf": 512}
+                    {"rxbuf": 512, "txbuf": 512},
+                    {"rxbuf": 1024, "txbuf": 1024},
+                    {"rxbuf": 256, "txbuf": 256}
                 ]
                 
                 configured = False
@@ -110,22 +123,27 @@ class WiFiManager:
                         print(f"[WIFI] Testing buffer config: {config}")
                         if hasattr(self.sta_if, 'config'):
                             self.sta_if.config(**config)
-                            utime.sleep_ms(100)
+                            utime.sleep_ms(500)
                             configured = True
                             break
-                    except:
+                    except Exception as e:
+                        print(f"[WIFI] Buffer config error: {e}")
+                        gc.collect()
+                        utime.sleep_ms(500)
                         continue
-                
+
                 if not configured:
                     print("[WIFI] Warning: Could not configure buffers")
                 
-                # Verify interface is in good state
+                # Only activate interface after configuration is done
                 if self.sta_if and hasattr(self.sta_if, 'active'):
+                    self.sta_if.active(True)
+                    utime.sleep_ms(1000)
                     print("[WIFI] Interface initialized successfully")
                     # Try loading saved configuration
                     self._load_saved_config()
                     return True
-                    
+                
             except Exception as e:
                 print(f"[WIFI] Error in attempt {attempt + 1}: {e}")
                 gc.collect()
@@ -169,7 +187,7 @@ class WiFiManager:
                 try:
                     self.sta_if.connect(ssid, password)
                 except Exception as e:
-                    print(f"[WIFI] Connection attempt error: {e}")
+                    print(f"[WIFI] Connection attempt error: {type(e).__name__} - {str(e)}")
                     retry_count += 1
                     if retry_count < self.MAX_RETRIES:
                         gc.collect()
@@ -222,6 +240,18 @@ class WiFiManager:
             self.last_error = str(e)
             return False
 
+    def reset_config(self):
+        """Resetea la configuración completamente"""
+        try:
+            self.forget_network()  # Usa el método existente
+            self._clean_wifi_state()  # Limpia el estado WiFi
+            self.sta_if = None
+            self._safe_init_interface()  # Reinicializa la interfaz
+            return True
+        except Exception as e:
+            print(f"[WIFI] Error resetting config: {e}")
+            return False
+
     def check_connection(self):
         """Verifies and maintains WiFi connection"""
         try:
@@ -248,23 +278,68 @@ class WiFiManager:
             return False
 
     def _load_saved_config(self):
-        """Loads saved WiFi configuration"""
+        """Loads saved WiFi configuration with validation"""
         try:
+            # Primero intentar archivo principal
             if self.WIFI_CONFIG_FILE in os.listdir():
                 print("[WIFI] Loading saved configuration...")
-                with open(self.WIFI_CONFIG_FILE, 'r') as f:
-                    config = json.load(f)
-                    if config.get('ssid') and config.get('password'):
-                        self.ssid = config['ssid']
-                        self.password = config['password']
-                        print(f"[WIFI] Configuration loaded for SSID: {self.ssid}")
-                        return True
-                    
+                try:
+                    with open(self.WIFI_CONFIG_FILE, 'r') as f:
+                        config = json.load(f)
+                        if self._validate_config(config):
+                            self.ssid = config['ssid']
+                            self.password = config['password']
+                            print(f"[WIFI] Configuration loaded for SSID: {self.ssid}")
+                            return True
+                except:
+                    print("[WIFI] Error loading main config file")
+
+            # Si falla, intentar con backup
+            backup_file = self.WIFI_CONFIG_FILE + '.bak'
+            if backup_file in os.listdir():
+                print("[WIFI] Attempting to load backup configuration...")
+                try:
+                    with open(backup_file, 'r') as f:
+                        config = json.load(f)
+                        if self._validate_config(config):
+                            self.ssid = config['ssid']
+                            self.password = config['password']
+                            print(f"[WIFI] Backup configuration loaded for SSID: {self.ssid}")
+                            # Restaurar archivo principal desde backup
+                            self._save_config()
+                            return True
+                except:
+                    print("[WIFI] Error loading backup config file")
+                        
             print("[WIFI] No valid saved configuration found")
             return False
-            
+                
         except Exception as e:
             print(f"[WIFI] Error loading configuration: {e}")
+            return False
+
+    def _validate_config(self, config):
+        """Validates configuration data"""
+        try:
+            if not config.get('ssid') or not config.get('password'):
+                return False
+                
+            if not isinstance(config['ssid'], str) or not isinstance(config['password'], str):
+                return False
+                
+            if len(config['password']) < 8:
+                return False
+                
+            # Verificar checksum si existe
+            if 'checksum' in config:
+                expected = config['checksum']
+                calculated = self._calculate_checksum(f"{config['ssid']}{config['password']}")
+                if expected != calculated:
+                    print("[WIFI] Checksum validation failed")
+                    return False
+                    
+            return True
+        except:
             return False
 
     def _save_config(self):
@@ -277,8 +352,16 @@ class WiFiManager:
                 'ssid': self.ssid,
                 'password': self.password,
                 'last_connected': utime.time(),
-                'ip': self.current_ip if self.current_ip else None
+                'ip': self.current_ip if self.current_ip else None,
+                'checksum': self._calculate_checksum(f"{self.ssid}{self.password}")  # Agregar checksum
             }
+
+            # Backup del archivo actual si existe
+            if self.WIFI_CONFIG_FILE in os.listdir():
+                try:
+                    os.rename(self.WIFI_CONFIG_FILE, self.WIFI_CONFIG_FILE + '.bak')
+                except:
+                    pass
 
             # Use temporary file for atomic write
             temp_file = self.WIFI_CONFIG_FILE + '.tmp'
@@ -290,6 +373,8 @@ class WiFiManager:
                 verify_config = json.load(f)
                 if not verify_config.get('ssid') or not verify_config.get('password'):
                     raise ValueError("Invalid configuration data")
+                if verify_config.get('checksum') != config['checksum']:
+                    raise ValueError("Checksum verification failed")
                     
             # If verification passes, rename temp file to actual file
             os.rename(temp_file, self.WIFI_CONFIG_FILE)
@@ -298,11 +383,24 @@ class WiFiManager:
                 
         except Exception as e:
             print(f"[WIFI] Error saving configuration: {e}")
+            # Restaurar backup si existe
+            if self.WIFI_CONFIG_FILE + '.bak' in os.listdir():
+                try:
+                    os.rename(self.WIFI_CONFIG_FILE + '.bak', self.WIFI_CONFIG_FILE)
+                except:
+                    pass
             try:
                 os.remove(temp_file)
             except:
                 pass
             return False
+
+    def _calculate_checksum(self, data):
+        """Simple checksum calculation"""
+        checksum = 0
+        for char in data:
+            checksum = (checksum + ord(char)) & 0xFFFFFFFF
+        return hex(checksum)[2:]
 
     def disconnect(self):
         """Disconnects from WiFi and cleans up"""
