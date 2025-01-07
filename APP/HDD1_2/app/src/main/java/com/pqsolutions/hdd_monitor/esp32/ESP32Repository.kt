@@ -68,41 +68,36 @@ class ESP32Repository @Inject constructor(
         try {
             Log.d(TAG, "Iniciando observación de ESP32s no asignados. DeviceId: $deviceId")
 
-            val baseQuery = firestore.collection(ESP32_COLLECTION).whereIn(
-                "status",
-                listOf(
+            val baseQuery = firestore.collection(ESP32_COLLECTION)
+                .whereIn("status", listOf(
                     ESP32Device.STATUS_AWAITING_CONFIG,
                     ESP32Device.STATUS_PENDING_ASSIGNMENT,
                     ESP32Device.STATUS_WIFI_CONFIG
-                )
-            )
+                ))
 
-            // Si hay deviceId, buscar por el ID del documento directamente
-            val finalQuery = if (deviceId != null) {
-                Log.d(TAG, "Buscando ESP32 con ID: $deviceId")
-                // Primero filtramos por status y luego por ID
-                baseQuery.whereEqualTo(FieldPath.documentId(), deviceId)
-            } else {
-                baseQuery
-            }
+            val finalQuery = deviceId?.let { id ->
+                Log.d(TAG, "Buscando ESP32 con ID: $id")
+                baseQuery.whereEqualTo(FieldPath.documentId(), id)
+            } ?: baseQuery
 
-            val listenerRegistration = finalQuery.addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.e(TAG, "Error observando ESP32s", error)
-                    return@addSnapshotListener
+            val listenerRegistration = finalQuery
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e(TAG, "Error observando ESP32s", error)
+                        return@addSnapshotListener
+                    }
+
+                    val devices = snapshot?.documents?.mapNotNull { doc ->
+                        doc.toESP32Device()?.also {
+                            Log.d(TAG, "ESP32 encontrado - ID: ${doc.id}, Status: ${it.status}, MAC: ${it.MAC}")
+                        }
+                    } ?: emptyList()
+
+                    trySend(devices)
                 }
 
-                val devices = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toESP32Device()?.also {
-                        Log.d(TAG, "ESP32 encontrado - ID: ${doc.id}, Status: ${it.status}, MAC: ${it.MAC}")
-                    }
-                } ?: emptyList()
-
-                trySend(devices)
-            }
-
             awaitClose {
-                listenerRegistration?.remove()
+                listenerRegistration.remove()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error configurando listener", e)

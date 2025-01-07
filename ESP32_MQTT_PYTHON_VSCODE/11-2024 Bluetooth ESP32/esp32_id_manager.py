@@ -384,7 +384,7 @@ class ESP32IdManager:
                     'status': 'AWAITING_CONFIG',
                     'timestamp': utime.ticks_ms()
                 },
-                retain=True
+                retain=False
             )
             
             self.last_sync = utime.ticks_ms()

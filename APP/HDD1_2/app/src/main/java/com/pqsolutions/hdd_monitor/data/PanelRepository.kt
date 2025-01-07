@@ -110,45 +110,51 @@ class PanelRepository @Inject constructor(
         val panelDocName = IdManager.generatePanelDocumentName(clientDocName)
         Log.d(TAG, "Creating new panel: $panelDocName")
 
-        val panelRef = firestore
-            .document("$BASE_PATH/$clientDocName/panels/$panelDocName")
+        // Ejecutar todo en una transacción
+        firestore.runTransaction { transaction ->
+            // Referencias
+            val panelRef = firestore.document("$BASE_PATH/$clientDocName/panels/$panelDocName")
+            val esp32Ref = esp32Id?.let {
+                firestore.document("hdd-monitor/esp32/registered/$it")
+            }
 
-        // Crear panel con datos actualizados
-        val updatedPanel = panel.copy(
-            documentName = panelDocName,
-            clientName = clientDocName,
-            esp32_id = esp32Id ?: "",
-            lastUpdate = System.currentTimeMillis(),
-            relays = listOf(
-                Relay(Panel.RELAY_ALARM, Panel.STATUS_DISC),
-                Relay(Panel.RELAY_PROBLEM, Panel.STATUS_DISC),
-                Relay(Panel.RELAY_SUPERVISION, Panel.STATUS_DISC)
+            // Crear panel con datos actualizados
+            val updatedPanel = panel.copy(
+                documentName = panelDocName,
+                clientName = clientDocName,
+                esp32_id = esp32Id ?: "",
+                lastUpdate = System.currentTimeMillis(),
+                relays = listOf(
+                    Relay(Panel.RELAY_ALARM, Panel.STATUS_DISC),
+                    Relay(Panel.RELAY_PROBLEM, Panel.STATUS_DISC),
+                    Relay(Panel.RELAY_SUPERVISION, Panel.STATUS_DISC)
+                )
             )
-        )
 
-        // Guardar panel
-        panelRef.set(updatedPanel.toMap()).await()
+            // Crear panel
+            transaction.set(panelRef, updatedPanel.toMap())
 
-        // Crear relays
-        val batch = firestore.batch()
-        updatedPanel.relays.forEach { relay ->
-            val relayRef = panelRef.collection("relays").document(relay.name)
-            batch.set(relayRef, relay.toMap())
-        }
-        batch.commit().await()
+            // Crear relays
+            updatedPanel.relays.forEach { relay ->
+                val relayRef = panelRef.collection("relays").document(relay.name)
+                transaction.set(relayRef, relay.toMap())
+            }
 
-        // Si hay ESP32, asignarlo
-        esp32Id?.let {
-            esp32Repository.assignToPanelAndClient(it, clientDocName, panelDocName)
-                .onFailure { e ->
-                    Log.e(TAG, "Error assigning ESP32 to panel", e)
-                    // Si falla la asignación, eliminar el panel
-                    panelRef.delete().await()
-                    throw e
-                }
-        }
+            // Si hay ESP32, asignarlo
+            esp32Ref?.let {
+                transaction.update(it, mapOf(
+                    "client_id" to clientDocName,
+                    "panel_id" to panelDocName,
+                    "lastUpdate" to com.google.firebase.Timestamp.now()
+                ))
+            }
+        }.await()
 
+        Log.d(TAG, "Panel created successfully with ID: $panelDocName")
         panelDocName
+
+    }.onFailure { e ->
+        Log.e(TAG, "Error creating panel", e)
     }
 
     suspend fun updatePanel(

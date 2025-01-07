@@ -59,7 +59,11 @@ def setup_relay_monitoring(managers, esp32_id):
                     message = {
                         "esp32_id": esp32_id,
                         "relay": pin_name,
-                        "state": state
+                        "state": state,
+                        "timestamp": {
+                            "value": utime.ticks_ms(),
+                            "type": "realtime"
+                        }
                     }
                     
                     managers["mqtt"].publish_event(
@@ -71,10 +75,17 @@ def setup_relay_monitoring(managers, esp32_id):
             except Exception as e:
                 print(f"[RELAY] Callback error: {e}")
         
-        # Configure each relay
+        # Configure each relay and read initial states
         for pin in RELAY_PINS:
-            managers["relay"].setup_relay(pin, relay_callback)
+            relay_pin = managers["relay"].setup_relay(pin, relay_callback)
             print(f"[RELAY] Configured relay on pin {pin} ({RELAY_NAMES[pin]})")
+            
+            # Get and report initial state
+            initial_state = "DISC" if relay_pin.value() else "OK"
+            print(f"[RELAY] Initial state of relay {pin} ({RELAY_NAMES[pin]}): {initial_state}")
+            
+            # Force callback for initial state
+            relay_callback(relay_pin, pin)
             
         return True
         
@@ -134,6 +145,10 @@ def initialize_system():
         managers["watchdog"].feed()
         utime.sleep_ms(500)
         
+        # Verificar si tenemos configuración WiFi guardada
+        wifi_config = managers["config"].get_wifi_config()
+        has_wifi_config = wifi_config.get('ssid') and wifi_config.get('password')
+        
         # Forzar GC antes de WiFi
         gc.collect()
         utime.sleep_ms(1000)
@@ -147,11 +162,19 @@ def initialize_system():
                 managers["wifi"] = WiFiManager()
                 if managers["wifi"].sta_if:
                     print("[INIT] WiFiManager iniciado correctamente")
+                    # Intentar conectar si hay configuración guardada
+                    if has_wifi_config:
+                        print("[INIT] Intentando conectar con configuración guardada...")
+                        if managers["wifi"].connect_wifi(wifi_config['ssid'], wifi_config['password']):
+                            print("[INIT] Conexión exitosa con configuración guardada")
+                            break
+                        else:
+                            print("[INIT] Fallo conexión con configuración guardada")
                     break
             except Exception as e:
                 print(f"[INIT] Error en intento WiFi {attempt + 1}: {e}")
                 gc.collect()
-                utime.sleep_ms(2000)  # Más tiempo entre intentos
+                utime.sleep_ms(2000)
                 
         if "wifi" not in managers:
             raise Exception("No se pudo iniciar WiFiManager")
@@ -362,32 +385,40 @@ def main():
         if not managers:
             raise Exception("System initialization failed")
             
-        current_state = SystemState.CONFIG
+        # Verificar si ya tenemos configuración WiFi
+        wifi_config = managers["config"].get_wifi_config()
+        has_wifi_config = wifi_config.get('ssid') and wifi_config.get('password')
         
+        if has_wifi_config and managers["wifi"].check_connection():
+            print("[MAIN] Usando configuración WiFi existente")
+            current_state = SystemState.CONFIG
+        else:
+            print("[MAIN] Necesita configuración WiFi")
+            current_state = SystemState.INITIAL
+            
         # Main operation loop
         while True:
             try:
                 managers["watchdog"].feed()
-                gc.collect()  # Regular garbage collection
+                gc.collect()
                 
                 # Process current state
-                if current_state == SystemState.CONFIG:
-                    # Check if WiFi needs configuration
-                    if not managers["wifi"].check_connection():
+                if current_state == SystemState.INITIAL:
+                    # Solo entrar en modo BLE si no hay configuración o la conexión falló
+                    if not has_wifi_config or not managers["wifi"].check_connection():
                         if setup_wifi_mode(managers):
-                            # WiFi configured, proceed with MQTT setup
-                            if setup_mqtt_connection(managers):
-                                if setup_relay_monitoring(managers, managers["esp32_id"].get_id()):
-                                    current_state = SystemState.RUNNING
-                                else:
-                                    raise Exception("Relay setup failed")
-                    else:
-                        # WiFi already configured, check MQTT
+                            current_state = SystemState.CONFIG
+                        
+                elif current_state == SystemState.CONFIG:
+                    # Verificar conexión WiFi antes de MQTT
+                    if managers["wifi"].check_connection():
                         if managers["mqtt"].check_connection() or setup_mqtt_connection(managers):
                             if setup_relay_monitoring(managers, managers["esp32_id"].get_id()):
                                 current_state = SystemState.RUNNING
                             else:
                                 raise Exception("Relay setup failed")
+                    else:
+                        current_state = SystemState.INITIAL
                 
                 elif current_state == SystemState.RUNNING:
                     if not handle_running_mode(managers):

@@ -53,31 +53,15 @@ class WiFiManager:
     def _clean_wifi_state(self):
         """Cleans existing WiFi state"""
         try:
-            # Disable any existing WiFi instance
-            try:
-                from esp import esp_wifi_deinit
-                esp_wifi_deinit()  # Desregistra la tarea WiFi
-            except:
-                pass
-
-            try:
-                wlan = network.WLAN(network.STA_IF)
-                if wlan:
-                    wlan.active(False)
-                    utime.sleep_ms(500)
-                    del wlan
-            except:
-                pass
+            # Simple WiFi cleanup
+            wlan = network.WLAN(network.STA_IF)
+            if wlan:
+                wlan.active(False)
+                utime.sleep_ms(1000)
+                del wlan
             
-            # Limpiar NVS
-            try:
-                import esp
-                esp.nvs_erase_all()
-            except:
-                pass
-
             gc.collect()
-            utime.sleep_ms(500)
+            utime.sleep_ms(1000)
             
         except Exception as e:
             print(f"[WIFI] Error cleaning state: {e}")
@@ -88,71 +72,51 @@ class WiFiManager:
             try:
                 print(f"[WIFI] Interface initialization attempt {attempt + 1}/3")
                 
-                # Ensure WiFi is deregistered and NVS is clean
-                self._clean_wifi_state()
+                # Force garbage collection before starting
                 gc.collect()
                 utime.sleep_ms(1000)
-                
-                # Initialize NVS before creating WiFi interface
+
+                # Completely disable any existing WiFi interface
                 try:
-                    import esp
-                    esp.nvs_flash_init()
+                    wlan = network.WLAN(network.STA_IF)
+                    if wlan:
+                        wlan.active(False)
+                        utime.sleep_ms(1000)
+                        del wlan
+                    gc.collect()
+                    utime.sleep_ms(1000)
                 except:
                     pass
 
-                # Create new interface
+                # Create new interface with minimum configuration
                 self.sta_if = network.WLAN(network.STA_IF)
                 if not self.sta_if:
                     print("[WIFI] Error: Could not create interface")
+                    utime.sleep_ms(1000)
                     continue
 
-                # Ensure interface is deactivated before configuration
+                # Simple activation without buffer configuration
                 self.sta_if.active(False)
                 utime.sleep_ms(1000)
                 
-                # Try buffer configurations from smallest to largest
-                buffer_configs = [
-                    {"rxbuf": 512, "txbuf": 512},
-                    {"rxbuf": 1024, "txbuf": 1024},
-                    {"rxbuf": 256, "txbuf": 256}
-                ]
-                
-                configured = False
-                for config in buffer_configs:
-                    try:
-                        print(f"[WIFI] Testing buffer config: {config}")
-                        if hasattr(self.sta_if, 'config'):
-                            self.sta_if.config(**config)
-                            utime.sleep_ms(500)
-                            configured = True
-                            break
-                    except Exception as e:
-                        print(f"[WIFI] Buffer config error: {e}")
-                        gc.collect()
-                        utime.sleep_ms(500)
-                        continue
+                # Just activate the interface
+                self.sta_if.active(True)
+                utime.sleep_ms(1000)
 
-                if not configured:
-                    print("[WIFI] Warning: Could not configure buffers")
-                
-                # Only activate interface after configuration is done
-                if self.sta_if and hasattr(self.sta_if, 'active'):
-                    self.sta_if.active(True)
-                    utime.sleep_ms(1000)
+                if self.sta_if.active():
                     print("[WIFI] Interface initialized successfully")
-                    # Try loading saved configuration
                     self._load_saved_config()
                     return True
-                
+                else:
+                    print("[WIFI] Interface failed to activate")
+                    continue
+
             except Exception as e:
                 print(f"[WIFI] Error in attempt {attempt + 1}: {e}")
                 gc.collect()
-                utime.sleep_ms(1000)
-                
-                # Clean up for next attempt
-                self._clean_wifi_state()
-                self.sta_if = None
-        
+                utime.sleep_ms(2000)
+                continue
+
         raise Exception("Could not initialize WiFi interface after 3 attempts")
 
     def connect_wifi(self, ssid, password):
@@ -178,27 +142,37 @@ class WiFiManager:
             # Disconnect if already connected
             if self.sta_if.isconnected():
                 self.sta_if.disconnect()
-                utime.sleep_ms(500)
+                utime.sleep_ms(1000)  # Increased delay after disconnect
 
             retry_count = 0
             while retry_count < self.MAX_RETRIES:
                 print(f"[WIFI] Attempt {retry_count + 1}/{self.MAX_RETRIES}")
                 
                 try:
+                    # Limpiar estado antes de cada intento
+                    gc.collect()
+                    if retry_count > 0:
+                        self.sta_if.disconnect()
+                        utime.sleep_ms(2000)  # Delay más largo entre intentos
+                        self.sta_if.active(False)
+                        utime.sleep_ms(1000)
+                        self.sta_if.active(True)
+                        utime.sleep_ms(1000)
+                    
                     self.sta_if.connect(ssid, password)
                 except Exception as e:
                     print(f"[WIFI] Connection attempt error: {type(e).__name__} - {str(e)}")
                     retry_count += 1
                     if retry_count < self.MAX_RETRIES:
                         gc.collect()
-                        utime.sleep_ms(self.RETRY_DELAY)
+                        utime.sleep_ms(self.RETRY_DELAY * (retry_count + 1))  # Backoff exponencial
                         continue
                     return False
                 
                 start_time = utime.ticks_ms()
                 while utime.ticks_diff(utime.ticks_ms(), start_time) < self.CONNECT_TIMEOUT:
                     if self.sta_if.isconnected():
-                        utime.sleep_ms(500)  # Wait for connection to stabilize
+                        utime.sleep_ms(1000)  # Wait longer for connection to stabilize
                         self.current_ip = self.sta_if.ifconfig()[0]
                         print(f"[WIFI] Successfully connected - IP: {self.current_ip}")
                         self.ssid = ssid
@@ -214,7 +188,8 @@ class WiFiManager:
                     elif status == network.STAT_WRONG_PASSWORD:
                         print("[WIFI] Error: Wrong password")
                         self.last_error = "wrong_password"
-                        return False
+                        utime.sleep_ms(1000)  # Delay before retry
+                        break
                     elif status == network.STAT_NO_AP_FOUND:
                         print("[WIFI] Error: Network not found")
                         self.last_error = "network_not_found"
@@ -226,10 +201,7 @@ class WiFiManager:
                 if retry_count < self.MAX_RETRIES:
                     print(f"[WIFI] Retrying connection... ({retry_count + 1})")
                     gc.collect()
-                    utime.sleep_ms(self.RETRY_DELAY)
-                    self._safe_init_interface()
-                    self.sta_if.active(True)
-                    utime.sleep_ms(500)
+                    utime.sleep_ms(self.RETRY_DELAY * (retry_count + 1))  # Backoff exponencial
 
             self.last_error = "connection_failed"
             print("[WIFI] Could not establish connection after all attempts")

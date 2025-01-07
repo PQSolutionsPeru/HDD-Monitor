@@ -442,8 +442,6 @@ class BleViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "Iniciando observación de ESP32 ID: $esp32Id")
             try {
-                startTimeoutTimer(FIRESTORE_TIMEOUT)
-
                 esp32Repository.observeUnassignedESP32s(esp32Id).collect { unassignedESP32s ->
                     Log.d(TAG, "Recibida actualización de ESP32s no asignados: ${unassignedESP32s.size}")
                     unassignedESP32s.forEach { esp32 ->
@@ -451,30 +449,20 @@ class BleViewModel @Inject constructor(
                     }
 
                     val esp32 = unassignedESP32s.find { device ->
-                        device.documentName == esp32Id
+                        device.documentName == esp32Id &&
+                                device.status == ESP32Device.STATUS_AWAITING_CONFIG
                     }
 
                     if (esp32 != null) {
-                        Log.d(TAG, "ESP32 encontrado! Estado: ${esp32.status}")
-
-                        // Verificar que el estado sea válido para configuración
-                        if (esp32.status == ESP32Device.STATUS_AWAITING_CONFIG ||
-                            esp32.status == ESP32Device.STATUS_PENDING_ASSIGNMENT ||
-                            esp32.status == ESP32Device.STATUS_WIFI_CONFIG) {
-
-                            Log.d(TAG, "ESP32 en estado válido para configuración")
-                            currentESP32 = esp32
-                            _state.value = BleState.SelectingClient(esp32)
-                            timeoutJob?.cancel()
-                            return@collect
-                        } else {
-                            Log.d(TAG, "ESP32 encontrado pero en estado inválido: ${esp32.status}")
-                        }
+                        Log.d(TAG, "ESP32 encontrado en estado AWAITING_CONFIG")
+                        currentESP32 = esp32
+                        _state.value = BleState.SelectingClient(esp32)
+                        timeoutJob?.cancel()
+                        return@collect
                     } else {
-                        Log.d(TAG, "ESP32 $esp32Id aún no encontrado")
+                        Log.d(TAG, "ESP32 $esp32Id aún no está en estado AWAITING_CONFIG")
                     }
                 }
-
             } catch (e: Exception) {
                 Log.e(TAG, "Error observando ESP32 en Firestore", e)
                 _state.value = BleState.Error("Error verificando estado del dispositivo: ${e.message}")
@@ -494,6 +482,7 @@ class BleViewModel @Inject constructor(
 
     fun onWifiConfigured(esp32Device: ESP32Device) {
         _state.value = BleState.WifiConfigured(esp32Device)
+        startObservingESP32ById(esp32Device.documentName)
     }
 
     fun startTimeoutTimer(timeout: Long) {
