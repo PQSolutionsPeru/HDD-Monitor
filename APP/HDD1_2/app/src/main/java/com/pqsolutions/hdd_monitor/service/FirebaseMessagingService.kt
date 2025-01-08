@@ -49,9 +49,20 @@ class MessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
+        Log.d(TAG, "=================== INICIO MENSAJE ===================")
         Log.d(TAG, "Mensaje recibido desde: ${remoteMessage.from}")
-        Log.d(TAG, "Datos del mensaje: ${remoteMessage.data}")
+        Log.d(TAG, "Datos completos del mensaje: ${remoteMessage.data}")
         Log.d(TAG, "Notificación: ${remoteMessage.notification?.title} - ${remoteMessage.notification?.body}")
+        Log.d(TAG, "Priority: ${remoteMessage.priority}")
+        Log.d(TAG, "Original Priority: ${remoteMessage.originalPriority}")
+        Log.d(TAG, "=================== FIN MENSAJE ===================")
+        Log.d(TAG, "Tipo de notificación: ${
+            when {
+                remoteMessage.data.containsKey("relayName") -> "Relay"
+                remoteMessage.data.containsKey("eventId") -> "Event"
+                else -> "Unknown"
+            }
+        }")
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -77,17 +88,37 @@ class MessagingService : FirebaseMessagingService() {
     }
 
     private suspend fun handleRelayNotification(remoteMessage: RemoteMessage) {
-        val clientDocName = remoteMessage.data["clientDocName"] ?: return
-        val panelDocName = remoteMessage.data["panelDocName"] ?: return
-        val relayName = remoteMessage.data["relayName"] ?: return
+        Log.d(TAG, "=================== INICIO RELAY ===================")
+        Log.d(TAG, "Datos de relay recibidos: ${remoteMessage.data}")
+
+        val clientDocName = remoteMessage.data["clientDocName"]
+        val panelDocName = remoteMessage.data["panelDocName"]
+        val relayName = remoteMessage.data["relayName"]
         val oldStatus = remoteMessage.data["oldStatus"]
         val newStatus = remoteMessage.data["newStatus"]
+
+        Log.d(TAG, """
+            Datos extraídos:
+            - clientDocName: $clientDocName
+            - panelDocName: $panelDocName
+            - relayName: $relayName
+            - oldStatus: $oldStatus
+            - newStatus: $newStatus
+        """.trimIndent())
+
+        if (clientDocName == null || panelDocName == null || relayName == null ||
+            oldStatus == null || newStatus == null) {
+            Log.e(TAG, "Datos faltantes en la notificación de relay")
+            return
+        }
 
         val clientName = getClientName(clientDocName)
         val panelName = getPanelName(clientDocName, panelDocName)
 
         val message = "El relay $relayName del panel \"$panelName\" ha cambiado de $oldStatus a $newStatus"
         val title = "$clientName - Cambio de Estado"
+
+        Log.d(TAG, "Preparando notificación: $title - $message")
 
         // Guardar la notificación
         saveNotification(clientDocName, panelDocName, relayName, message)
@@ -97,8 +128,13 @@ class MessagingService : FirebaseMessagingService() {
             title = title,
             message = message,
             channelId = CHANNEL_ID_RELAY,
-            intent = createMainIntent(clientDocName, panelDocName, "relay")
+            intent = createMainIntent(clientDocName, panelDocName, "relay").apply {
+                putExtra("relayName", relayName)
+                putExtra("newStatus", newStatus)
+                putExtra("oldStatus", oldStatus)
+            }
         )
+        Log.d(TAG, "=================== FIN RELAY ===================")
     }
 
     private suspend fun handleEventNotification(remoteMessage: RemoteMessage) {
@@ -186,6 +222,11 @@ class MessagingService : FirebaseMessagingService() {
         channelId: String,
         intent: Intent
     ) {
+        Log.d(TAG, "Mostrando notificación: $title - $message")
+
+        // Asegurar que el canal existe
+        createNotificationChannels()
+
         val pendingIntent = PendingIntent.getActivity(
             this,
             System.currentTimeMillis().toInt(),
@@ -193,24 +234,26 @@ class MessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val soundUri = when (channelId) {
-            CHANNEL_ID_RELAY -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            else -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setAutoCancel(true)
-            .setSound(soundUri)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(if (channelId == CHANNEL_ID_RELAY) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_EVENT)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(pendingIntent)
-
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+
+        try {
+            val notification = NotificationCompat.Builder(this, channelId)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setAutoCancel(true)
+                .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+                .setPriority(NotificationCompat.PRIORITY_MAX)  // Cambio a MAX
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setContentIntent(pendingIntent)
+                .build()
+
+            notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+            Log.d(TAG, "Notificación enviada exitosamente")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error mostrando notificación", e)
+        }
     }
 
     private fun createNotificationChannels() {
@@ -266,13 +309,15 @@ class MessagingService : FirebaseMessagingService() {
     }
 
     override fun onNewToken(token: String) {
-        Log.d(TAG, "Nuevo token FCM recibido")
+        Log.d(TAG, "Nuevo token FCM recibido: $token")
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val currentUser = userRepository.getCurrentUser()
                 if (currentUser != null) {
                     notificationRepository.updateFcmToken(currentUser.documentName, token)
-                    Log.d(TAG, "Token FCM actualizado en Firestore")
+                    Log.d(TAG, "Token FCM actualizado en Firestore para usuario: ${currentUser.documentName}")
+                } else {
+                    Log.e(TAG, "No se pudo actualizar el token FCM: usuario actual es null")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error actualizando token FCM", e)

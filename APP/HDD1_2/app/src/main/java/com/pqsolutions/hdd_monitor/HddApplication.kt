@@ -13,7 +13,6 @@ class HddApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         FirebaseApp.initializeApp(this)
-        createNotificationChannel()
     }
 
     private fun createNotificationChannel() {

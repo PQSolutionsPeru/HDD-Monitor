@@ -315,7 +315,7 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private suspend fun updateFCMToken() {
+    suspend fun updateFCMToken() {
         try {
             val token = FirebaseMessaging.getInstance().token.await()
             Log.d(TAG, "FCM Token obtenido: $token")
