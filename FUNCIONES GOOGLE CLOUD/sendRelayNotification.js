@@ -2,6 +2,32 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 admin.initializeApp();
 
+async function cleanupNotifications(db, clientId = null) {
+    try {
+        // Limpiar notificaciones de cliente si se proporciona clientId
+        if (clientId) {
+            const notificationsRef = db.collection(`hdd-monitor/accounts/clients/${clientId}/notifications`);
+            const snapshot = await notificationsRef
+                .orderBy('date_time', 'desc')
+                .get();
+
+            if (snapshot.size > 20) {
+                const batch = db.batch();
+                const docsToDelete = snapshot.docs.slice(20);
+                
+                docsToDelete.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+
+                await batch.commit();
+                console.log(`Eliminadas ${docsToDelete.length} notificaciones antiguas del cliente ${clientId}`);
+            }
+        }
+    } catch (error) {
+        console.error('Error en cleanup:', error);
+    }
+}
+
 exports.sendRelayNotification = functions.firestore
     .document("hdd-monitor/accounts/clients/{clientId}/panels/{panelId}/relays/{relayId}")
     .onUpdate(async (change, context) => {
@@ -114,6 +140,9 @@ exports.sendRelayNotification = functions.firestore
                     }
                 }
             }
+
+            // 4. Ejecutar limpieza de notificaciones
+            await cleanupNotifications(admin.firestore(), clientDocName);
         }
 
         return null;

@@ -5,6 +5,32 @@ if (!admin.apps.length) {
     admin.initializeApp();
 }
 
+async function cleanupNotifications(db, clientId = null) {
+    try {
+        // Limpiar notificaciones de cliente si se proporciona clientId
+        if (clientId) {
+            const notificationsRef = db.collection(`hdd-monitor/accounts/clients/${clientId}/notifications`);
+            const snapshot = await notificationsRef
+                .orderBy('date_time', 'desc')
+                .get();
+
+            if (snapshot.size > 20) {
+                const batch = db.batch();
+                const docsToDelete = snapshot.docs.slice(20);
+                
+                docsToDelete.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+
+                await batch.commit();
+                console.log(`Eliminadas ${docsToDelete.length} notificaciones antiguas del cliente ${clientId}`);
+            }
+        }
+    } catch (error) {
+        console.error('Error en cleanup:', error);
+    }
+}
+
 async function determineActorRole(accountId) {
     try {
         // Primero verificar si es admin
@@ -63,7 +89,7 @@ async function getActorName(clientId, accountId, role, isForAdmin = false) {
 
 exports.sendEventNotification = functions.firestore
     .document("hdd-monitor/accounts/clients/{clientId}/events/{eventId}")
-    .onWrite(async (change, context) => {
+    .onUpdate(async (change, context) => {
         try {
             console.log('🔥 FUNCIÓN DISPARADA - Inicio');
             console.log('📋 Estado del trigger:');
@@ -234,8 +260,8 @@ exports.sendEventNotification = functions.firestore
             // Esperar a que todas las notificaciones se envíen
             await Promise.all([...userPromises, ...adminPromises]);
 
-            // Guardar la notificación en Firestore
-            await admin.firestore()
+            // Guardar la notificación en Firestore y ejecutar limpieza
+            const newNotificationRef = await admin.firestore()
                 .collection(`hdd-monitor/accounts/clients/${clientId}/notifications`)
                 .add({
                     date_time: new Date().toLocaleString('es-ES', {
@@ -250,13 +276,17 @@ exports.sendEventNotification = functions.firestore
                     eventType: newData.type,
                     status: newData.status,
                     isRead: false,
+                    lastUpdate: admin.firestore.FieldValue.serverTimestamp(),
                     ...(newData.panelDocName && { 
                         panelDocName: newData.panelDocName,
                         panelName: newData.panelName 
                     })
                 });
 
-            console.log('✅ Notificación guardada en Firestore');
+            // Ejecutar limpieza de notificaciones después de agregar la nueva
+            await cleanupNotifications(admin.firestore(), clientId);
+
+            console.log('✅ Notificación guardada y limpieza ejecutada');
             return null;
             
         } catch (error) {

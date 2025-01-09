@@ -5,6 +5,32 @@ if (!admin.apps.length) {
     admin.initializeApp();
 }
 
+async function cleanupNotifications(db, clientId = null) {
+    try {
+        // Limpiar notificaciones de cliente si se proporciona clientId
+        if (clientId) {
+            const notificationsRef = db.collection(`hdd-monitor/accounts/clients/${clientId}/notifications`);
+            const snapshot = await notificationsRef
+                .orderBy('date_time', 'desc')
+                .get();
+
+            if (snapshot.size > 20) {
+                const batch = db.batch();
+                const docsToDelete = snapshot.docs.slice(20);
+                
+                docsToDelete.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+
+                await batch.commit();
+                console.log(`Eliminadas ${docsToDelete.length} notificaciones antiguas del cliente ${clientId}`);
+            }
+        }
+    } catch (error) {
+        console.error('Error en cleanup:', error);
+    }
+}
+
 async function determineActorRole(accountId) {
     try {
         // Primero verificar si es admin
@@ -220,6 +246,9 @@ exports.sendNewEventNotification = functions.firestore
                         panelName: newData.panelName 
                     })
                 });
+
+            // Ejecutar limpieza de notificaciones
+            await cleanupNotifications(admin.firestore(), clientId);
 
             console.log('✅ Proceso completado exitosamente');
             return null;
