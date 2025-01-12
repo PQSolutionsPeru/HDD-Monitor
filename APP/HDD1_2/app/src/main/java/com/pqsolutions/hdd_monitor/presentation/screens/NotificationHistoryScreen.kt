@@ -1,5 +1,8 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
+import android.util.Log
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,18 +12,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -28,33 +37,50 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
-import com.pqsolutions.hdd_monitor.data.Notification
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
 import com.pqsolutions.hdd_monitor.presentation.components.LoadingContent
 import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
-import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationHistoryViewModel
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationItem
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationType
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
-
-private const val TAG = "NotificationHistoryScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationHistoryScreen(
-    viewModel: NotificationHistoryViewModel = hiltViewModel(),
-    notificationViewModel: NotificationViewModel = hiltViewModel(),
+    notificationViewModel: NotificationViewModel,
     onBackClick: () -> Unit,
     hasPendingNotifications: Boolean,
-    onNotificationClick: () -> Unit
+    onNavigateToEvent: (String) -> Unit,
+    onNavigateToPanel: (String) -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val notificationState by notificationViewModel.uiState.collectAsState()
-    val listState = rememberLazyListState()
+    val uiState by notificationViewModel.uiState.collectAsState()
 
-    val showEmptyState by remember {
-        derivedStateOf { uiState.notifications.isEmpty() && !uiState.isLoading && uiState.error == null }
+    // Añadir manejo seguro de LaunchedEffect
+    LaunchedEffect(Unit) {
+        try {
+            notificationViewModel.refresh()
+            kotlinx.coroutines.delay(1000)
+            notificationViewModel.markAllAsRead()
+        } catch (e: Exception) {
+            Log.e("NotificationHistoryScreen", "Error en LaunchedEffect", e)
+        }
+    }
+
+    // Asegurar disposición adecuada de recursos
+    DisposableEffect(Unit) {
+        onDispose {
+            notificationViewModel.clearError()
+        }
+    }
+
+    val showEmptyState = remember(uiState.notifications) {
+        uiState.notifications.isEmpty() && !uiState.isLoading && uiState.error == null
+    }
+
+    BackHandler {
+        onBackClick()
     }
 
     HDD1_2Theme {
@@ -62,13 +88,12 @@ fun NotificationHistoryScreen(
             topBar = {
                 ScreenTopBar(
                     title = stringResource(R.string.notification_history_title),
-                    onBackClick = onBackClick,
-                    actions = {
-                        AnimatedNotificationBell(
-                            hasNewNotifications = hasPendingNotifications,
-                            notificationCount = notificationState.pendingCount,
-                            onClick = onNotificationClick
-                        )
+                    onBackClick = {
+                        try {
+                            onBackClick()
+                        } catch (e: Exception) {
+                            Log.e("NotificationHistoryScreen", "Error en navegación", e)
+                        }
                     }
                 )
             }
@@ -77,14 +102,21 @@ fun NotificationHistoryScreen(
                 isLoading = uiState.isLoading,
                 isEmpty = showEmptyState,
                 error = uiState.error,
-                onRetry = { viewModel.refreshNotifications() },
+                onRetry = { notificationViewModel.refresh() },
                 emptyContent = { EmptyNotificationsContent() },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
                 NotificationsList(
-                    notifications = uiState.notifications
+                    notifications = uiState.notifications,
+                    onNotificationClick = { notification ->
+                        notificationViewModel.onNotificationClick(
+                            notification = notification,
+                            onNavigateToEvent = onNavigateToEvent,
+                            onNavigateToPanel = onNavigateToPanel
+                        )
+                    }
                 )
             }
         }
@@ -110,7 +142,8 @@ private fun EmptyNotificationsContent() {
 
 @Composable
 private fun NotificationsList(
-    notifications: List<Notification>
+    notifications: List<NotificationItem>,
+    onNotificationClick: (NotificationItem) -> Unit
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -120,63 +153,93 @@ private fun NotificationsList(
             items = notifications,
             key = { notification -> "${notification.clientDocName}_${notification.documentName}" }
         ) { notification ->
-            NotificationCard(notification = notification)
+            NotificationCard(
+                notification = notification,
+                onClick = { onNotificationClick(notification) }
+            )
         }
     }
 }
 
 @Composable
 private fun NotificationCard(
-    notification: Notification
+    notification: NotificationItem,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .clickable { onClick() },
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (!notification.isRead)
+                MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = if (!notification.isRead)
+                MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .padding(16.dp)
-                .fillMaxWidth()
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = notification.message,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface
+            // Icono según tipo de notificación
+            Icon(
+                imageVector = when {
+                    notification.notificationType == NotificationType.EVENT -> Icons.Filled.Event
+                    notification.notificationType == NotificationType.RELAY && notification.text.contains("DISC") -> Icons.Filled.Warning
+                    else -> Icons.Default.Info
+                },
+                contentDescription = null,
+                modifier = Modifier
+                    .size(24.dp)
+                    .padding(end = 8.dp),
+                tint = when {
+                    notification.notificationType == NotificationType.EVENT -> MaterialTheme.colorScheme.primary
+                    notification.notificationType == NotificationType.RELAY && notification.text.contains("DISC") -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.secondary
+                }
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = stringResource(
-                        R.string.field_panel_id,
-                        notification.panelDocName
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = notification.text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = notification.date_time,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
 
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.field_relay, notification.relayName),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    notification.panelDocName?.let { panelId ->
+                        Text(
+                            text = stringResource(R.string.field_panel_id, panelId),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Text(
+                        text = notification.date_time,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                notification.relayName?.let { relay ->
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.field_relay, relay),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
         }
     }
 }

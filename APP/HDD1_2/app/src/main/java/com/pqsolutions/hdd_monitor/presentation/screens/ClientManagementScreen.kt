@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -81,6 +82,10 @@ fun ClientManagementScreen(
                 else -> false
             } && !state.isLoading && state.error == null
         }
+    }
+
+    BackHandler {
+        onBackClick()
     }
 
     HDD1_2Theme {

@@ -55,18 +55,21 @@ exports.sendRelayNotification = functions.firestore
             const message = `El relay ${relayName} del panel "${panelName}" ha cambiado de ${previousValue.status} a ${newValue.status}`;
 
             // 1. Crear la notificación en Firestore
+            const now = new Date();
             const notificationData = {
                 panelDocName: panelDocName,
                 relayName: relayName,
                 message: message,
-                date_time: new Date().toLocaleString('es-ES', { 
+                date_time: now.toLocaleString('es-ES', { 
                     day: '2-digit',
                     month: '2-digit',
                     year: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit'
-                }),
-                isRead: false
+                }).replace(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})/, '$1/$2/$3, $4:$5'),
+                isRead: false,
+                timestamp: now.getTime(), // Añadir timestamp
+                lastUpdate: admin.firestore.FieldValue.serverTimestamp()
             };
 
             // Guardar notificación

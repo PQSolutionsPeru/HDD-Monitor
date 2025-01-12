@@ -119,7 +119,7 @@ def create_notification(client_id: str, panel_id: str, relay_name: str, new_stat
 
         panel_data = panel_doc.to_dict()
         panel_name = panel_data.get('name', 'Panel desconocido')
-        current_time = datetime.now().strftime('%d-%m-%Y %H:%M')
+        current_time = datetime.now().strftime('%d/%m/%Y, %H:%M')
 
         # Crear ID único para la notificación
         notification_id = f"notification_{client_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{generate_random_id()}"

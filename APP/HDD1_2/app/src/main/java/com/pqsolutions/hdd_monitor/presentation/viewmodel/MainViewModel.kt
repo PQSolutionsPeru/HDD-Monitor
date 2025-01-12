@@ -11,10 +11,13 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessaging
 import com.pqsolutions.hdd_monitor.data.AuthRepository
 import com.pqsolutions.hdd_monitor.data.EventRepository
+import com.pqsolutions.hdd_monitor.data.NotificationRepository
 import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserData
 import com.pqsolutions.hdd_monitor.data.UserPreferences
 import com.pqsolutions.hdd_monitor.data.UserRepository
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.presentation.navigation.Screen
 import com.pqsolutions.hdd_monitor.presentation.state.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.state.MainUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,6 +42,7 @@ class MainViewModel @Inject constructor(
     private val userPreferences: UserPreferences,
     private val eventRepository: EventRepository,
     private val panelRepository: PanelRepository,
+    private val notificationRepository: NotificationRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -133,9 +137,9 @@ class MainViewModel @Inject constructor(
 
     private fun determineRoute(isFirstLaunch: Boolean, userData: UserData?): String =
         when {
-            isFirstLaunch -> "onboarding"
-            userData != null -> "dashboard"
-            else -> "login"
+            isFirstLaunch -> Screen.Onboarding.route
+            userData != null -> Screen.Dashboard.route
+            else -> Screen.Login.route
         }
 
     private fun registerPanelUpdateReceiver() {
@@ -256,13 +260,21 @@ class MainViewModel @Inject constructor(
 
     private fun handleLogout() {
         viewModelScope.launch {
+            // Primero actualizamos la ruta
+            _uiState.value = _uiState.value.copy(
+                currentRoute = "login"
+            )
+
+            // Esperamos un momento para que la navegación se complete
+            kotlinx.coroutines.delay(100)
+
+            // Luego limpiamos el resto del estado
             userPreferences.clearUserData()
             sessionCheckJob?.cancel()
             _uiState.value = _uiState.value.copy(
                 isLoggedIn = false,
                 userData = null,
-                error = null,
-                currentRoute = "login"
+                error = null
             )
             _hasPendingNotifications.value = false
         }
@@ -278,15 +290,25 @@ class MainViewModel @Inject constructor(
     private fun checkPendingNotifications() {
         viewModelScope.launch {
             uiState.value.userData?.let { user ->
-                eventRepository.getEventsFlow(user.clientDocName)
-                    .distinctUntilChanged()
-                    .collect { events ->
-                        val hasPending = events.any { it.status == "PROGRAMADO" }
-                        if (hasPending != _hasPendingNotifications.value) {
-                            _hasPendingNotifications.value = hasPending
-                            Log.d(TAG, "Pending notifications updated: $hasPending")
-                        }
+                val notificationFlow = if (user.role == UserRole.ADMIN) {
+                    notificationRepository.getNotificationsFlow()
+                } else {
+                    notificationRepository.getNotificationsFlow(user.clientDocName)
+                }
+
+                combine(
+                    eventRepository.getEventsFlow(user.clientDocName).distinctUntilChanged(),
+                    notificationFlow.distinctUntilChanged()
+                ) { events, notifications ->
+                    val hasUnreadNotifications = notifications.any { notification -> !notification.isRead }
+                    val hasPendingEvents = events.any { event -> event.status == "PROGRAMADO" }
+                    hasUnreadNotifications || hasPendingEvents
+                }.collect { hasPending ->
+                    if (hasPending != _hasPendingNotifications.value) {
+                        _hasPendingNotifications.value = hasPending
+                        Log.d(TAG, "Pending notifications/events updated: $hasPending")
                     }
+                }
             }
         }
     }

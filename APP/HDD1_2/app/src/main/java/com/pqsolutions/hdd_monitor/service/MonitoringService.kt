@@ -40,21 +40,29 @@ class MonitoringService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Servicio iniciado/reiniciado")
+
+        // Envolver en un try-catch más específico
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForeground(NOTIFICATION_ID, createNotification())
-            } else {
-                startForeground(NOTIFICATION_ID, createNotificationPreO())
+            val notification = createNotification()
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Error de permisos al iniciar servicio", e)
+            // Intenta iniciar con un tipo diferente de notificación si falla
+            try {
+                val fallbackNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setContentTitle("HDD Monitor")
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .build()
+
+                startForeground(NOTIFICATION_ID, fallbackNotification)
+            } catch (e2: Exception) {
+                Log.e(TAG, "Error crítico al iniciar servicio", e2)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error iniciando servicio en primer plano", e)
-            // Intento de recuperación
-            try {
-                startForeground(NOTIFICATION_ID, createNotificationPreO())
-            } catch (e2: Exception) {
-                Log.e(TAG, "Error en recuperación del servicio", e2)
-            }
+            Log.e(TAG, "Error general al iniciar servicio", e)
         }
+
         return START_STICKY
     }
 
@@ -102,24 +110,20 @@ class MonitoringService : Service() {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+        val pendingIntentFlags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, pendingIntentFlags)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HDD Monitor")
+            .setContentText("Monitoreando estado del panel")  // Agregado para más claridad
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)  // Cambiado de MIN a LOW
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)  // Agregado categoría
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setShowWhen(false)
-            .apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-                }
-            }
             .build()
     }
 

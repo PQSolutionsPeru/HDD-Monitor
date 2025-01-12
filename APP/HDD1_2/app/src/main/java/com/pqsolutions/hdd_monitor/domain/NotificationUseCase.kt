@@ -38,9 +38,29 @@ class NotificationUseCase @Inject constructor(
         notificationRepository.deleteNotification(clientDocName, notificationDocName)
 
     // Eliminar notificaciones antiguas
-    suspend fun deleteOldNotifications(
+    suspend fun deleteNotificationsOlderThan(
         clientDocName: String,
-        olderThanDays: Int = 30
+        timestamp: Long
     ): Result<Unit> =
-        notificationRepository.deleteOldNotifications(clientDocName, olderThanDays)
+        notificationRepository.deleteNotificationsOlderThan(clientDocName, timestamp)
+
+    // Marcar notificación como leída
+    suspend fun markNotificationAsRead(
+        clientDocName: String,
+        notificationDocName: String
+    ): Result<Unit> =
+        notificationRepository.markNotificationAsRead(clientDocName, notificationDocName)
+
+    // Marcar todas las notificaciones como leídas
+    suspend fun markAllNotificationsAsRead(
+        clientDocName: String
+    ): Result<Unit> =
+        notificationRepository.markAllNotificationsAsRead(clientDocName)
+
+    // Mantener solo las últimas N notificaciones
+    suspend fun keepOnlyLastN(
+        clientDocName: String,
+        n: Int
+    ): Result<Unit> =
+        notificationRepository.keepOnlyLastN(clientDocName, n)
 }

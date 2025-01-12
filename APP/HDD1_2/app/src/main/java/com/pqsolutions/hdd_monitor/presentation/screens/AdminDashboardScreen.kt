@@ -57,7 +57,8 @@ fun AdminDashboardScreen(
     onViewEventsClick: () -> Unit,
     onViewNotificationHistoryClick: () -> Unit,
     onConfigureEsp32Click: () -> Unit,
-    hasPendingNotifications: Boolean
+    hasPendingNotifications: Boolean,
+    selectedPanelId: String? = null
 ) {
     Log.d(TAG, "AdminDashboardScreen composition started")
 

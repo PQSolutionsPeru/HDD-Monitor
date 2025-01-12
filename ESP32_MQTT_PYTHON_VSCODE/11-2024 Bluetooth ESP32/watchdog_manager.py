@@ -8,6 +8,8 @@ class WatchdogManager:
         """Inicializa el watchdog con timeout aumentado"""
         self.TIMEOUT = 600000  # 600 segundos (10 minutos)
         self.watchdog = WDT(timeout=self.TIMEOUT)
+        self.MSG_BUFFER_SIZE = 256  # Mantener buffer original
+        self.MAX_QUEUE_SIZE = 10    # Mantener cola original
         
         # Intervalos críticos
         self.last_feed = utime.ticks_ms()
@@ -22,46 +24,33 @@ class WatchdogManager:
         print("[WATCHDOG] Iniciado con timeout extendido")
 
     def feed(self):
-        """Alimenta al watchdog si ha pasado el intervalo"""
+        """Alimenta al watchdog solo si el sistema está saludable"""
         try:
             current_time = utime.ticks_ms()
             
             if utime.ticks_diff(current_time, self.last_feed) >= self.FEED_INTERVAL:
-                # Verificar memoria
-                if gc.mem_free() < 10000:  # Menos de 10KB libre
+                # Primero verificar salud del sistema
+                if not self.check_system_health():
+                    print("[WATCHDOG] Sistema no saludable - No alimentar")
+                    self.force_reset("unhealthy_system")
+                    return False
+                    
+                if gc.mem_free() < 10000:
                     gc.collect()
                     utime.sleep_ms(100)
+                    if gc.mem_free() < 10000:
+                        print("[WATCHDOG] Memoria crítica - No alimentar")
+                        self.force_reset("low_memory")
+                        return False
                 
                 self.watchdog.feed()
                 self.last_feed = current_time
+                return True
                 
         except Exception as e:
             print(f"[WATCHDOG] Error en feed: {e}")
-            try:
-                self.watchdog.feed()  # Intentar alimentar de todos modos
-            except:
-                pass
-
-    def force_reset(self, reason="watchdog_timeout"):
-        """Fuerza un reset del sistema"""
-        try:
-            print(f"[WATCHDOG] Forzando reset: {reason}")
-            
-            current_time = utime.ticks_ms()
-            if utime.ticks_diff(current_time, self.last_reset) < self.RESET_WINDOW:
-                self.reset_count += 1
-                if self.reset_count >= self.MAX_RESETS:
-                    print("[WATCHDOG] Demasiados resets, ejecutando hard reset")
-                    machine.reset()
-            else:
-                self.reset_count = 1
-                
-            self.last_reset = current_time
-            machine.reset()
-            
-        except Exception as e:
-            print(f"[WATCHDOG] Error en force_reset: {e}")
-            machine.reset()
+            self.force_reset("feed_error")
+            return False
 
     def check_system_health(self):
         """Verifica salud básica del sistema"""
@@ -82,3 +71,24 @@ class WatchdogManager:
             
         except:
             return False
+
+    def force_reset(self, reason="watchdog_timeout"):
+        """Fuerza un reset del sistema con manejo de múltiples resets"""
+        try:
+            print(f"[WATCHDOG] Forzando reset: {reason}")
+            
+            current_time = utime.ticks_ms()
+            if utime.ticks_diff(current_time, self.last_reset) < self.RESET_WINDOW:
+                self.reset_count += 1
+                if self.reset_count >= self.MAX_RESETS:
+                    print("[WATCHDOG] Demasiados resets, ejecutando hard reset")
+                    machine.reset()
+            else:
+                self.reset_count = 1
+                
+            self.last_reset = current_time
+            machine.reset()
+            
+        except Exception as e:
+            print(f"[WATCHDOG] Error en force_reset: {e}")
+            machine.reset()

@@ -148,6 +148,7 @@
     <string name="event_status_programmed">Programado</string>
     <string name="event_status_accepted">Aceptado</string>
     <string name="events_count">Eventos: %d</string>
+    <string name="event_details">Detalles del Evento</string>
 
     <!-- Notificaciones -->
     <string name="no_notifications">No hay notificaciones disponibles</string>

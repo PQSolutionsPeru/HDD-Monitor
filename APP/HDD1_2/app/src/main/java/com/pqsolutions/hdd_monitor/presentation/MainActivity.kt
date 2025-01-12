@@ -3,13 +3,18 @@ package com.pqsolutions.hdd_monitor.presentation
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -17,11 +22,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.pqsolutions.hdd_monitor.presentation.navigation.AppNavigation
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
+import com.pqsolutions.hdd_monitor.service.MonitoringService
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -37,20 +44,79 @@ class MainActivity : ComponentActivity() {
         const val CHANNEL_ID_EVENT = "event_notifications"
     }
 
+    private val requiredPermissions = mutableListOf(
+        android.Manifest.permission.POST_NOTIFICATIONS,
+        android.Manifest.permission.FOREGROUND_SERVICE,
+        android.Manifest.permission.BLUETOOTH_CONNECT,
+        android.Manifest.permission.BLUETOOTH_SCAN
+    ).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            add(android.Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC)
+        }
+    }
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (allGranted) {
+            startMonitoringService()
+        } else {
+            // Algunos permisos fueron denegados, mostrar configuración
+            showAppSettings()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "onCreate: Iniciando aplicación")
 
-        // Solicitar permisos de notificación en Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestNotificationPermission()
-        }
-
+        checkAndRequestPermissions()
         initializeFirebase()
         createNotificationChannels()
+        requestBatteryOptimizationExemption()
         setAppContent()
 
         Log.d(TAG, "onCreate: Configuración inicial completada")
+    }
+
+    private fun checkAndRequestPermissions() {
+        val permissionsToRequest = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+
+        if (permissionsToRequest.isNotEmpty()) {
+            requestPermissionLauncher.launch(permissionsToRequest)
+        } else {
+            startMonitoringService()
+        }
+    }
+
+    private fun startMonitoringService() {
+        val serviceIntent = Intent(this, MonitoringService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            val intent = Intent().apply {
+                action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        }
+    }
+
+    private fun showAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        }
+        startActivity(intent)
     }
 
     private fun requestNotificationPermission() {

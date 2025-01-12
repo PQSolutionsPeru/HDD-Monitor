@@ -235,12 +235,14 @@ exports.sendNewEventNotification = functions.firestore
                         year: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit'
-                    }),
+                    }).replace(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})/, '$1/$2/$3, $4:$5'),
                     message: messageForUsers,
                     eventId,
                     eventType: newData.type,
                     status: newData.status,
                     isRead: false,
+                    timestamp: new Date().getTime(), // Añadir timestamp
+                    lastUpdate: admin.firestore.FieldValue.serverTimestamp(),
                     ...(newData.panelDocName && { 
                         panelDocName: newData.panelDocName,
                         panelName: newData.panelName 

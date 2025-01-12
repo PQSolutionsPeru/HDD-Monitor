@@ -15,11 +15,13 @@ data class UserData(
     val clientName: String = "",
     @get:PropertyName("fcmToken")
     val fcmToken: String? = null,
-    val phone: String = "" // Nuevo campo para teléfono
+    val phone: String = ""
 ) {
     var role: UserRole
         get() = UserRole.fromString(roleString)
         set(value) { roleString = UserRole.toFirestoreValue(value) }
+
+    fun isAdmin(): Boolean = role == UserRole.ADMIN
 
     fun isValid(): Boolean {
         return email.isNotBlank() &&
@@ -63,10 +65,10 @@ data class UserData(
             phone: String = "",
             fcmToken: String? = null
         ): UserData = UserData(
-            email = email,
-            name = name,
+            email = email.trim(),
+            name = name.trim(),
             roleString = "admin",
-            phone = phone,
+            phone = phone.trim(),
             fcmToken = fcmToken
         )
 
@@ -78,36 +80,42 @@ data class UserData(
             phone: String = "",
             fcmToken: String? = null
         ): UserData = UserData(
-            email = email,
-            name = name,
+            email = email.trim(),
+            name = name.trim(),
             roleString = "user",
             clientDocName = clientDocName,
             clientName = clientName,
-            phone = phone,
+            phone = phone.trim(),
             fcmToken = fcmToken
         )
 
         fun fromMap(map: Map<String, Any?>): UserData {
             return UserData(
                 documentName = map["documentName"] as? String ?: "",
-                email = map["email"] as? String ?: "",
-                name = map["name"] as? String ?: "",
+                email = (map["email"] as? String ?: "").trim(),
+                name = (map["name"] as? String ?: "").trim(),
                 roleString = map["role"] as? String ?: "user",
                 clientDocName = map["clientDocName"] as? String ?: "",
                 clientName = map["clientName"] as? String ?: "",
                 fcmToken = map["fcmToken"] as? String,
-                phone = map["phone"] as? String ?: ""
+                phone = (map["phone"] as? String ?: "").trim()
             )
         }
     }
 
     override fun toString(): String {
-        return "UserData(documentName='$documentName', " +
-                "email='$email', " +
-                "name='$name', " +
-                "role=${role.name}, " +
-                "clientDocName='$clientDocName', " +
-                "clientName='$clientName', " +
-                "phone='$phone')" // No incluimos fcmToken por seguridad
+        return buildString {
+            append("UserData(")
+            append("documentName='$documentName', ")
+            append("email='$email', ")
+            append("name='$name', ")
+            append("role=${role.name}, ")
+            append("clientDocName='$clientDocName', ")
+            append("clientName='$clientName', ")
+            append("phone='$phone')")
+            // No incluimos fcmToken por seguridad
+        }
     }
+
+    fun getDisplayName(): String = name.trim().ifEmpty { email.substringBefore('@') }
 }

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -130,6 +131,10 @@ fun BleConfigScreen(
         devices.forEach { device ->
             Log.d(TAG, "Dispositivo: ${device.address}")
         }
+    }
+
+    BackHandler {
+        onBackClick()
     }
 
     HDD1_2Theme {

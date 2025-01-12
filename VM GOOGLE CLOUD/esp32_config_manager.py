@@ -45,91 +45,117 @@ def handle_network_info(client, payload: Dict[str, Any]):
             logging.error(f"Datos faltantes en payload: {payload}")
             return
 
-        # Verificar/Crear el documento del ESP32
-        esp32_ref = db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+        logging.info(f"Procesando info de red ESP32 {esp32_id} - MAC: {mac}, Status: {status}")
 
-        def on_esp32_snapshot(doc_snapshot, changes, read_time):
-            try:
-                if not doc_snapshot:
-                    return
-
-                esp32_doc = doc_snapshot[0]
-                if not esp32_doc.exists:
-                    return
-
-                esp32_data = esp32_doc.to_dict()
-                current_status = esp32_data.get('status')
-                client_id = esp32_data.get('client_id')
-                panel_id = esp32_data.get('panel_id')
-
-                # Si el ESP32 tiene client_id y panel_id asignados, enviar configuración
-                if current_status == 'AWAITING_CONFIG' and client_id and panel_id:
-                    logging.info(f"ESP32 {esp32_id} tiene asignación de panel. Enviando configuración...")
-                    config_message = {
-                        'client_id': client_id,
-                        'panel_id': panel_id,
-                        'esp32_id': esp32_id,
-                        'message_id': f"{int(time.time())}-{random.randint(1000, 9999)}",
-                        'timestamp': {
-                            'value': int(time.time() * 1000),
-                            'type': 'realtime'
-                        }
-                    }
-                    client.publish(
-                        f"esp32/config/{esp32_id}",
-                        json.dumps(config_message),
-                        qos=2,
-                        retain=False
-                    )
-                    logging.info(f"Configuración enviada a ESP32 {esp32_id}")
-
-            except Exception as e:
-                logging.error(f"Error en snapshot listener: {e}", exc_info=True)
-
-        # Si el ESP32 no existe, crearlo
-        esp32_doc = esp32_ref.get()
-        if not esp32_doc.exists:
-            logging.info(f"Creando nuevo registro para ESP32 {esp32_id}")
+        # Buscar configuración existente
+        existing_config = check_existing_config_by_mac(mac)
+        if existing_config:
+            logging.info(f"Configuración existente encontrada: {existing_config}")
+            
+            # Actualizar documento del ESP32
+            esp32_ref = db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
             esp32_data = {
                 'MAC': mac,
                 'IP': ip or '',
-                'status': status,
-                'client_id': '',
-                'panel_id': '',
-                'lastUpdate': firestore.SERVER_TIMESTAMP,
-                'firstSeen': firestore.SERVER_TIMESTAMP
-            }
-            esp32_ref.set(esp32_data)
-            logging.info(f"ESP32 {esp32_id} registrado en Firestore")
-        else:
-            # Actualizar registro existente
-            esp32_ref.update({
-                'IP': ip or '',
-                'status': status,
+                'status': 'AWAITING_CONFIG',  # Para forzar reconfiguración
+                'client_id': existing_config['client_id'],
+                'panel_id': existing_config['panel_id'],
                 'lastUpdate': firestore.SERVER_TIMESTAMP
-            })
-            logging.info(f"ESP32 {esp32_id} actualizado en Firestore")
+            }
+            esp32_ref.set(esp32_data, merge=True)
 
-        if status == 'AWAITING_CONFIG':
-            logging.info(f"ESP32 {esp32_id} en estado AWAITING_CONFIG")
+            # Enviar configuración con toda la información
+            config_message = {
+                'client_id': existing_config['client_id'],
+                'panel_id': existing_config['panel_id'],
+                'esp32_id': esp32_id,
+                'panel_name': existing_config['panel_name'],
+                'location': existing_config['location'],
+                'client_name': existing_config['client_name'],
+                'relay_states': existing_config['relay_states'],
+                'message_id': f"{int(time.time())}-{random.randint(1000,9999)}",
+                'timestamp': {
+                    'value': int(time.time() * 1000),
+                    'type': 'realtime'
+                }
+            }
+
+            client.publish(
+                f"esp32/config/{esp32_id}",
+                json.dumps(config_message),
+                qos=2,
+                retain=False
+            )
             
-            # Crear listener de cambios
-            esp32_watch = esp32_ref.on_snapshot(on_esp32_snapshot)
+            logging.info(f"Configuración existente enviada a ESP32 {esp32_id}")
+            return
 
-            # Esperar por MAX_WAIT_TIME y luego remover el listener
-            def cleanup_listener():
-                time.sleep(300)  # 5 minutos
-                esp32_watch.unsubscribe()
-                logging.info(f"Listener removido para ESP32 {esp32_id}")
-
-            # Iniciar thread para limpieza
-            import threading
-            cleanup_thread = threading.Thread(target=cleanup_listener)
-            cleanup_thread.daemon = True
-            cleanup_thread.start()
+        # Si no hay configuración previa, proceder como dispositivo nuevo
+        logging.info(f"No se encontró configuración previa para MAC {mac}")
+        esp32_ref = db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+        esp32_data = {
+            'MAC': mac,
+            'IP': ip or '',
+            'status': 'AWAITING_CONFIG',
+            'client_id': '',
+            'panel_id': '',
+            'lastUpdate': firestore.SERVER_TIMESTAMP,
+            'firstSeen': firestore.SERVER_TIMESTAMP
+        }
+        esp32_ref.set(esp32_data)
+        logging.info(f"ESP32 {esp32_id} registrado como nuevo dispositivo")
 
     except Exception as e:
         logging.error(f"Error en handle_network_info: {e}", exc_info=True)
+
+def check_existing_config_by_mac(mac: str) -> Optional[Dict[str, str]]:
+    """Busca configuración existente por MAC address de manera exhaustiva"""
+    try:
+        # Normalizar MAC address
+        normalized_mac = mac.upper().replace(':', '').replace('-', '')
+        logging.info(f"Buscando configuración para MAC: {normalized_mac}")
+
+        # 1. Primero buscar entre los paneles existentes
+        clients_ref = db.collection('hdd-monitor/accounts/clients')
+        client_docs = clients_ref.get()
+
+        for client_doc in client_docs:
+            client_id = client_doc.id
+            client_name = client_doc.get('name')
+            panels_ref = client_doc.reference.collection('panels')
+            
+            # Buscar en cada panel
+            panel_docs = panels_ref.where('esp32_id', '==', '3608AC08').get()
+            for panel_doc in panel_docs:
+                panel_data = panel_doc.to_dict()
+                panel_id = panel_doc.id
+
+                if panel_data:
+                    logging.info(f"Panel encontrado para ESP32 - Cliente: {client_id}, Panel: {panel_id}")
+                    
+                    # Verificar estado de los relays
+                    relays_ref = panel_doc.reference.collection('relays')
+                    relays = relays_ref.get()
+                    relay_states = {}
+                    for relay_doc in relays:
+                        relay_data = relay_doc.to_dict()
+                        relay_states[relay_doc.id] = relay_data.get('status', 'DISC')
+
+                    return {
+                        'client_id': client_id,
+                        'panel_id': panel_id,
+                        'panel_name': panel_data.get('name', ''),
+                        'location': panel_data.get('location', ''),
+                        'client_name': client_name,
+                        'relay_states': relay_states
+                    }
+
+        logging.info("No se encontró configuración existente")
+        return None
+        
+    except Exception as e:
+        logging.error(f"Error buscando configuración por MAC: {e}", exc_info=True)
+        return None
 
 def observe_panel_assignment(client, esp32_id: str):
     """Observa asignación de panel usando snapshot listener."""

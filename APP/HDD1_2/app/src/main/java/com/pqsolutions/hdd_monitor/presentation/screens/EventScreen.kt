@@ -2,11 +2,8 @@ package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -14,22 +11,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Sort
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,11 +22,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.data.Event
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
-import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
-import com.pqsolutions.hdd_monitor.presentation.components.EventCard
-import com.pqsolutions.hdd_monitor.presentation.components.EventDialog
-import com.pqsolutions.hdd_monitor.presentation.components.LoadingContent
-import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
+import com.pqsolutions.hdd_monitor.presentation.components.*
 import com.pqsolutions.hdd_monitor.presentation.state.EventDialogEvent
 import com.pqsolutions.hdd_monitor.presentation.state.EventFilter
 import com.pqsolutions.hdd_monitor.presentation.state.EventSortOption
@@ -63,7 +42,8 @@ fun EventScreen(
     notificationViewModel: NotificationViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
     isAdmin: Boolean,
-    hasPendingNotifications: Boolean
+    hasPendingNotifications: Boolean,
+    eventId: String? = null
 ) {
     HandleKeyboardFocus()
     val state by viewModel.state.collectAsState()
@@ -74,84 +54,112 @@ fun EventScreen(
     var showSortMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        viewModel.loadEvents()
+        if (eventId != null) {
+            // Si hay un eventId específico, cargar solo ese evento
+            viewModel.loadSpecificEvent(eventId)
+        } else {
+            // Si no hay eventId, cargar todos los eventos
+            viewModel.loadEvents()
+        }
         if (isAdmin) {
             viewModel.loadClients()
         }
+    }
+
+    // Efecto para desplazarse al evento específico si existe
+    LaunchedEffect(state.events, eventId) {
+        if (eventId != null && state.events.isNotEmpty()) {
+            val eventIndex = state.events.indexOfFirst {
+                it.documentName == eventId || it.documentName.contains(eventId)
+            }
+            if (eventIndex >= 0) {
+                listState.animateScrollToItem(eventIndex)
+            }
+        }
+    }
+
+    BackHandler {
+        onBackClick()
     }
 
     HDD1_2Theme {
         Scaffold(
             topBar = {
                 ScreenTopBar(
-                    title = stringResource(R.string.events),
+                    title = if (eventId != null)
+                        stringResource(R.string.event_details)
+                    else
+                        stringResource(R.string.events),
                     onBackClick = onBackClick,
                     actions = {
-                        IconButton(onClick = { showFilterMenu = true }) {
-                            Icon(
-                                Icons.Default.FilterList,
-                                contentDescription = "Filtrar eventos"
-                            )
-                        }
+                        if (eventId == null) {
+                            // Solo mostrar filtros y ordenamiento en la vista general
+                            IconButton(onClick = { showFilterMenu = true }) {
+                                Icon(
+                                    Icons.Default.FilterList,
+                                    contentDescription = "Filtrar eventos"
+                                )
+                            }
 
-                        DropdownMenu(
-                            expanded = showFilterMenu,
-                            onDismissRequest = { showFilterMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Todos") },
-                                onClick = {
-                                    viewModel.setFilter(EventFilter.All)
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.status_programmed)) },
-                                onClick = {
-                                    viewModel.setFilter(EventFilter.Programmed)
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.event_status_accepted)) },
-                                onClick = {
-                                    viewModel.setFilter(EventFilter.Accepted)
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.status_completed)) },
-                                onClick = {
-                                    viewModel.setFilter(EventFilter.Completed)
-                                    showFilterMenu = false
-                                }
-                            )
-                        }
-
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(
-                                Icons.Default.Sort,
-                                contentDescription = "Ordenar eventos"
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
-                        ) {
-                            EventSortOption.SortField.values().forEach { field ->
+                            DropdownMenu(
+                                expanded = showFilterMenu,
+                                onDismissRequest = { showFilterMenu = false }
+                            ) {
                                 DropdownMenuItem(
-                                    text = { Text(field.toString()) },
+                                    text = { Text("Todos") },
                                     onClick = {
-                                        viewModel.setSortOption(
-                                            EventSortOption(
-                                                field = field,
-                                                direction = EventSortOption.SortDirection.DESC
-                                            )
-                                        )
-                                        showSortMenu = false
+                                        viewModel.setFilter(EventFilter.All)
+                                        showFilterMenu = false
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.status_programmed)) },
+                                    onClick = {
+                                        viewModel.setFilter(EventFilter.Programmed)
+                                        showFilterMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.event_status_accepted)) },
+                                    onClick = {
+                                        viewModel.setFilter(EventFilter.Accepted)
+                                        showFilterMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.status_completed)) },
+                                    onClick = {
+                                        viewModel.setFilter(EventFilter.Completed)
+                                        showFilterMenu = false
+                                    }
+                                )
+                            }
+
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(
+                                    Icons.Default.Sort,
+                                    contentDescription = "Ordenar eventos"
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                EventSortOption.SortField.values().forEach { field ->
+                                    DropdownMenuItem(
+                                        text = { Text(field.toString()) },
+                                        onClick = {
+                                            viewModel.setSortOption(
+                                                EventSortOption(
+                                                    field = field,
+                                                    direction = EventSortOption.SortDirection.DESC
+                                                )
+                                            )
+                                            showSortMenu = false
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -164,17 +172,19 @@ fun EventScreen(
                 )
             },
             floatingActionButton = {
-                FloatingActionButton(
-                    onClick = {
-                        performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
-                        viewModel.showCreateDialog()
+                if (eventId == null) { // Solo mostrar FAB en la vista general
+                    FloatingActionButton(
+                        onClick = {
+                            performHapticFeedback(context)
+                            playSoundEffect(context, R.raw.button_click)
+                            viewModel.showCreateDialog()
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = stringResource(R.string.create_new_event)
+                        )
                     }
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = stringResource(R.string.create_new_event)
-                    )
                 }
             }
         ) { paddingValues ->
@@ -187,7 +197,13 @@ fun EventScreen(
                     isLoading = state.isLoading,
                     isEmpty = state.events.isEmpty() && !state.isLoading,
                     error = state.error,
-                    onRetry = { viewModel.loadEvents() },
+                    onRetry = {
+                        if (eventId != null) {
+                            viewModel.loadSpecificEvent(eventId)
+                        } else {
+                            viewModel.loadEvents()
+                        }
+                    },
                     emptyContent = { EmptyEventsContent() }
                 ) {
                     LazyColumn(

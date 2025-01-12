@@ -21,4 +21,18 @@ sealed class BleState {
         val permissions: List<String>,
         val onPermissionGranted: () -> Unit
     ) : BleState()
+
+    data class DeviceFound(
+        val esp32Device: ESP32Device,
+        val clientName: String,
+        val panelName: String,
+        val location: String
+    ) : BleState()
+
+    data class WaitingDeviceConfirmation(
+        val esp32Device: ESP32Device,
+        val clientName: String,
+        val panelName: String,
+        val location: String
+    ) : BleState()
 }

@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor.data
 
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
@@ -11,35 +12,75 @@ data class Notification(
     val panelDocName: String = "",
     val relayName: String = "",
     val message: String = "",
-    val date_time: String = ""
+    val date_time: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val isRead: Boolean = false,
+    val eventId: String? = null,
+    val eventType: String? = null,
+    val status: String? = null,
+    val panelName: String? = null,
+    val readByAdmin: Boolean = false,
+    val readByUser: Boolean = false
 ) {
     companion object {
-        private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
+        private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy, HH:mm")
 
         fun createNew(
             clientDocName: String,
-            panelDocName: String,
-            relayName: String,
-            message: String
+            panelDocName: String = "",
+            relayName: String = "",
+            message: String,
+            eventId: String? = null,
+            eventType: String? = null,
+            status: String? = null,
+            panelName: String? = null
         ): Notification {
+            val now = LocalDateTime.now()
             return Notification(
-                documentName = "", // Se generará en el Repository
+                documentName = "",
                 clientDocName = clientDocName,
                 panelDocName = panelDocName,
                 relayName = relayName,
                 message = message.trim(),
-                date_time = LocalDateTime.now().format(DATE_FORMATTER)
+                date_time = now.format(DATE_FORMATTER),
+                timestamp = now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                eventId = eventId,
+                eventType = eventType,
+                status = status,
+                panelName = panelName
             )
         }
 
         fun fromMap(map: Map<String, Any?>): Notification {
+            val dateTimeStr = map["date_time"] as? String ?: ""
+            val timestamp = when (val ts = map["timestamp"]) {
+                is Long -> ts
+                is Number -> ts.toLong()
+                else -> try {
+                    LocalDateTime.parse(dateTimeStr, DATE_FORMATTER)
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli()
+                } catch (e: Exception) {
+                    System.currentTimeMillis()
+                }
+            }
+
             return Notification(
                 documentName = map["documentName"] as? String ?: "",
                 clientDocName = map["clientDocName"] as? String ?: "",
                 panelDocName = map["panelDocName"] as? String ?: "",
                 relayName = map["relayName"] as? String ?: "",
                 message = map["message"] as? String ?: "",
-                date_time = map["date_time"] as? String ?: ""
+                date_time = dateTimeStr,
+                timestamp = timestamp,
+                isRead = map["isRead"] as? Boolean ?: false,
+                eventId = map["eventId"] as? String,
+                eventType = map["eventType"] as? String,
+                status = map["status"] as? String,
+                panelName = map["panelName"] as? String,
+                readByAdmin = map["readByAdmin"] as? Boolean ?: false,
+                readByUser = map["readByUser"] as? Boolean ?: false
             )
         }
     }
@@ -55,13 +96,21 @@ data class Notification(
         return validateDocumentNames() &&
                 message.isNotBlank() &&
                 date_time.isNotBlank() &&
-                relayName.isNotBlank()
+                (isRelayNotification() || isEventNotification())
     }
 
     private fun validateDocumentNames(): Boolean {
         return (documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.NOTIFICATION)) &&
                 clientDocName.startsWith(DocumentPrefixes.CLIENT) &&
-                panelDocName.startsWith(DocumentPrefixes.PANEL)
+                (panelDocName.isEmpty() || panelDocName.startsWith(DocumentPrefixes.PANEL))
+    }
+
+    fun isEventNotification(): Boolean {
+        return eventId != null && eventType != null
+    }
+
+    fun isRelayNotification(): Boolean {
+        return relayName.isNotBlank() && panelDocName.isNotBlank()
     }
 
     fun toMap(): Map<String, Any?> {
@@ -71,49 +120,39 @@ data class Notification(
             "panelDocName" to panelDocName,
             "relayName" to relayName,
             "message" to message,
-            "date_time" to date_time
-        )
+            "date_time" to date_time,
+            "timestamp" to timestamp,
+            "isRead" to isRead,
+            "eventId" to eventId,
+            "eventType" to eventType,
+            "status" to status,
+            "panelName" to panelName,
+            "readByAdmin" to readByAdmin,
+            "readByUser" to readByUser
+        ).filterValues { it != null }
     }
 
     fun toLogString(): String = buildString {
         append("Notification(")
         append("documentName='$documentName', ")
         append("clientDocName='$clientDocName', ")
-        append("panelDocName='$panelDocName', ")
-        append("relayName='$relayName', ")
+        if (isEventNotification()) {
+            append("eventId='$eventId', ")
+            append("eventType='$eventType', ")
+            append("status='$status', ")
+        } else {
+            append("panelDocName='$panelDocName', ")
+            append("relayName='$relayName', ")
+        }
         append("message='${message.take(30)}${if (message.length > 30) "..." else ""}', ")
-        append("date_time='$date_time'")
+        append("date_time='$date_time', ")
+        append("timestamp=$timestamp")
         append(")")
     }
 
-    // Constructor para migración de datos antiguos
-    fun fromLegacy(
-        ID: String,
-        ID_CLIENT: String,
-        ID_PANEL: String,
-        ID_RELAY: String,
-        message: String,
-        date_time: String
-    ): Notification {
-        return Notification(
-            documentName = if (ID.startsWith(DocumentPrefixes.NOTIFICATION)) ID else "${DocumentPrefixes.NOTIFICATION}$ID",
-            clientDocName = if (ID_CLIENT.startsWith(DocumentPrefixes.CLIENT)) ID_CLIENT else "${DocumentPrefixes.CLIENT}$ID_CLIENT",
-            panelDocName = if (ID_PANEL.startsWith(DocumentPrefixes.PANEL)) ID_PANEL else "${DocumentPrefixes.PANEL}$ID_PANEL",
-            relayName = ID_RELAY,
-            message = message,
-            date_time = date_time
-        )
-    }
-
-    // Función de utilidad para determinar si la notificación es reciente (menos de 24 horas)
     fun isRecent(): Boolean {
         val notificationDateTime = dateTime ?: return false
         val hoursAgo = java.time.Duration.between(notificationDateTime, LocalDateTime.now()).toHours()
         return hoursAgo < 24
-    }
-
-    // Función para obtener un timestamp para ordenamiento
-    fun getTimestamp(): Long {
-        return dateTime?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: 0L
     }
 }

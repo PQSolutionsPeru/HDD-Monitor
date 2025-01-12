@@ -54,7 +54,8 @@ fun UserDashboardScreen(
     onLogoutClick: () -> Unit,
     onViewEventsClick: () -> Unit,
     onViewNotificationHistoryClick: () -> Unit,
-    hasPendingNotifications: Boolean
+    hasPendingNotifications: Boolean,
+    selectedPanelId: String? = null
 ) {
     Log.d(TAG, "UserDashboardScreen composition started")
 

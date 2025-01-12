@@ -32,6 +32,13 @@ class NotificationHistoryViewModel @Inject constructor(
     private val userRepository: UserRepository
 ) : ViewModel() {
 
+    data class NotificationHistoryUiState(
+        val notifications: List<NotificationItem> = emptyList(),
+        val isLoading: Boolean = false,
+        val error: String? = null,
+        val lastUpdate: Long = System.currentTimeMillis()
+    )
+
     private val _uiState = MutableStateFlow(NotificationHistoryUiState())
     val uiState: StateFlow<NotificationHistoryUiState> = _uiState.asStateFlow()
 
@@ -61,38 +68,51 @@ class NotificationHistoryViewModel @Inject constructor(
                             }
                         }
                         .collect { notifications ->
-                            // Verificar que todas las notificaciones tengan nombres de documento válidos
-                            val validNotifications = notifications.all { notification ->
-                                notification.documentName.startsWith(DocumentPrefixes.NOTIFICATION) &&
-                                        notification.documentName.contains(notification.clientDocName)
-                            }
-
-                            if (!validNotifications) {
-                                Log.w(TAG, "Se encontraron notificaciones con nombres de documento inválidos")
-                            }
-
-                            // Ordenar las notificaciones por fecha, las más recientes primero
-                            val sortedNotifications = notifications
-                                .sortedByDescending { it.date_time }
-                                .distinctBy { "${it.clientDocName}_${it.documentName}" }
+                            // Convertir Notification a NotificationItem
+                            val notificationItems = notifications.map { notification ->
+                                NotificationItem(
+                                    documentName = notification.documentName,
+                                    clientDocName = notification.clientDocName,
+                                    title = if (notification.isEventNotification())
+                                        "Evento ${notification.eventType}"
+                                    else
+                                        "Actualización de Panel",
+                                    text = notification.message,
+                                    date_time = notification.date_time,
+                                    status = notification.status?.let {
+                                        NotificationStatus.fromString(it)
+                                    } ?: NotificationStatus.PROGRAMADO,
+                                    panelDocName = notification.panelDocName,
+                                    panelName = notification.panelName,
+                                    relayName = notification.relayName,
+                                    eventId = notification.eventId,
+                                    eventType = notification.eventType,
+                                    notificationType = if (notification.isEventNotification())
+                                        NotificationType.EVENT
+                                    else NotificationType.RELAY,
+                                    isRead = notification.isRead,
+                                    timestamp = notification.timestamp
+                                ).takeIf { item ->
+                                    item.documentName.startsWith(DocumentPrefixes.NOTIFICATION) &&
+                                            item.clientDocName.startsWith(DocumentPrefixes.CLIENT) &&
+                                            item.text.isNotBlank() &&
+                                            (item.panelDocName?.startsWith(DocumentPrefixes.PANEL) ?: true)
+                                }
+                            }.filterNotNull()
+                                .sortedByDescending { it.timestamp }
 
                             _uiState.update {
                                 it.copy(
-                                    notifications = sortedNotifications,
+                                    notifications = notificationItems,
                                     isLoading = false,
                                     error = null,
                                     lastUpdate = System.currentTimeMillis()
                                 )
                             }
-                            Log.d(TAG, "Notifications loaded: ${sortedNotifications.size}")
-                            sortedNotifications.forEach { notification ->
-                                Log.d(
-                                    TAG, "Notification loaded - " +
-                                            "Doc: ${notification.documentName}, " +
-                                            "Client: ${notification.clientDocName}, " +
-                                            "Panel: ${notification.panelDocName}"
-                                )
-                            }
+
+                            Log.d(TAG, "Notificaciones cargadas: ${notificationItems.size}")
+                            Log.d(TAG, "Eventos: ${notificationItems.count { it.notificationType == NotificationType.EVENT }}")
+                            Log.d(TAG, "Relay: ${notificationItems.count { it.notificationType == NotificationType.RELAY }}")
                         }
                 } else {
                     _uiState.update {

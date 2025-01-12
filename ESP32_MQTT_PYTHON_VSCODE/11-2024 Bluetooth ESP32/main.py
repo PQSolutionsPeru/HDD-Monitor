@@ -305,31 +305,34 @@ def wait_for_mqtt_config(managers, timeout=300000):
     return False
 
 def setup_mqtt_connection(managers):
-        """Sets up MQTT connection and waits for VM configuration"""
-        try:
-            managers["watchdog"].feed()
-            esp32_id = managers["esp32_id"].get_id()
+    """Sets up MQTT connection and waits for VM configuration if needed"""
+    try:
+        managers["watchdog"].feed()
+        esp32_id = managers["esp32_id"].get_id()
+        
+        if not esp32_id:
+            print("[MQTT] Error: No ESP32 ID available")
+            return False
             
-            if not esp32_id:
-                print("[MQTT] Error: No ESP32 ID available")
-                return False
-                
-            print(f"[MQTT] Setting up connection for ESP32 ID: {esp32_id}")
-            managers["mqtt"].esp32_id = esp32_id
+        print(f"[MQTT] Setting up connection for ESP32 ID: {esp32_id}")
+        managers["mqtt"].esp32_id = esp32_id
+        
+        # Un solo intento de conexión MQTT
+        if not managers["mqtt"].connect():
+            print("[MQTT] Could not establish MQTT connection")
+            return False
             
-            # Un solo intento de conexión MQTT
-            if not managers["mqtt"].connect():
-                print("[MQTT] Could not establish MQTT connection")
-                return False
-                
-            # Suscripción al tópico de configuración
-            config_topic = f"esp32/config/{esp32_id}"
-            if not managers["mqtt"].subscribe(config_topic):
-                print("[MQTT] Subscription failed")
-                return False
-            
-            print("[MQTT] Setup completed successfully")
-            print("[MQTT] Waiting for VM to send configuration...")
+        # Suscripción al tópico de configuración
+        config_topic = f"esp32/config/{esp32_id}"
+        if not managers["mqtt"].subscribe(config_topic):
+            print("[MQTT] Subscription failed")
+            return False
+        
+        print("[MQTT] Setup completed successfully")
+        
+        # Solo esperar configuración si no tenemos una válida
+        if not managers["mqtt"].client_id or not managers["mqtt"].panel_id:
+            print("[MQTT] No valid configuration found. Waiting for VM...")
             
             # Esperar la configuración del panel
             start_time = utime.ticks_ms()
@@ -343,14 +346,21 @@ def setup_mqtt_connection(managers):
                     print("[MQTT] WiFi connection lost while waiting for config")
                     return False
                     
+                if managers["mqtt"].client_id and managers["mqtt"].panel_id:
+                    print("[MQTT] Configuration received successfully")
+                    return True
+                    
                 utime.sleep_ms(100)
                 
             print("[MQTT] Configuration wait timeout")
             return False
+        else:
+            print("[MQTT] Valid configuration already exists")
+            return True
             
-        except Exception as e:
-            print(f"[MQTT] Setup error: {e}")
-            return False
+    except Exception as e:
+        print(f"[MQTT] Setup error: {e}")
+        return False
 
 def handle_running_mode(managers):
     """Handles system in running mode"""

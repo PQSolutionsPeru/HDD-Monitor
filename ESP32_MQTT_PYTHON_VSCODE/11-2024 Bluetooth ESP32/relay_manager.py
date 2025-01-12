@@ -9,51 +9,61 @@ class RelayManager:
         self.last_trigger_time = {}
 
     def setup_relay(self, pin_num, callback):
-        """Configura un relay y reporta su estado inicial"""
-        pin = Pin(pin_num, Pin.IN, Pin.PULL_UP)
-        self.relays[pin_num] = pin
-        self.relay_callbacks[pin_num] = callback
-        
-        # Leer estado inicial
-        initial_state = pin.value()
-        self.relay_states[pin_num] = initial_state
-        
-        # Notificar estado inicial
-        if callback:
-            callback(pin, pin_num)
+        """Configura un relay con manejo de errores mejorado"""
+        try:
+            pin = Pin(pin_num, Pin.IN, Pin.PULL_UP)
+            self.relays[pin_num] = pin
+            self.relay_callbacks[pin_num] = callback
             
-        # Configurar interrupción
-        pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, 
-                handler=lambda p: self.debounce(pin_num, p, callback))
+            def safe_callback(p):
+                try:
+                    self.debounce(pin_num, p, callback)
+                except Exception as e:
+                    print(f"[RELAY] Error crítico en callback del pin {pin_num}: {e}")
+                    # Reiniciar interrupción
+                    try:
+                        p.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=None)
+                        utime.sleep_ms(100)
+                        p.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=safe_callback)
+                        print(f"[RELAY] Interrupción reiniciada para pin {pin_num}")
+                    except Exception as e:
+                        print(f"[RELAY] Error fatal reiniciando interrupción: {e}")
+            
+            # Configurar interrupción inicial
+            pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, 
+                   handler=safe_callback)
+            
+            # Leer y notificar estado inicial
+            initial_state = pin.value()
+            self.relay_states[pin_num] = initial_state
+            if callback:
+                callback(pin, pin_num)
                 
-        return pin
+            print(f"[RELAY] Pin {pin_num} configurado exitosamente")
+            return pin
+            
+        except Exception as e:
+            print(f"[RELAY] Error crítico configurando pin {pin_num}: {e}")
+            return None
 
     def debounce(self, pin_num, pin, callback):
-        """Maneja cambios de estado con debounce"""
+        """Maneja cambios de estado con debounce mejorado"""
         try:
             current_time = time.ticks_ms()
             if (time.ticks_diff(current_time, self.last_trigger_time.get(pin_num, 0)) > 300 and 
                 self.relay_states[pin_num] != pin.value()):
                 
-                self.relay_states[pin_num] = pin.value()
-                if callback:
-                    callback(pin, pin_num)
+                new_state = pin.value()
+                self.relay_states[pin_num] = new_state
                 self.last_trigger_time[pin_num] = current_time
                 
+                if callback:
+                    try:
+                        callback(pin, pin_num)
+                    except Exception as e:
+                        print(f"[RELAY] Error en callback del pin {pin_num}: {e}")
+                        raise  # Propagar error para reiniciar interrupción
+                
         except Exception as e:
-            print(f"[RELAY] Error en debounce: {e}")
-            
-    def get_relay_state(self, pin_num):
-        """Obtiene el estado actual de un relay"""
-        if pin_num in self.relays:
-            return self.relays[pin_num].value()
-        return None
-
-    def check_all_states(self):
-        """Verifica el estado de todos los relays"""
-        for pin_num, pin in self.relays.items():
-            current_state = pin.value()
-            if current_state != self.relay_states.get(pin_num):
-                self.relay_states[pin_num] = current_state
-                if self.relay_callbacks.get(pin_num):
-                    self.relay_callbacks[pin_num](pin, pin_num)
+            print(f"[RELAY] Error en debounce del pin {pin_num}: {e}")
+            raise  # Propagar error para reiniciar interrupción

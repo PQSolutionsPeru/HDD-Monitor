@@ -19,6 +19,7 @@ import com.pqsolutions.hdd_monitor.presentation.state.EventViewState
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import com.pqsolutions.hdd_monitor.util.toUserFriendlyMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDateTime
 import javax.inject.Inject
+import kotlin.coroutines.cancellation.CancellationException
 
 @HiltViewModel
 class EventViewModel @Inject constructor(
@@ -54,6 +56,8 @@ class EventViewModel @Inject constructor(
     private var currentFilter: EventFilter = EventFilter.All
     private var currentSort = EventSortOption.DEFAULT
 
+    private var eventsJob: Job? = null
+
     init {
         loadEvents()
         loadEventTypes()
@@ -61,7 +65,8 @@ class EventViewModel @Inject constructor(
     }
 
     fun loadEvents() {
-        viewModelScope.launch {
+        eventsJob?.cancel() // Cancelar job anterior si existe
+        eventsJob = viewModelScope.launch {
             try {
                 _state.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
@@ -121,11 +126,81 @@ class EventViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error in loadEvents", e)
+                if (e !is CancellationException) {  // Ignorar excepciones de cancelación
+                    Log.e(TAG, "Error in loadEvents", e)
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = e.toUserFriendlyMessage()
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun loadSpecificEvent(eventId: String) {
+        eventsJob?.cancel() // Cancelar job anterior si existe
+        eventsJob = viewModelScope.launch {
+            try {
+                _state.update { it.copy(isLoading = true, error = null) }
+                val currentUser = userRepository.getCurrentUser()
+
+                if (currentUser != null) {
+                    val eventsFlow = if (currentUser.role == UserRole.ADMIN) {
+                        eventRepository.getAllEventsFlow()
+                    } else {
+                        eventRepository.getEventsFlow(currentUser.clientDocName)
+                    }
+
+                    eventsFlow
+                        .catch { e ->
+                            Log.e(TAG, "Error loading specific event", e)
+                            _state.update {
+                                it.copy(
+                                    isLoading = false,
+                                    error = e.message ?: "Error desconocido"
+                                )
+                            }
+                        }
+                        .collect { events ->
+                            val event = events.find {
+                                it.documentName == eventId ||
+                                        it.documentName.contains(eventId)
+                            }
+
+                            if (event != null) {
+                                _state.update {
+                                    it.copy(
+                                        events = listOf(event),
+                                        isLoading = false,
+                                        error = null,
+                                        lastUpdate = System.currentTimeMillis()
+                                    )
+                                }
+                            } else {
+                                _state.update {
+                                    it.copy(
+                                        isLoading = false,
+                                        error = "Evento no encontrado"
+                                    )
+                                }
+                            }
+                        }
+                } else {
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "No se encontró usuario actual"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading specific event", e)
                 _state.update {
                     it.copy(
                         isLoading = false,
-                        error = e.toUserFriendlyMessage()
+                        error = e.message ?: "Error desconocido"
                     )
                 }
             }
@@ -869,7 +944,7 @@ class EventViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        clearListeners()
+        eventsJob?.cancel()
         super.onCleared()
     }
 }

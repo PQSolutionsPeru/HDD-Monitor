@@ -24,9 +24,6 @@ class BleConnector @Inject constructor(
     private val _connectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
     val connectionState: StateFlow<BleConnectionState> = _connectionState.asStateFlow()
 
-    private val _wifiConfigState = MutableStateFlow<WifiConfigState>(WifiConfigState.Initial)
-    val wifiConfigState: StateFlow<WifiConfigState> = _wifiConfigState.asStateFlow()
-
     private val responseBuffer = StringBuilder()
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -82,7 +79,7 @@ class BleConnector @Inject constructor(
             Log.d(TAG, if (success) "Escritura exitosa" else "Escritura fallida")
 
             if (!success) {
-                _wifiConfigState.value = WifiConfigState.Error("Error enviando configuración")
+                _connectionState.value = BleConnectionState.Error("Error enviando configuración")
             }
         }
 
@@ -90,23 +87,34 @@ class BleConnector @Inject constructor(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic
         ) {
-            val message = characteristic.value.toString(Charsets.UTF_8)
-            Log.d(TAG, "Respuesta BLE recibida: $message")
+            try {
+                val message = characteristic.value.toString(Charsets.UTF_8)
+                Log.d(TAG, "Respuesta BLE recibida: $message")
 
-            when {
-                message.startsWith("status:wifi_con") -> {
-                    Log.d(TAG, "WiFi configurado exitosamente")
-                    Log.d(TAG, "Estado actual de wifiConfigState: ${_wifiConfigState.value}")
-                    _wifiConfigState.value = WifiConfigState.Success()
+                when {
+                    message.startsWith("status:wifi_con") -> {
+                        // Extraer información adicional del mensaje
+                        val parts = message.split(",")
+                        val ip = parts.find { it.startsWith("ip:") }?.substringAfter("ip:") ?: ""
+                        val esp32Id = parts.find { it.startsWith("id:") }?.substringAfter("id:") ?: ""
+
+                        Log.d(TAG, "WiFi configurado exitosamente. IP: $ip, ESP32 ID: $esp32Id")
+                        onWifiConfigSuccess?.invoke(ip, esp32Id)
+                    }
+                    message.startsWith("error:wifi_failed") -> {
+                        val errorMsg = message.substringAfter("error:wifi_failed:")
+                            .takeIf { it.isNotBlank() } ?: "Error en configuración WiFi"
+                        Log.e(TAG, "Error en configuración WiFi: $errorMsg")
+                        onWifiConfigError?.invoke(errorMsg)
+                    }
+                    message.startsWith("bye:closing_con") -> {
+                        Log.d(TAG, "ESP32 cerrando conexión")
+                        disconnect()
+                    }
                 }
-                message.startsWith("error:wifi_failed") -> {
-                    Log.e(TAG, "Error en configuración WiFi")
-                    _wifiConfigState.value = WifiConfigState.Error("Error en configuración WiFi")
-                }
-                message.startsWith("bye:closing_con") -> {
-                    Log.d(TAG, "ESP32 cerrando conexión")
-                    Log.d(TAG, "Estado actual de wifiConfigState: ${_wifiConfigState.value}")
-                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error procesando mensaje BLE", e)
+                onWifiConfigError?.invoke("Error procesando respuesta: ${e.message}")
             }
         }
     }
@@ -123,28 +131,31 @@ class BleConnector @Inject constructor(
 
     @SuppressLint("MissingPermission")
     private fun findCharacteristics(gatt: BluetoothGatt) {
-        val service = gatt.getService(UART_SERVICE_UUID)
-        writeCharacteristic = service?.getCharacteristic(UART_RX_CHAR_UUID)
-        notifyCharacteristic = service?.getCharacteristic(UART_TX_CHAR_UUID)
+        try {
+            val service = gatt.getService(UART_SERVICE_UUID)
+            writeCharacteristic = service?.getCharacteristic(UART_RX_CHAR_UUID)
+            notifyCharacteristic = service?.getCharacteristic(UART_TX_CHAR_UUID)
 
-        if (writeCharacteristic == null || notifyCharacteristic == null) {
-            Log.e(TAG, "No se encontraron características necesarias")
+            if (writeCharacteristic == null || notifyCharacteristic == null) {
+                Log.e(TAG, "No se encontraron características necesarias")
+                disconnect()
+                return
+            }
+
+            // Habilitar notificaciones
+            gatt.setCharacteristicNotification(notifyCharacteristic!!, true)
+            val descriptor = notifyCharacteristic!!.getDescriptor(CCCD_UUID)
+            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            gatt.writeDescriptor(descriptor)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error configurando características BLE", e)
             disconnect()
-            return
         }
-
-        // Habilitar notificaciones
-        gatt.setCharacteristicNotification(notifyCharacteristic!!, true)
-        val descriptor = notifyCharacteristic!!.getDescriptor(CCCD_UUID)
-        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        gatt.writeDescriptor(descriptor)
     }
 
     @SuppressLint("MissingPermission")
     fun sendWifiConfig(config: WifiConfig): Boolean {
         try {
-            _wifiConfigState.value = WifiConfigState.Sending
-
             val message = """
                 {START}
                 {"ssid":"${config.ssid}","password":"${config.password}"}
@@ -159,13 +170,13 @@ class BleConnector @Inject constructor(
                     Log.d(TAG, "Configuración WiFi enviada exitosamente")
                 } else {
                     Log.e(TAG, "Error enviando configuración WiFi")
-                    _wifiConfigState.value = WifiConfigState.Error("Error enviando configuración")
+                    onWifiConfigError?.invoke("Error enviando configuración")
                 }
                 result
             } ?: false
         } catch (e: Exception) {
             Log.e(TAG, "Error enviando configuración WiFi", e)
-            _wifiConfigState.value = WifiConfigState.Error(e.message ?: "Error desconocido")
+            onWifiConfigError?.invoke(e.message ?: "Error desconocido")
             return false
         }
     }
@@ -215,6 +226,10 @@ class BleConnector @Inject constructor(
         }
     }
 
+    // Callbacks para notificar eventos WiFi
+    var onWifiConfigSuccess: ((String, String) -> Unit)? = null
+    var onWifiConfigError: ((String) -> Unit)? = null
+
     companion object {
         private const val TAG = "BleConnector"
         val UART_SERVICE_UUID: UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
@@ -222,11 +237,4 @@ class BleConnector @Inject constructor(
         val UART_TX_CHAR_UUID: UUID = UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
-}
-
-sealed class WifiConfigState {
-    object Initial : WifiConfigState()
-    object Sending : WifiConfigState()
-    data class Success(val ip: String = "", val esp32Id: String = "") : WifiConfigState()
-    data class Error(val message: String) : WifiConfigState()
 }
