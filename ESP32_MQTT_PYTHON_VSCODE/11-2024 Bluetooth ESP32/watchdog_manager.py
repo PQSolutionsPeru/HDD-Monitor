@@ -2,45 +2,55 @@ from machine import WDT, Timer
 import utime
 import machine
 import gc
+from config.watchdog_config import WatchdogConfig
 
 class WatchdogManager:
     def __init__(self):
-        """Inicializa el watchdog con timeout aumentado"""
-        self.TIMEOUT = 600000  # 600 segundos (10 minutos)
-        self.watchdog = WDT(timeout=self.TIMEOUT)
-        self.MSG_BUFFER_SIZE = 256  # Mantener buffer original
-        self.MAX_QUEUE_SIZE = 10    # Mantener cola original
+        """Inicializa el watchdog con configuración basada en modo"""
+        self.config = WatchdogConfig()
+        self.watchdog = WDT(timeout=self.config.get_current_timeout())
         
-        # Intervalos críticos
+        # Control de tiempos
         self.last_feed = utime.ticks_ms()
-        self.FEED_INTERVAL = 60000  # 60 segundos
+        self.last_relay_check = utime.ticks_ms()
+        self.last_mqtt_check = utime.ticks_ms()
+        
+        # Métricas del sistema
+        self.system_metrics = {
+            'memory_drops': 0,
+            'relay_failures': 0,
+            'mqtt_failures': 0
+        }
         
         # Control de resets
         self.reset_count = 0
-        self.MAX_RESETS = 3
         self.last_reset = 0
-        self.RESET_WINDOW = 600000  # 10 minutos
         
-        print("[WATCHDOG] Iniciado con timeout extendido")
+        print("[WATCHDOG] Iniciado con configuración para sistema crítico")
 
     def feed(self):
-        """Alimenta al watchdog solo si el sistema está saludable"""
+        """Alimenta al watchdog según el modo actual"""
         try:
             current_time = utime.ticks_ms()
             
-            if utime.ticks_diff(current_time, self.last_feed) >= self.FEED_INTERVAL:
-                # Primero verificar salud del sistema
-                if not self.check_system_health():
-                    print("[WATCHDOG] Sistema no saludable - No alimentar")
-                    self.force_reset("unhealthy_system")
+            if utime.ticks_diff(current_time, self.last_feed) >= self.config.DEFAULT_CONFIG['feed_interval']:
+                # Verificar memoria siempre
+                if not self.check_memory_health():
+                    print("[WATCHDOG] Memoria crítica - Forzando reset")
+                    self.force_reset("low_memory")
                     return False
-                    
-                if gc.mem_free() < 10000:
-                    gc.collect()
-                    utime.sleep_ms(100)
-                    if gc.mem_free() < 10000:
-                        print("[WATCHDOG] Memoria crítica - No alimentar")
-                        self.force_reset("low_memory")
+                
+                # Verificaciones según modo
+                if self.config.should_check_relays():
+                    if not self.check_relay_health():
+                        print("[WATCHDOG] Error en relays - Forzando reset")
+                        self.force_reset("relay_error")
+                        return False
+                        
+                if self.config.should_check_mqtt():
+                    if not self.check_mqtt_health():
+                        print("[WATCHDOG] Error en MQTT - Forzando reset")
+                        self.force_reset("mqtt_error")
                         return False
                 
                 self.watchdog.feed()
@@ -52,36 +62,62 @@ class WatchdogManager:
             self.force_reset("feed_error")
             return False
 
-    def check_system_health(self):
-        """Verifica salud básica del sistema"""
-        try:
-            # Verificar memoria
-            if gc.mem_free() < 10000:
-                gc.collect()
-                utime.sleep_ms(100)
-                if gc.mem_free() < 10000:
-                    return False
-            
-            # Verificar tiempo desde último feed
-            current_time = utime.ticks_ms()
-            if utime.ticks_diff(current_time, self.last_feed) >= self.TIMEOUT:
-                return False
-                
+    def set_mode(self, mode):
+        """Cambia el modo de operación"""
+        if self.config.set_mode(mode):
+            print(f"[WATCHDOG] Modo cambiado a: {mode}")
+            # Actualizar timeout del watchdog
+            self.watchdog = WDT(timeout=self.config.get_current_timeout())
+            return True
+        return False
+
+    def check_relay_health(self):
+        """Verifica salud de relays solo si está habilitado"""
+        if not self.config.should_check_relays():
             return True
             
-        except:
+        current_time = utime.ticks_ms()
+        interval = self.config.get_relay_check_interval()
+        
+        if utime.ticks_diff(current_time, self.last_relay_check) >= interval:
+            print("[WATCHDOG] Timeout en verificación de relays")
             return False
+            
+        return True
+
+    def check_mqtt_health(self):
+        """Verifica salud de MQTT solo si está habilitado"""
+        if not self.config.should_check_mqtt():
+            return True
+            
+        current_time = utime.ticks_ms()
+        timeout = self.config.get_mqtt_timeout()
+        
+        if utime.ticks_diff(current_time, self.last_mqtt_check) >= timeout:
+            print("[WATCHDOG] Timeout en comunicaciones MQTT")
+            return False
+            
+        return True
+
+    def check_memory_health(self):
+        """Verifica salud de memoria"""
+        if gc.mem_free() < self.config.DEFAULT_CONFIG['reset']['memory_threshold']:
+            gc.collect()
+            utime.sleep_ms(100)
+            return gc.mem_free() >= self.config.DEFAULT_CONFIG['reset']['memory_threshold']
+        return True
 
     def force_reset(self, reason="watchdog_timeout"):
-        """Fuerza un reset del sistema con manejo de múltiples resets"""
+        """Fuerza reset con logging"""
         try:
             print(f"[WATCHDOG] Forzando reset: {reason}")
-            
             current_time = utime.ticks_ms()
-            if utime.ticks_diff(current_time, self.last_reset) < self.RESET_WINDOW:
+            
+            # Verificar ventana de resets
+            if utime.ticks_diff(current_time, self.last_reset) < self.config.DEFAULT_CONFIG['reset']['window']:
                 self.reset_count += 1
-                if self.reset_count >= self.MAX_RESETS:
-                    print("[WATCHDOG] Demasiados resets, ejecutando hard reset")
+                if self.reset_count >= self.config.DEFAULT_CONFIG['reset']['max_count']:
+                    print("[WATCHDOG] Demasiados resets - Hard reset")
                     machine.reset()
             else:
                 self.reset_count = 1
@@ -92,3 +128,11 @@ class WatchdogManager:
         except Exception as e:
             print(f"[WATCHDOG] Error en force_reset: {e}")
             machine.reset()
+
+    def update_relay_check(self):
+        """Actualiza timestamp de verificación de relays"""
+        self.last_relay_check = utime.ticks_ms()
+
+    def update_mqtt_check(self):
+        """Actualiza timestamp de verificación MQTT"""
+        self.last_mqtt_check = utime.ticks_ms()

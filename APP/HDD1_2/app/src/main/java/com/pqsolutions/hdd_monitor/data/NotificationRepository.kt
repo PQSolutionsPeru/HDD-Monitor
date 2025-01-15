@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.pqsolutions.hdd_monitor.data.util.IdManager
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.util.Constants
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
@@ -79,7 +80,9 @@ class NotificationRepository @Inject constructor(
                                         LocalDateTime.parse(
                                             dateStr,
                                             DateTimeFormatter.ofPattern(DATE_FORMAT)
-                                        ).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                        ).atZone(Constants.TimeZone.PERU_ZONE)
+                                            .toInstant()
+                                            .toEpochMilli()
                                     } catch (e: Exception) {
                                         System.currentTimeMillis()
                                     }
@@ -199,30 +202,6 @@ class NotificationRepository @Inject constructor(
         awaitClose {
             Log.d(TAG, "Cerrando listener de notificaciones globales")
             listenerRegistration.remove()
-        }
-    }
-
-    private fun normalizeDateTime(dateStr: String, map: MutableMap<String, Any?>) {
-        try {
-            val dateTime = try {
-                LocalDateTime.parse(dateStr, DateTimeFormatter.ofPattern("dd/MM/yyyy, HH:mm"))
-            } catch (e: Exception) {
-                try {
-                    LocalDateTime.parse(dateStr, DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"))
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error parsing date with both formats: $dateStr", e)
-                    LocalDateTime.now()
-                }
-            }
-
-            map["date_time"] = dateTime.format(DateTimeFormatter.ofPattern(DATE_FORMAT))
-            map["timestamp"] = dateTime.atZone(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error normalizing date: $dateStr", e)
-            map["timestamp"] = System.currentTimeMillis()
         }
     }
 
@@ -358,14 +337,16 @@ class NotificationRepository @Inject constructor(
         message: String
     ): Result<Unit> = runCatching {
         val notificationDocName = IdManager.generateNotificationDocumentName(clientDocName)
-        val now = LocalDateTime.now()
+        val now = LocalDateTime.now(Constants.TimeZone.PERU_ZONE)
 
         val notificationData = hashMapOf(
             "panelDocName" to panelDocName,
             "relayName" to relayName,
             "message" to message,
             "date_time" to now.format(DateTimeFormatter.ofPattern(DATE_FORMAT)),
-            "timestamp" to now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            "timestamp" to now.atZone(Constants.TimeZone.PERU_ZONE)
+                .toInstant()
+                .toEpochMilli(),
             "isRead" to false
         )
 

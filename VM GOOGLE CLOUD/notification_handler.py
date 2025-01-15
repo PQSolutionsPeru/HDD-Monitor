@@ -1,0 +1,279 @@
+from google.cloud import firestore
+import logging
+from typing import Dict, Any
+from firebase_admin import messaging
+import firebase_admin
+from datetime import datetime
+import pytz
+
+class NotificationHandler:
+    def __init__(self, db: firestore.Client):
+        self.db = db
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app()
+
+    def get_account_name(self, account_id: str, role: str = None) -> str:
+        """Obtiene el nombre de la cuenta basado en su ID y rol"""
+        try:
+            if not account_id:
+                return 'Usuario desconocido'
+
+            if role == 'admin' or (not role and account_id):
+                # Intentar primero en admins
+                admin_ref = self.db.document(f'hdd-monitor/accounts/admins/{account_id}')
+                admin_doc = admin_ref.get()
+                if admin_doc.exists:
+                    return admin_doc.get('name', 'Admin')
+
+            # Si no es admin o no se encontró, buscar en usuarios
+            clients_ref = self.db.collection('hdd-monitor/accounts/clients')
+            for client in clients_ref.stream():
+                user_ref = client.reference.collection('users').document(account_id)
+                user_doc = user_ref.get()
+                if user_doc.exists:
+                    return user_doc.get('name', 'Usuario')
+
+            return 'Usuario desconocido'
+            
+        except Exception as e:
+            logging.error(f"Error obteniendo nombre de cuenta: {e}")
+            return 'Usuario desconocido'
+
+    def process_event_update(self, event_ref: firestore.DocumentReference, old_data: Dict[str, Any], new_data: Dict[str, Any]):
+        """Procesa actualizaciones de eventos y crea notificaciones"""
+        try:
+            path_parts = event_ref.path.split('/')
+            client_id = path_parts[3]
+            event_id = path_parts[-1]
+
+            # Determinar tipo de actualización
+            update_type = None
+            if not old_data and new_data:
+                update_type = 'CREATE'
+            elif not new_data and old_data:
+                update_type = 'DELETE'
+            elif old_data and new_data:
+                # Verificar cambios específicos
+                if old_data.get('status') != new_data.get('status'):
+                    if new_data.get('status') == 'ACEPTADO' and old_data.get('status') == 'PROGRAMADO':
+                        update_type = 'ACCEPT'
+                    elif new_data.get('status') == 'FINALIZADO':
+                        update_type = 'FINISH'
+                    elif old_data.get('status') == 'FINALIZADO' and new_data.get('status') == 'ACEPTADO':
+                        update_type = 'REOPEN'
+                    else:
+                        update_type = 'STATUS_CHANGE'
+                elif old_data.get('date_time') != new_data.get('date_time'):
+                    update_type = 'RESCHEDULE'
+                elif (old_data.get('title') != new_data.get('title') or 
+                      old_data.get('text') != new_data.get('text')):
+                    update_type = 'EDIT'
+                elif old_data.get('type') != new_data.get('type'):
+                    update_type = 'TYPE_CHANGE'
+
+            if update_type:
+                # Obtener información necesaria para la notificación
+                client_doc = self.db.document(f'hdd-monitor/accounts/clients/{client_id}').get()
+                client_data = client_doc.to_dict() or {}
+                client_name = client_data.get('name', '')
+
+                # Usar los datos apropiados según el tipo de actualización
+                notification_data = new_data if new_data else old_data
+                
+                # Crear payload para notificación
+                notification_payload = {
+                    'event_id': event_id,
+                    'type': notification_data.get('type'),
+                    'title': notification_data.get('title'),
+                    'status': notification_data.get('status'),
+                    'panel_id': notification_data.get('panelDocName'),
+                    'panel_name': notification_data.get('panelName'),
+                    'action': update_type,
+                    'client_name': client_name,
+                    'message': self.get_event_message(update_type, notification_data)
+                }
+
+                self.send_fcm_notifications(client_id, notification_payload, 'event')
+
+        except Exception as e:
+            logging.error(f"Error en process_event_update: {e}", exc_info=True)
+
+    def get_event_message(self, update_type: str, event_data: Dict[str, Any]) -> str:
+        """Genera el mensaje de notificación según el tipo de actualización"""
+        panel_name = event_data.get('panelName') or event_data.get('panelDocName', '')
+        panel_text = f' para el panel "{panel_name}"' if panel_name else ''
+        title_text = f'"{event_data.get("title", "")}"'
+
+        # Obtener nombres de cuentas relevantes
+        created_by = self.get_account_name(
+            event_data.get('createdByAccountId', ''), 
+            event_data.get('createdByAccountRole', 'user')
+        )
+        accepted_by = self.get_account_name(
+            event_data.get('acceptedByAccountId', ''),
+            'admin'
+        )
+        finished_by = self.get_account_name(
+            event_data.get('finishedByAccountId', ''),
+            'admin'
+        )
+
+        messages = {
+            'CREATE': f"{created_by} ha creado un nuevo evento {event_data.get('type')}: {title_text}{panel_text}",
+            'ACCEPT': f"{accepted_by} ha aceptado el evento {title_text}{panel_text}",
+            'FINISH': f"{finished_by} ha finalizado el evento {title_text}{panel_text}",
+            'REOPEN': f"{accepted_by} ha reabierto el evento {title_text}{panel_text}",
+            'STATUS_CHANGE': f"El evento {title_text} ha cambiado a estado {event_data.get('status')}{panel_text}",
+            'EDIT': f"Se ha actualizado la información del evento {title_text}{panel_text}",
+            'RESCHEDULE': f"Se ha reprogramado el evento {title_text} para {event_data.get('date_time')}{panel_text}",
+            'TYPE_CHANGE': f"Se ha cambiado el tipo de evento {title_text} a {event_data.get('type')}{panel_text}",
+            'DELETE': f"Se ha eliminado el evento {title_text}{panel_text}"
+        }
+        
+        return messages.get(update_type, '')
+
+    def process_relay_update(self, relay_ref: firestore.DocumentReference, old_data: Dict[str, Any], new_data: Dict[str, Any]):
+        """Procesa actualizaciones de relays y crea notificaciones"""
+        try:
+            if old_data.get('status') != new_data.get('status'):
+                path_parts = relay_ref.path.split('/')
+                client_id = path_parts[3]
+                panel_id = path_parts[5]
+                relay_id = path_parts[7]
+
+                # Obtener información del panel
+                panel_doc = self.db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}').get()
+                panel_data = panel_doc.to_dict() or {}
+                panel_name = panel_data.get('name', '')
+
+                notification_payload = {
+                    'relay': relay_id,
+                    'panel_id': panel_id,
+                    'panel_name': panel_name,
+                    'state': new_data.get('status'),
+                    'old_status': old_data.get('status'),
+                    'message': f'El relay {relay_id} del panel "{panel_name}" ha cambiado de {old_data.get("status")} a {new_data.get("status")}'
+                }
+
+                self.send_fcm_notifications(client_id, notification_payload, 'relay')
+        
+        except Exception as e:
+            logging.error(f"Error en process_relay_update: {e}", exc_info=True)
+
+    def send_fcm_notifications(self, client_id: str, notification_data: Dict[str, Any], notification_type: str):
+        """Envía notificaciones FCM a usuarios y administradores"""
+        try:
+            # Obtener tokens FCM de usuarios del cliente
+            users_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/users')
+            users_snap = users_ref.get()
+            
+            # Obtener tokens FCM de administradores
+            admins_ref = self.db.collection('hdd-monitor/accounts/admins')
+            admins_snap = admins_ref.get()
+
+            # Obtener cliente info
+            client_doc = self.db.document(f'hdd-monitor/accounts/clients/{client_id}').get()
+            client_data = client_doc.to_dict() or {}
+            client_name = client_data.get('name', '')
+            
+            # Preparar mensaje base y convertir a strings
+            base_data = {
+                'clientDocName': str(client_id),
+                'timestamp': str(int(datetime.now().timestamp() * 1000))
+            }
+
+            if notification_type == 'relay':
+                relay_data = {
+                    'relayName': str(notification_data.get('relay', '')),
+                    'oldStatus': str(notification_data.get('old_status', '')),
+                    'newStatus': str(notification_data.get('state', '')),
+                    'type': 'relay',
+                    'panelDocName': str(notification_data.get('panel_id', ''))
+                }
+                base_data.update(relay_data)
+                
+                notification = messaging.Notification(
+                    title=f"{client_name} - Cambio de Estado",
+                    body=notification_data.get('message', '')
+                )
+            else:
+                event_data = {
+                    'eventId': str(notification_data.get('event_id', '')),
+                    'eventType': str(notification_data.get('type', '')),
+                    'status': str(notification_data.get('status', '')),
+                    'action': str(notification_data.get('action', '')),
+                    'type': 'event',
+                    'panelDocName': str(notification_data.get('panel_id', ''))
+                }
+                base_data.update(event_data)
+                
+                notification = messaging.Notification(
+                    title=f"Evento {notification_data.get('type', '')}",
+                    body=notification_data.get('message', '')
+                )
+
+            android_config = messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    channel_id='event_notifications' if notification_type != 'relay' else 'relay_status',
+                    priority='high',
+                    sound='default',
+                    visibility='public'
+                )
+            )
+
+            # Asegurarse que todos los valores son strings
+            message_data = {k: str(v) if v is not None else '' for k, v in base_data.items()}
+
+            # Enviar a usuarios
+            for user_doc in users_snap:
+                user_data = user_doc.to_dict()
+                if token := user_data.get('fcmToken'):
+                    try:
+                        message = messaging.Message(
+                            notification=notification,
+                            data=message_data,
+                            token=token,
+                            android=android_config
+                        )
+                        messaging.send(message)
+                        logging.info(f"Notificación enviada a usuario: {user_doc.id}")
+                    except Exception as e:
+                        logging.error(f"Error enviando FCM a usuario: {e}")
+
+            # Enviar a administradores
+            for admin_doc in admins_snap:
+                admin_data = admin_doc.to_dict()
+                if token := admin_data.get('fcmToken'):
+                    try:
+                        message = messaging.Message(
+                            notification=notification,
+                            data=message_data,
+                            token=token,
+                            android=android_config
+                        )
+                        messaging.send(message)
+                        logging.info(f"Notificación enviada a admin: {admin_doc.id}")
+                    except Exception as e:
+                        logging.error(f"Error enviando FCM a admin: {e}")
+
+            self.cleanup_notifications(client_id)
+
+        except Exception as e:
+            logging.error(f"Error en send_fcm_notifications: {e}", exc_info=True)
+
+    def cleanup_notifications(self, client_id: str):
+        """Limpia notificaciones antiguas manteniendo solo las últimas 20"""
+        try:
+            notifications_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
+            snapshot = notifications_ref.order_by('date_time', direction=firestore.Query.DESCENDING).get()
+
+            if len(snapshot) > 20:
+                batch = self.db.batch()
+                docs_to_delete = snapshot[20:]
+                for doc in docs_to_delete:
+                    batch.delete(doc.reference)
+                batch.commit()
+                logging.info(f"Limpiadas {len(docs_to_delete)} notificaciones antiguas del cliente {client_id}")
+        except Exception as e:
+            logging.error(f"Error en cleanup_notifications: {e}", exc_info=True)

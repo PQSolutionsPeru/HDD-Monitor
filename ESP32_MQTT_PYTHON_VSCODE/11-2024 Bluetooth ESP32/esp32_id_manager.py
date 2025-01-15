@@ -89,7 +89,10 @@ class ESP32IdManager:
                 
             # Generar ID con formato específico
             mac_part = self.mac_address[-4:]  # Últimos 4 caracteres del MAC
-            time_hex = hex(int(utime.time()) % 0x10000)[2:].upper().zfill(4)  # 4 caracteres de timestamp
+            time_hex = hex(int(utime.time()) % 0x10000)[2:].upper()
+            # Padding manual para time_hex en lugar de usar zfill
+            while len(time_hex) < 4:
+                time_hex = '0' + time_hex
             
             # Combinar para ID de 8 caracteres
             self.esp32_id = f"{mac_part}AC{time_hex}"

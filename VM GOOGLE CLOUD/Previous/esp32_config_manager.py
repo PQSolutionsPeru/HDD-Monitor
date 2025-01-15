@@ -26,15 +26,10 @@ db = firestore.Client(project='fir-hdd-monitor-d00de')
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         logging.info("Conectado al Broker MQTT!")
-        # Suscribirse a los tópicos necesarios
-        topics = [
-            ("esp32/network_info", 1),           # Para compatibilidad con versiones anteriores
-            ("esp32/register/+", 2),             # Nuevo formato de registro
-            ("esp32/status/+", 2)                # Para estados del ESP32
-        ]
-        for topic, qos in topics:
-            client.subscribe(topic, qos)
-            logging.info(f"Suscrito a: {topic}")
+        # Primero limpiar cualquier mensaje retain
+        client.publish("esp32/network_info", "", qos=1, retain=True)
+        # Luego suscribirse
+        client.subscribe("esp32/network_info", qos=1)
     else:
         logging.error(f"Error al conectar, código: {rc}")
 
@@ -58,7 +53,7 @@ def handle_network_info(client, payload: Dict[str, Any]):
             logging.info(f"Configuración existente encontrada: {existing_config}")
             
             # Actualizar documento del ESP32
-            esp32_ref = db.document(f'esp32/registered/{esp32_id}')
+            esp32_ref = db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
             esp32_data = {
                 'MAC': mac,
                 'IP': ip or '',
@@ -97,7 +92,7 @@ def handle_network_info(client, payload: Dict[str, Any]):
 
         # Si no hay configuración previa, proceder como dispositivo nuevo
         logging.info(f"No se encontró configuración previa para MAC {mac}")
-        esp32_ref = db.document(f'esp32/registered/{esp32_id}')
+        esp32_ref = db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
         esp32_data = {
             'MAC': mac,
             'IP': ip or '',
@@ -129,8 +124,8 @@ def check_existing_config_by_mac(mac: str) -> Optional[Dict[str, str]]:
             client_name = client_doc.get('name')
             panels_ref = client_doc.reference.collection('panels')
             
-            # Buscar en cada panel usando la MAC normalizada
-            panel_docs = panels_ref.where('esp32_id', '==', normalized_mac).get()
+            # Buscar en cada panel
+            panel_docs = panels_ref.where('esp32_id', '==', '3608AC08').get()
             for panel_doc in panel_docs:
                 panel_data = panel_doc.to_dict()
                 panel_id = panel_doc.id
@@ -177,7 +172,7 @@ def observe_panel_assignment(client, esp32_id: str):
                         'panel_id': panel_id
                     })
 
-    esp32_ref = db.document(f'esp32/registered/{esp32_id}')
+    esp32_ref = db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
     return esp32_ref.on_snapshot(on_snapshot)
 
 def check_panel_assignment(esp32_id: str) -> Optional[Dict[str, str]]:
@@ -290,108 +285,23 @@ def on_message(client, userdata, msg):
             return
 
         if not payload or all(not v for v in payload.values()):
-            logging.info("Ignorando mensaje vacío")
+            logging.info("Ignorando mensaje vacío (probablemente limpieza de retain)")
             return
 
         # Log inicial
-        logging.info(f"Mensaje recibido en {msg.topic}: {payload}")
+        logging.debug(f"Mensaje recibido en {msg.topic}: {payload}")
 
         # Validar timestamp
         if not validate_message_timestamp(payload):
             logging.info(f"Ignorando mensaje con timestamp inválido en {msg.topic}")
             return
 
-        # Procesar según el tópico
-        if msg.topic.startswith("esp32/register/"):
-            # Extraer ESP32 ID del tópico
-            esp32_id = msg.topic.split('/')[-1]
-            handle_esp32_registration(client, esp32_id, payload)
-        elif msg.topic == "esp32/network_info":
-            # Mantener compatibilidad con formato antiguo
+        # Procesar mensaje según tópico
+        if msg.topic == "esp32/network_info":
             handle_network_info(client, payload)
 
     except Exception as e:
         logging.error(f"Error procesando mensaje: {e}", exc_info=True)
-
-def handle_esp32_registration(client, esp32_id: str, payload: Dict[str, Any]):
-    """Maneja el registro inicial de un ESP32"""
-    try:
-        mac = payload.get('mac')
-        ip = payload.get('ip')
-
-        if not mac:
-            logging.error(f"MAC address faltante en payload: {payload}")
-            return
-
-        logging.info(f"Procesando registro de ESP32 {esp32_id} - MAC: {mac}, IP: {ip}")
-
-        # Buscar configuración existente
-        existing_config = check_existing_config_by_mac(mac)
-        
-        # Preparar datos base
-        esp32_data = {
-            'MAC': mac,
-            'IP': ip or '',
-            'status': 'AWAITING_CONFIG',
-            'lastUpdate': firestore.SERVER_TIMESTAMP
-        }
-
-        if existing_config:
-            logging.info(f"Configuración existente encontrada: {existing_config}")
-            esp32_data.update({
-                'client_id': existing_config['client_id'],
-                'panel_id': existing_config['panel_id']
-            })
-            
-            # Enviar configuración completa
-            config_message = {
-                'client_id': existing_config['client_id'],
-                'panel_id': existing_config['panel_id'],
-                'esp32_id': esp32_id,
-                'panel_name': existing_config['panel_name'],
-                'location': existing_config['location'],
-                'client_name': existing_config['client_name'],
-                'relay_states': existing_config['relay_states'],
-                'status': 'CONFIGURED',
-                'message_id': f"{int(time.time())}-{random.randint(1000,9999)}",
-                'timestamp': {
-                    'value': int(time.time() * 1000),
-                    'type': 'realtime'
-                }
-            }
-        else:
-            logging.info(f"Sin configuración previa para MAC {mac}")
-            # Enviar configuración de espera
-            config_message = {
-                'status': 'WAITING',
-                'message': 'Esperando asignación de panel',
-                'check_interval': 60,
-                'keepalive': 30,
-                'message_id': f"{int(time.time())}-{random.randint(1000,9999)}",
-                'timestamp': {
-                    'value': int(time.time() * 1000),
-                    'type': 'realtime'
-                }
-            }
-            # Inicializar como nuevo dispositivo
-            esp32_data['firstSeen'] = firestore.SERVER_TIMESTAMP
-
-        # Actualizar/crear documento en Firestore
-        esp32_ref = db.document(f'esp32/registered/{esp32_id}')
-        esp32_ref.set(esp32_data, merge=True)
-
-        # Enviar configuración vía MQTT
-        client.publish(
-            f"esp32/config/{esp32_id}",
-            json.dumps(config_message),
-            qos=2,
-            retain=False
-        )
-        
-        logging.info(f"Configuración enviada a ESP32 {esp32_id}")
-
-    except Exception as e:
-        logging.error(f"Error en handle_esp32_registration: {e}", exc_info=True)
 
 def main():
     client = mqtt.Client(client_id=MQTT_CLIENT_ID, clean_session=True)

@@ -1,5 +1,7 @@
 package com.pqsolutions.hdd_monitor.util
 
+import java.time.ZoneId
+
 object Constants {
     // Configuración de WhatsApp
     const val ADMIN_WHATSAPP_NUMBER = "+51993533004"
@@ -17,6 +19,10 @@ object Constants {
         const val NOTIFICATION = "notification_"
         const val PANEL = "panel_"
         const val USER = "user_"
+    }
+
+    object TimeZone {
+        val PERU_ZONE: ZoneId = ZoneId.of("America/Lima")
     }
 
     // Firebase Collections

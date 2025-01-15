@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor.data
 
+import com.pqsolutions.hdd_monitor.util.Constants
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -24,6 +25,7 @@ data class Notification(
 ) {
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy, HH:mm")
+            .withZone(Constants.TimeZone.PERU_ZONE)
 
         fun createNew(
             clientDocName: String,
@@ -35,7 +37,7 @@ data class Notification(
             status: String? = null,
             panelName: String? = null
         ): Notification {
-            val now = LocalDateTime.now()
+            val now = LocalDateTime.now(Constants.TimeZone.PERU_ZONE)
             return Notification(
                 documentName = "",
                 clientDocName = clientDocName,
@@ -43,7 +45,7 @@ data class Notification(
                 relayName = relayName,
                 message = message.trim(),
                 date_time = now.format(DATE_FORMATTER),
-                timestamp = now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                timestamp = now.atZone(Constants.TimeZone.PERU_ZONE).toInstant().toEpochMilli(),
                 eventId = eventId,
                 eventType = eventType,
                 status = status,

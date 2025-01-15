@@ -7,12 +7,7 @@ from relay_manager import RelayManager
 from watchdog_manager import WatchdogManager
 from esp32_id_manager import ESP32IdManager
 from bluetooth_manager import BluetoothManager
-from config_manager import ConfigManager
 from time_manager import TimeManager
-
-# Relay Configuration
-RELAY_PINS = [32, 33, 25]
-RELAY_NAMES = {32: "Alarma", 33: "Problema", 25: "Supervision"}
 
 # System Constants
 MAX_LOOP_TIME = 1000           # 1000ms maximum per cycle
@@ -48,11 +43,13 @@ def setup_relay_monitoring(managers, esp32_id):
     try:
         print("\n[RELAY] Configuring relays...")
         managers["relay"] = RelayManager()
+        relay_config = managers["relay"].config
         
         def relay_callback(pin, pin_num):
             try:
                 state = "DISC" if pin.value() else "OK"
-                pin_name = RELAY_NAMES.get(pin_num, str(pin_num))
+                pin_names = relay_config.get_relay_pins()
+                pin_name = pin_names.get(pin_num, str(pin_num))
                 print(f"[RELAY] Change in relay {pin_num} ({pin_name}): {state}")
                 
                 if managers["mqtt"].client_id and managers["mqtt"].panel_id:
@@ -75,17 +72,18 @@ def setup_relay_monitoring(managers, esp32_id):
             except Exception as e:
                 print(f"[RELAY] Callback error: {e}")
         
-        # Configure each relay and read initial states
-        for pin in RELAY_PINS:
-            relay_pin = managers["relay"].setup_relay(pin, relay_callback)
-            print(f"[RELAY] Configured relay on pin {pin} ({RELAY_NAMES[pin]})")
+        # Configure each relay using config
+        pin_config = relay_config.get_relay_pins()
+        for pin_num, pin_name in pin_config.items():
+            relay_pin = managers["relay"].setup_relay(pin_num, relay_callback)
+            print(f"[RELAY] Configured relay on pin {pin_num} ({pin_name})")
             
             # Get and report initial state
             initial_state = "DISC" if relay_pin.value() else "OK"
-            print(f"[RELAY] Initial state of relay {pin} ({RELAY_NAMES[pin]}): {initial_state}")
+            print(f"[RELAY] Initial state of relay {pin_num} ({pin_name}): {initial_state}")
             
             # Force callback for initial state
-            relay_callback(relay_pin, pin)
+            relay_callback(relay_pin, pin_num)
             
         return True
         
@@ -139,21 +137,11 @@ def initialize_system():
         managers["watchdog"].feed()
         utime.sleep_ms(500)
         
-        # 2. Iniciar ConfigManager
-        print("[INIT] Iniciando ConfigManager...")
-        managers["config"] = ConfigManager()
-        managers["watchdog"].feed()
-        utime.sleep_ms(500)
-        
-        # Verificar si tenemos configuración WiFi guardada
-        wifi_config = managers["config"].get_wifi_config()
-        has_wifi_config = wifi_config.get('ssid') and wifi_config.get('password')
-        
         # Forzar GC antes de WiFi
         gc.collect()
         utime.sleep_ms(1000)
         
-        # 3. Iniciar WiFiManager con más tiempo entre intentos
+        # 2. Iniciar WiFiManager
         print("[INIT] Iniciando WiFiManager...")
         for attempt in range(3):
             try:
@@ -163,7 +151,8 @@ def initialize_system():
                 if managers["wifi"].sta_if:
                     print("[INIT] WiFiManager iniciado correctamente")
                     # Intentar conectar si hay configuración guardada
-                    if has_wifi_config:
+                    wifi_config = managers["wifi"].get_wifi_config()
+                    if wifi_config.get('ssid') and wifi_config.get('password'):
                         print("[INIT] Intentando conectar con configuración guardada...")
                         if managers["wifi"].connect_wifi(wifi_config['ssid'], wifi_config['password']):
                             print("[INIT] Conexión exitosa con configuración guardada")
@@ -179,7 +168,7 @@ def initialize_system():
         if "wifi" not in managers:
             raise Exception("No se pudo iniciar WiFiManager")
             
-        # 4. Resto de managers
+        # 3. Resto de managers
         for manager_init in [
             ("time", lambda: TimeManager(managers["wifi"])),
             ("esp32_id", lambda: ESP32IdManager()),
@@ -244,7 +233,7 @@ def setup_wifi_mode(managers):
                     
                 # Configure WiFi
                 if managers["wifi"].connect_wifi(ssid, password):
-                    managers["config"].save_wifi_config(ssid, password)
+                    managers["wifi"].save_wifi_config(ssid, password)
                     bluetooth_manager.write_data("status:wifi_connected")
                     
                     # Allow some time for status message
@@ -396,7 +385,7 @@ def main():
             raise Exception("System initialization failed")
             
         # Verificar si ya tenemos configuración WiFi
-        wifi_config = managers["config"].get_wifi_config()
+        wifi_config = managers["wifi"].get_wifi_config()
         has_wifi_config = wifi_config.get('ssid') and wifi_config.get('password')
         
         if has_wifi_config and managers["wifi"].check_connection():
@@ -455,7 +444,7 @@ def main():
     finally:
         # Cleanup
         if "mqtt" in managers:
-            managers["mqtt"].disconnect()
+            managers["mqtt"].close()  # Cambio de disconnect() a close() para liberar el device del pool
         if "wifi" in managers:
             managers["wifi"].disconnect()
         gc.collect()

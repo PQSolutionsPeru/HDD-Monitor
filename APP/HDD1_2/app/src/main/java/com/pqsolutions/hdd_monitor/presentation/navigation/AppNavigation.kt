@@ -270,32 +270,27 @@ private fun safeNavigateToLogin(navController: NavHostController) {
 private fun safeNavigateBack(navController: NavHostController) {
     try {
         val currentRoute = navController.currentBackStackEntry?.destination?.route
-        val previousRoute = navController.previousBackStackEntry?.destination?.route
 
-        when {
-            currentRoute == null -> {
-                navController.navigate(Screen.Dashboard.route) {
-                    popUpTo(0) { inclusive = true }
-                    launchSingleTop = true
-                }
+        // Si no hay ruta actual o es la ruta del dashboard, navegamos al dashboard
+        if (currentRoute == null || currentRoute == Screen.Dashboard.route) {
+            navController.navigate(Screen.Dashboard.route) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
             }
-            previousRoute == null -> {
-                navController.navigate(Screen.Dashboard.route) {
-                    popUpTo(currentRoute) { inclusive = true }
-                    launchSingleTop = true
-                }
-            }
-            else -> {
-                if (!navController.popBackStack()) {
-                    navController.navigate(Screen.Dashboard.route) {
-                        popUpTo(0) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                }
+            return
+        }
+
+        // Intentamos hacer pop del back stack
+        if (!navController.popBackStack()) {
+            // Si el pop falla, navegamos al dashboard
+            navController.navigate(Screen.Dashboard.route) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
             }
         }
     } catch (e: Exception) {
         Log.e("Navigation", "Error durante la navegación hacia atrás", e)
+        // En caso de error, aseguramos que volvemos al dashboard
         try {
             navController.navigate(Screen.Dashboard.route) {
                 popUpTo(0) { inclusive = true }
