@@ -176,7 +176,6 @@ fun EventScreen(
                     FloatingActionButton(
                         onClick = {
                             performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
                             viewModel.showCreateDialog()
                         }
                     ) {
@@ -227,17 +226,14 @@ fun EventScreen(
                                 isAdmin = isAdmin,
                                 onEditClick = {
                                     performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
                                     viewModel.showEditDialog(event)
                                 },
                                 onDeleteClick = {
                                     performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
                                     viewModel.deleteEvent(event.clientDocName, event.documentName)
                                 },
                                 onAcceptClick = {
                                     performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
                                     viewModel.updateEventStatus(
                                         event.clientDocName,
                                         event.documentName,
@@ -246,7 +242,6 @@ fun EventScreen(
                                 },
                                 onFinalizeClick = {
                                     performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
                                     viewModel.updateEventStatus(
                                         event.clientDocName,
                                         event.documentName,
@@ -255,7 +250,6 @@ fun EventScreen(
                                 },
                                 onReopenClick = {
                                     performHapticFeedback(context)
-                                    playSoundEffect(context, R.raw.button_click)
                                     viewModel.reopenEvent(
                                         event.clientDocName,
                                         event.documentName

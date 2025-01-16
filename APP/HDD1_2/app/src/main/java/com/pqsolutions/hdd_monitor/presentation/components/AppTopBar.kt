@@ -68,7 +68,6 @@ fun AppTopBar(
                 IconButton(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onBackClick()
                     }
                 ) {
@@ -81,7 +80,6 @@ fun AppTopBar(
                 IconButton(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onMenuClick()
                     }
                 ) {
@@ -99,7 +97,6 @@ fun AppTopBar(
                     notificationCount = notificationCount,
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onNotificationClick()
                     },
                     modifier = Modifier.size(48.dp)
@@ -154,7 +151,6 @@ fun AppTopBarWithSubtitle(
                 IconButton(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onBackClick()
                     }
                 ) {
@@ -167,7 +163,6 @@ fun AppTopBarWithSubtitle(
                 IconButton(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onMenuClick()
                     }
                 ) {
@@ -185,7 +180,6 @@ fun AppTopBarWithSubtitle(
                     notificationCount = notificationCount,
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onNotificationClick()
                     },
                     modifier = Modifier.size(48.dp)
@@ -229,7 +223,6 @@ fun CollapsibleTopBar(
                     IconButton(
                         onClick = {
                             performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
                             onBackClick()
                         }
                     ) {

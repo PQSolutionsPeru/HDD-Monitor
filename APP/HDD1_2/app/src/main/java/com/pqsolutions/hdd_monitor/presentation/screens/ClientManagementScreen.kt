@@ -115,7 +115,6 @@ fun ClientManagementScreen(
                                 IconButton(
                                     onClick = {
                                         performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
                                         viewModel.showCreateClientDialog()
                                     }
                                 ) {
@@ -129,7 +128,6 @@ fun ClientManagementScreen(
                                 IconButton(
                                     onClick = {
                                         performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
                                         viewModel.showCreatePanelDialog()
                                     }
                                 ) {
@@ -143,7 +141,6 @@ fun ClientManagementScreen(
                                 IconButton(
                                     onClick = {
                                         performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
                                         viewModel.showCreateUserDialog()
                                     }
                                 ) {
@@ -179,7 +176,6 @@ fun ClientManagementScreen(
                                     onClientSelect = { viewModel.selectClient(it) },
                                     onEditClient = { client ->
                                         performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
                                         editingClient = client
                                     },
                                     onDeleteClient = { client ->
@@ -212,7 +208,6 @@ fun ClientManagementScreen(
                                     onPanelSelect = { /* TODO: Implementar vista detalle */ },
                                     onEditPanel = { panel ->
                                         performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
                                         viewModel.showEditPanelDialog(panel)
                                     },
                                     onDeletePanel = { panel ->
@@ -233,7 +228,6 @@ fun ClientManagementScreen(
                                     users = state.users,
                                     onEditClick = { user ->
                                         performHapticFeedback(context)
-                                        playSoundEffect(context, R.raw.button_click)
                                         viewModel.showEditUserDialog(user)
                                     },
                                     onDeleteClick = { user ->
@@ -320,7 +314,6 @@ private fun ClientEditDialog(
             TextButton(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onConfirm(client.copy(name = name))
                 }
             ) {
@@ -331,7 +324,6 @@ private fun ClientEditDialog(
             TextButton(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onDismiss()
                 }
             ) {
@@ -370,7 +362,6 @@ private fun HandleDialogs(
                 Button(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onConfirmDelete(showDeleteConfirmation)
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -384,7 +375,6 @@ private fun HandleDialogs(
                 TextButton(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onDismissDelete()
                     }
                 ) {

@@ -85,7 +85,6 @@ fun ClientCard(
     Card(
         onClick = {
             performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
             onClientSelect()
         },
         modifier = modifier
@@ -119,7 +118,6 @@ fun ClientCard(
                 IconButton(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onEditClient()
                     }
                 ) {
@@ -132,7 +130,6 @@ fun ClientCard(
                 IconButton(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onDeleteClient()
                     }
                 ) {
@@ -218,7 +215,6 @@ fun ClientDetailContent(
         ElevatedButton(
             onClick = {
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 onManagePanels()
             },
             modifier = Modifier.fillMaxWidth()
@@ -235,7 +231,6 @@ fun ClientDetailContent(
         ElevatedButton(
             onClick = {
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 onManageUsers()
             },
             modifier = Modifier.fillMaxWidth()

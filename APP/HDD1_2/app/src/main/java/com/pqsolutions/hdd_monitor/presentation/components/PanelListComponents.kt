@@ -95,7 +95,6 @@ fun PanelCard(
     Card(
         onClick = {
             performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
             onPanelSelect()
         },
         modifier = modifier

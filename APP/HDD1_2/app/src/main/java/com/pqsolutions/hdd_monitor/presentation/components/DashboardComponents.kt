@@ -175,7 +175,6 @@ fun PanelItem(panel: Panel) {
             .clickable {
                 Log.d(TAG, "PanelItem clicked: ${panel.name}")
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)

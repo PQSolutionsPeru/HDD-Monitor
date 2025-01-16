@@ -49,7 +49,6 @@ fun ConfirmationDialog(
             Button(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onConfirm()
                 },
                 colors = if (isDestructive) {
@@ -65,7 +64,6 @@ fun ConfirmationDialog(
             TextButton(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onDismiss()
                 }
             ) {
@@ -169,7 +167,6 @@ fun ErrorDialog(
                 Button(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onRetry()
                     }
                 ) {
@@ -181,7 +178,6 @@ fun ErrorDialog(
             TextButton(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onDismiss()
                 }
             ) {

@@ -111,7 +111,6 @@ fun PanelDialog(
 
                     if (isValid) {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onConfirm(
                             Panel(
                                 documentName = panel?.documentName ?: "",
@@ -131,7 +130,6 @@ fun PanelDialog(
             TextButton(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onDismiss()
                 }
             ) {
@@ -258,7 +256,6 @@ fun UserDialog(
 
                     if (isValid) {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onConfirm(
                             UserData(
                                 documentName = user?.documentName ?: "",
@@ -279,7 +276,6 @@ fun UserDialog(
             TextButton(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onDismiss()
                 }
             ) {

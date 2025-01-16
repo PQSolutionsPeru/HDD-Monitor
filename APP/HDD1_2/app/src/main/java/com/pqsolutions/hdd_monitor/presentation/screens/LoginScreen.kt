@@ -57,7 +57,6 @@ fun LoginScreen(onLoginClick: (String, String) -> Unit) {
         HddButton(
             onClick = {
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 onLoginClick(email, password)
             },
             text = stringResource(R.string.login),

@@ -82,7 +82,6 @@ fun NavigationBackButton(
     IconButton(
         onClick = {
             performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
             onBackClick()
         },
         modifier = modifier

@@ -54,7 +54,6 @@ fun UserManagementScreen(
                     IconButton(
                         onClick = {
                             performHapticFeedback(context)
-                            playSoundEffect(context, R.raw.button_click)
                             viewModel.showCreateUserDialog()
                         }
                     ) {
@@ -94,12 +93,10 @@ fun UserManagementScreen(
                     users = uiState.users,
                     onEditClick = { user ->
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         viewModel.showEditUserDialog(user)
                     },
                     onDeleteClick = { user ->
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         viewModel.deleteUser(user)
                     }
                 )
@@ -115,12 +112,10 @@ fun UserManagementScreen(
             onCreateNewClient = { viewModel.showNewClientDialog() },
             onDismiss = {
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 viewModel.dismissUserDialog()
             },
             onConfirm = { userData ->
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 if (userData.documentName.isEmpty()) {
                     viewModel.createUser(userData)
                 } else {
@@ -134,12 +129,10 @@ fun UserManagementScreen(
         ClientDialog(
             onDismiss = {
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 viewModel.dismissClientDialog()
             },
             onConfirm = { clientName ->
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 viewModel.createClient(clientName)
             }
         )

@@ -1,410 +1,455 @@
-import json
-import paho.mqtt.client as mqtt
-from google.cloud import firestore
-import time
-from datetime import datetime, timezone
 import logging
-import random
+from google.cloud import firestore
+import paho.mqtt.client as mqtt
+import ssl
+import json
+import time
 from typing import Dict, Any, Optional
+from datetime import datetime
+import pytz
+from config import ESP32_CONFIG_MQTT as MQTT_CONFIG
 
-# Configuración de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+class ESP32ConfigManager:
+    def __init__(self):
+        # Inicializar Firestore
+        self.db = firestore.Client(project='fir-hdd-monitor-d00de')
+        
+        # Inicializar cliente MQTT
+        self.mqtt_client = self._setup_mqtt_client()
+        
+        # Caché de configuraciones
+        self._config_cache = {}
+        self._esp32_status = {}
 
-# Configuración MQTT
-MQTT_BROKER = 'node02.myqtthub.com'
-MQTT_PORT = 8883
-MQTT_CLIENT_ID = 'esp32_config_manager'
-MQTT_USER = 'esp32_config_manager'
-MQTT_PASSWORD = 'esp32_config_manager'
+    def _setup_mqtt_client(self) -> mqtt.Client:
+        """Configura y retorna el cliente MQTT"""
+        client = mqtt.Client(
+            client_id=MQTT_CONFIG['CLIENT_ID'],
+            clean_session=True,
+            protocol=mqtt.MQTTv311
+        )
+        
+        # Configurar credenciales
+        client.username_pw_set(MQTT_CONFIG['USER'], MQTT_CONFIG['PASSWORD'])
+        
+        # Configurar TLS
+        client.tls_set(
+            ca_certs=MQTT_CONFIG['TLS_CA_CERTS'],
+            tls_version=ssl.PROTOCOL_TLSv1_2,
+            cert_reqs=ssl.CERT_REQUIRED,
+            ciphers='ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384'
+        )
+        
+        # Configurar callbacks
+        client.on_connect = self._on_connect
+        client.on_message = self._on_message
+        client.on_disconnect = self._on_disconnect
+        
+        return client
 
-# Configuración de Firestore
-db = firestore.Client(project='fir-hdd-monitor-d00de')
-
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        logging.info("Conectado al Broker MQTT!")
-        # Suscribirse a los tópicos necesarios
-        topics = [
-            ("esp32/network_info", 1),           # Para compatibilidad con versiones anteriores
-            ("esp32/register/+", 2),             # Nuevo formato de registro
-            ("esp32/status/+", 2)                # Para estados del ESP32
-        ]
-        for topic, qos in topics:
-            client.subscribe(topic, qos)
-            logging.info(f"Suscrito a: {topic}")
-    else:
-        logging.error(f"Error al conectar, código: {rc}")
-
-def handle_network_info(client, payload: Dict[str, Any]):
-    """Maneja mensajes de red del ESP32 y su configuración"""
-    try:
-        esp32_id = payload.get('esp32_id')
-        status = payload.get('status')
-        mac = payload.get('MAC')
-        ip = payload.get('IP')
-
-        if not all([esp32_id, status, mac]):
-            logging.error(f"Datos faltantes en payload: {payload}")
-            return
-
-        logging.info(f"Procesando info de red ESP32 {esp32_id} - MAC: {mac}, Status: {status}")
-
-        # Buscar configuración existente
-        existing_config = check_existing_config_by_mac(mac)
-        if existing_config:
-            logging.info(f"Configuración existente encontrada: {existing_config}")
+    def _on_connect(self, client, userdata, flags, rc):
+        """Callback para cuando se establece la conexión MQTT"""
+        if rc == 0:
+            logging.info("Conectado al Broker MQTT!")
+            # Suscribirse a tópicos relevantes
+            topics = [
+                ("esp32/network_info", MQTT_CONFIG['QOS']),  # Añadido para capturar mensajes de red
+                ("esp32/register/+", MQTT_CONFIG['QOS']),
+                ("esp32/status/+", MQTT_CONFIG['QOS']),
+                ("esp32/config/+/response", MQTT_CONFIG['QOS'])
+            ]
             
-            # Actualizar documento del ESP32
-            esp32_ref = db.document(f'esp32/registered/{esp32_id}')
-            esp32_data = {
-                'MAC': mac,
-                'IP': ip or '',
-                'status': 'AWAITING_CONFIG',  # Para forzar reconfiguración
-                'client_id': existing_config['client_id'],
-                'panel_id': existing_config['panel_id'],
-                'lastUpdate': firestore.SERVER_TIMESTAMP
-            }
-            esp32_ref.set(esp32_data, merge=True)
+            for topic, qos in topics:
+                client.subscribe(topic, qos)
+                logging.info(f"Suscrito a: {topic}")
+        else:
+            logging.error(f"Error de conexión MQTT: {rc}")
 
-            # Enviar configuración con toda la información
-            config_message = {
-                'client_id': existing_config['client_id'],
-                'panel_id': existing_config['panel_id'],
-                'esp32_id': esp32_id,
-                'panel_name': existing_config['panel_name'],
-                'location': existing_config['location'],
-                'client_name': existing_config['client_name'],
-                'relay_states': existing_config['relay_states'],
-                'message_id': f"{int(time.time())}-{random.randint(1000,9999)}",
-                'timestamp': {
-                    'value': int(time.time() * 1000),
-                    'type': 'realtime'
+    def _on_message(self, client, userdata, msg):
+        """Procesa mensajes MQTT recibidos"""
+        try:
+            if msg.retain:
+                logging.info(f"Ignorando mensaje retain en {msg.topic}")
+                return
+
+            import json
+            
+            try:
+                # Intentar decodificar el mensaje como JSON directamente
+                payload_str = msg.payload.decode().strip('[] ')
+                payload = json.loads(payload_str)
+                
+                logging.info(f"Mensaje recibido en {msg.topic}: {payload}")
+                
+                topic_parts = msg.topic.split('/')
+
+                if msg.topic.startswith("esp32/network_info"):
+                    # Procesar mensaje de información de red
+                    esp32_id = payload.get('esp32_id')
+                    if esp32_id:
+                        network_info = {
+                            'MAC': payload.get('MAC'),
+                            'IP': payload.get('IP'),
+                            'status': payload.get('status')
+                        }
+                        self._handle_registration(esp32_id, network_info)
+                        
+                elif topic_parts[0] == "esp32":
+                    if topic_parts[1] == "status" and len(topic_parts) > 2:
+                        self._handle_status_update(topic_parts[2], payload)
+                    elif topic_parts[1] == "config" and len(topic_parts) > 3 and topic_parts[3] == "response":
+                        self._handle_config_response(topic_parts[2], payload)
+
+            except Exception as e:
+                logging.error(f"Error procesando mensaje MQTT: {e}", exc_info=True)
+                
+        except Exception as e:
+            logging.error(f"Error en _on_message: {e}", exc_info=True)
+
+    def _on_disconnect(self, client, userdata, rc):
+        """Callback para cuando se desconecta del broker MQTT"""
+        if rc != 0:
+            logging.warning(f"Desconexión inesperada del broker MQTT: {rc}")
+
+    def _handle_registration(self, esp32_id: str, payload: Dict[str, Any]):
+        """Maneja el registro inicial de un ESP32"""
+        try:
+            # Usar la ruta correcta para el documento
+            esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+
+            current_time = datetime.now(pytz.UTC)
+
+            # Buscar asignación previa en panels
+            existing_panel = self._find_existing_panel_assignment(esp32_id)
+            
+            if not esp32_doc.exists:
+                # Nuevo ESP32 - registrar
+                esp32_data = {
+                    'MAC': payload.get('MAC', ''),
+                    'IP': payload.get('IP', ''),
+                    'firstSeen': current_time,
+                    'lastUpdate': current_time,
+                    'status': payload.get('status', 'AWAITING_CONFIG'),
+                    'client_id': existing_panel['client_id'] if existing_panel else '',
+                    'panel_id': existing_panel['panel_id'] if existing_panel else ''
+                }
+                esp32_ref.set(esp32_data)
+                logging.info(f"Nuevo ESP32 registrado: {esp32_id}")
+                
+                # Si tenía asignación previa, enviar configuración
+                if existing_panel:
+                    self._send_config(esp32_id, esp32_data)
+            else:
+                # Actualizar información existente
+                updates = {
+                    'IP': payload.get('IP', ''),
+                    'lastUpdate': current_time,
+                    'status': payload.get('status', 'AWAITING_CONFIG')
+                }
+                
+                # Si no tiene asignación pero existe una previa, actualizarla
+                esp32_data = esp32_doc.to_dict()
+                if not esp32_data.get('client_id') and not esp32_data.get('panel_id') and existing_panel:
+                    updates.update({
+                        'client_id': existing_panel['client_id'],
+                        'panel_id': existing_panel['panel_id']
+                    })
+                    
+                esp32_ref.update(updates)
+                logging.info(f"ESP32 {esp32_id} actualizado con: {updates}")
+                
+                # Enviar configuración si tiene asignación
+                if esp32_data.get('client_id') and esp32_data.get('panel_id'):
+                    self._send_config(esp32_id, esp32_data)
+                elif existing_panel:
+                    esp32_data.update(updates)
+                    self._send_config(esp32_id, esp32_data)
+
+        except Exception as e:
+            logging.error(f"Error en registro de ESP32: {e}", exc_info=True)
+
+    def _find_existing_panel_assignment(self, esp32_id: str) -> Optional[Dict[str, str]]:
+        """Busca si el ESP32 está asignado a algún panel"""
+        try:
+            # Buscar en todos los clientes
+            clients_ref = self.db.collection('hdd-monitor/accounts/clients')
+            for client in clients_ref.stream():
+                # Buscar en todos los paneles del cliente
+                panels_ref = client.reference.collection('panels')
+                query = panels_ref.where('esp32_id', '==', esp32_id)
+                panels = query.stream()
+                
+                for panel in panels:
+                    panel_data = panel.to_dict()
+                    logging.info(f"Panel encontrado para ESP32 {esp32_id}: {panel.id} en cliente {client.id}")
+                    return {
+                        'client_id': client.id,
+                        'panel_id': panel.id
+                    }
+            return None
+        except Exception as e:
+            logging.error(f"Error buscando asignación de panel: {e}", exc_info=True)
+            return None
+
+    def _handle_status_update(self, esp32_id: str, payload: Dict[str, Any]):
+        """Maneja actualizaciones de estado de los ESP32"""
+        try:
+            esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+
+            if esp32_doc.exists:
+                esp32_data = esp32_doc.to_dict()
+                current_time = datetime.now(pytz.UTC)
+
+                # Si no tiene asignación, buscar una existente
+                if not esp32_data.get('client_id') or not esp32_data.get('panel_id'):
+                    existing_panel = self._find_existing_panel_assignment(esp32_id)
+                    if existing_panel:
+                        esp32_data.update(existing_panel)
+                        esp32_ref.update(existing_panel)
+
+                # Actualizar estado
+                updates = {
+                    'lastUpdate': current_time,
+                    'status': payload.get('status', esp32_data.get('status'))
+                }
+                esp32_ref.update(updates)
+                logging.info(f"Estado de ESP32 {esp32_id} actualizado: {updates}")
+
+                # Verificar si necesita configuración
+                if ((payload.get('status') == 'AWAITING_CONFIG' or 
+                    not payload.get('status')) and 
+                    esp32_data.get('client_id') and 
+                    esp32_data.get('panel_id')):
+                    self._send_config(esp32_id, esp32_data)
+
+        except Exception as e:
+            logging.error(f"Error procesando actualización de estado: {e}", exc_info=True)
+
+    def _handle_status_update(self, esp32_id: str, payload: Dict[str, Any]):
+        """Maneja actualizaciones de estado de los ESP32"""
+        try:
+            esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+
+            if esp32_doc.exists:
+                esp32_data = esp32_doc.to_dict()
+                current_time = datetime.now(pytz.UTC)
+
+                # Actualizar estado
+                updates = {
+                    'lastUpdate': current_time,
+                    'status': payload.get('status', esp32_data.get('status'))
+                }
+                esp32_ref.update(updates)
+                logging.info(f"Estado de ESP32 {esp32_id} actualizado: {updates}")
+
+                # Verificar si necesita configuración
+                if (payload.get('status') == 'AWAITING_CONFIG' and 
+                    esp32_data.get('client_id') and 
+                    esp32_data.get('panel_id')):
+                    self._send_config(esp32_id, esp32_data)
+
+        except Exception as e:
+            logging.error(f"Error procesando actualización de estado: {e}", exc_info=True)
+
+    def _handle_config_response(self, esp32_id: str, payload: Dict[str, Any]):
+        """Maneja respuestas a la configuración enviada"""
+        try:
+            if payload.get('status') == 'SUCCESS':
+                esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
+                esp32_ref.update({
+                    'status': 'CONFIGURED',
+                    'lastUpdate': datetime.now(pytz.UTC)
+                })
+                logging.info(f"ESP32 {esp32_id} configurado exitosamente")
+            else:
+                logging.error(f"Error configurando ESP32 {esp32_id}: {payload.get('message', 'Unknown error')}")
+
+        except Exception as e:
+            logging.error(f"Error procesando respuesta de configuración: {e}", exc_info=True)
+
+    def _send_config(self, esp32_id: str, esp32_data: Dict[str, Any]):
+        """Envía la configuración al ESP32"""
+        try:
+            client_id = esp32_data.get('client_id')
+            panel_id = esp32_data.get('panel_id')
+
+            if not client_id or not panel_id:
+                logging.error(f"ESP32 {esp32_id} no tiene asignación de cliente/panel")
+                return
+
+            # Obtener configuración del panel
+            panel_ref = self.db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}')
+            panel_doc = panel_ref.get()
+
+            if not panel_doc.exists:
+                logging.error(f"Panel {panel_id} no encontrado para ESP32 {esp32_id}")
+                return
+
+            panel_data = panel_doc.to_dict()
+
+            # Obtener configuración de relays
+            relays_ref = panel_ref.collection('relays')
+            relays = {}
+            for relay_doc in relays_ref.stream():
+                relay_data = relay_doc.to_dict()
+                relays[relay_doc.id] = {
+                    'name': relay_data.get('name', relay_doc.id),
+                    'status': relay_data.get('status', 'OK')
+                }
+
+            # Preparar configuración
+            config = {
+                'client_id': client_id,
+                'panel_id': panel_id,
+                'panel_name': panel_data.get('name', ''),
+                'location': panel_data.get('location', ''),
+                'relays': relays,
+                'mqtt': {
+                    'broker': MQTT_CONFIG['BROKER'],
+                    'port': MQTT_CONFIG['PORT'],
+                    'user': MQTT_CONFIG['USER'],
+                    'password': MQTT_CONFIG['PASSWORD'],
+                    'client_id': f"esp32_{esp32_id}",
+                    'topics': {
+                        'status': f"clients/{client_id}/panels/{panel_id}/status",
+                        'relays': f"clients/{client_id}/panels/{panel_id}/relays",
+                        'config': f"esp32/config/{esp32_id}"
+                    }
                 }
             }
 
-            client.publish(
+            # Actualizar caché
+            self._config_cache[esp32_id] = (time.time(), config)
+
+            # Enviar configuración
+            self.mqtt_client.publish(
                 f"esp32/config/{esp32_id}",
-                json.dumps(config_message),
-                qos=2,
-                retain=False
+                json.dumps(config),
+                qos=MQTT_CONFIG['QOS']
+            )
+            logging.info(f"Configuración enviada a ESP32 {esp32_id}")
+
+        except Exception as e:
+            logging.error(f"Error enviando configuración: {e}", exc_info=True)
+
+    def assign_panel(self, esp32_id: str, client_id: str, panel_id: str):
+        """Asigna un ESP32 a un panel específico"""
+        try:
+            # Verificar que el ESP32 existe
+            esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+
+            if not esp32_doc.exists:
+                raise ValueError(f"ESP32 {esp32_id} no encontrado")
+
+            # Verificar que el panel existe
+            panel_ref = self.db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}')
+            if not panel_ref.get().exists:
+                raise ValueError(f"Panel {panel_id} no encontrado")
+
+            # Actualizar asignación
+            esp32_ref.update({
+                'client_id': client_id,
+                'panel_id': panel_id,
+                'lastUpdate': datetime.now(pytz.UTC)
+            })
+
+            # Enviar nueva configuración
+            esp32_data = esp32_doc.to_dict()
+            esp32_data.update({'client_id': client_id, 'panel_id': panel_id})
+            self._send_config(esp32_id, esp32_data)
+
+            logging.info(f"ESP32 {esp32_id} asignado al panel {panel_id} del cliente {client_id}")
+
+        except Exception as e:
+            logging.error(f"Error asignando panel: {e}", exc_info=True)
+            raise
+
+    def start(self):
+        """Inicia el gestor de configuración"""
+        try:
+            # Conectar al broker MQTT
+            self.mqtt_client.connect(
+                MQTT_CONFIG['BROKER'],
+                MQTT_CONFIG['PORT'],
+                keepalive=MQTT_CONFIG['KEEPALIVE']
             )
             
-            logging.info(f"Configuración existente enviada a ESP32 {esp32_id}")
-            return
-
-        # Si no hay configuración previa, proceder como dispositivo nuevo
-        logging.info(f"No se encontró configuración previa para MAC {mac}")
-        esp32_ref = db.document(f'esp32/registered/{esp32_id}')
-        esp32_data = {
-            'MAC': mac,
-            'IP': ip or '',
-            'status': 'AWAITING_CONFIG',
-            'client_id': '',
-            'panel_id': '',
-            'lastUpdate': firestore.SERVER_TIMESTAMP,
-            'firstSeen': firestore.SERVER_TIMESTAMP
-        }
-        esp32_ref.set(esp32_data)
-        logging.info(f"ESP32 {esp32_id} registrado como nuevo dispositivo")
-
-    except Exception as e:
-        logging.error(f"Error en handle_network_info: {e}", exc_info=True)
-
-def check_existing_config_by_mac(mac: str) -> Optional[Dict[str, str]]:
-    """Busca configuración existente por MAC address de manera exhaustiva"""
-    try:
-        # Normalizar MAC address
-        normalized_mac = mac.upper().replace(':', '').replace('-', '')
-        logging.info(f"Buscando configuración para MAC: {normalized_mac}")
-
-        # 1. Primero buscar entre los paneles existentes
-        clients_ref = db.collection('hdd-monitor/accounts/clients')
-        client_docs = clients_ref.get()
-
-        for client_doc in client_docs:
-            client_id = client_doc.id
-            client_name = client_doc.get('name')
-            panels_ref = client_doc.reference.collection('panels')
+            # Iniciar loop en segundo plano
+            self.mqtt_client.loop_start()
             
-            # Buscar en cada panel usando la MAC normalizada
-            panel_docs = panels_ref.where('esp32_id', '==', normalized_mac).get()
-            for panel_doc in panel_docs:
-                panel_data = panel_doc.to_dict()
-                panel_id = panel_doc.id
-
-                if panel_data:
-                    logging.info(f"Panel encontrado para ESP32 - Cliente: {client_id}, Panel: {panel_id}")
-                    
-                    # Verificar estado de los relays
-                    relays_ref = panel_doc.reference.collection('relays')
-                    relays = relays_ref.get()
-                    relay_states = {}
-                    for relay_doc in relays:
-                        relay_data = relay_doc.to_dict()
-                        relay_states[relay_doc.id] = relay_data.get('status', 'DISC')
-
-                    return {
-                        'client_id': client_id,
-                        'panel_id': panel_id,
-                        'panel_name': panel_data.get('name', ''),
-                        'location': panel_data.get('location', ''),
-                        'client_name': client_name,
-                        'relay_states': relay_states
-                    }
-
-        logging.info("No se encontró configuración existente")
-        return None
-        
-    except Exception as e:
-        logging.error(f"Error buscando configuración por MAC: {e}", exc_info=True)
-        return None
-
-def observe_panel_assignment(client, esp32_id: str):
-    """Observa asignación de panel usando snapshot listener."""
-    def on_snapshot(doc_snapshot, changes, read_time):
-        for doc in doc_snapshot:
-            if doc.exists:
-                data = doc.to_dict()
-                client_id = data.get('client_id')
-                panel_id = data.get('panel_id')
-                
-                if client_id and panel_id:
-                    send_panel_config(client, esp32_id, {
-                        'client_id': client_id,
-                        'panel_id': panel_id
-                    })
-
-    esp32_ref = db.document(f'esp32/registered/{esp32_id}')
-    return esp32_ref.on_snapshot(on_snapshot)
-
-def check_panel_assignment(esp32_id: str) -> Optional[Dict[str, str]]:
-    """Verifica si hay un panel asignado al ESP32."""
-    try:
-        clients_ref = db.collection('hdd-monitor/accounts/clients')
-        for client_doc in clients_ref.stream():
-            client_id = client_doc.id
-            panels_ref = clients_ref.document(client_id).collection('panels')
-            query = panels_ref.where('esp32_id', '==', esp32_id).limit(1).get()
+            # Verificar ESP32s que necesitan configuración
+            self._check_pending_configurations()
             
-            for panel in query:
-                return {
-                    'client_id': client_id,
-                    'panel_id': panel.id
-                }
-        return None
-        
-    except Exception as e:
-        logging.error(f"Error verificando asignación de panel: {e}")
-        return None
-
-def send_panel_config(client, esp32_id: str, panel_info: Dict[str, str]):
-    """Envía la configuración del panel al ESP32."""
-    try:
-        config_message = {
-            'client_id': panel_info['client_id'],
-            'panel_id': panel_info['panel_id'],
-            'esp32_id': esp32_id,
-            'message_id': f"{int(time.time())}-{random.randint(1000, 9999)}",
-            'timestamp': {
-                'value': int(time.time() * 1000),
-                'type': 'realtime'
-            }
-        }
-        
-        client.publish(
-            f"esp32/config/{esp32_id}",
-            json.dumps(config_message),
-            qos=2,
-            retain=False
-        )
-        logging.info(f"Configuración enviada a ESP32 {esp32_id}")
-        
-    except Exception as e:
-        logging.error(f"Error enviando configuración: {e}")
-
-def validate_message_timestamp(payload: Dict[str, Any]) -> bool:
-    """Valida el timestamp del mensaje."""
-    try:
-        if 'timestamp' not in payload:
-            logging.warning("Mensaje sin timestamp")
-            return False
-
-        timestamp_data = payload['timestamp']
-        
-        # Validar estructura del timestamp
-        if not isinstance(timestamp_data, dict):
-            logging.warning("Formato de timestamp inválido")
-            return False
+            logging.info("Gestor de configuración ESP32 iniciado")
             
-        if 'value' not in timestamp_data or 'type' not in timestamp_data:
-            logging.warning("Campos de timestamp faltantes")
-            return False
-            
-        # Verificar que sea timestamp en tiempo real
-        if timestamp_data['type'] != 'realtime':
-            logging.warning(f"Tipo de timestamp no válido: {timestamp_data['type']}")
-            return False
-            
-        # Para timestamps de ESP32 (que son ticks_ms desde boot)
-        # Solo verificamos que no sean del futuro y que no sean 0
-        message_time = int(timestamp_data['value'])
-        if message_time <= 0:
-            logging.warning("Timestamp inválido: <= 0")
-            return False
+        except Exception as e:
+            logging.error(f"Error iniciando gestor de configuración: {e}", exc_info=True)
+            raise
 
-        # Aceptamos el mensaje si:
-        # 1. Es un timestamp pequeño (típico de ticks_ms del ESP32)
-        # 2. Tiene una marca de tiempo razonable (últimas 24 horas si es epoch)
-        current_time = int(time.time() * 1000)
-        if message_time < 86400000:  # Si es menos de 24 horas en ms, asumimos que es ticks_ms
-            return True
-        else:
-            # Si es un timestamp epoch, verificar que no sea más viejo de 30 segundos
-            time_diff = current_time - message_time
-            if time_diff > 30000:  # 30 segundos en milisegundos
-                logging.warning(f"Mensaje demasiado antiguo: {time_diff}ms")
-                return False
-            
-        return True
-        
-    except Exception as e:
-        logging.error(f"Error validando timestamp: {e}")
-        return False
-
-def on_message(client, userdata, msg):
-    """Procesa mensajes MQTT recibidos"""
-    try:
-        # Ignorar mensajes retain
-        if msg.retain:
-            logging.info(f"Ignorando mensaje retain en {msg.topic}")
-            return
-
-        # Decodificar payload
+    def _check_pending_configurations(self):
+        """Verifica ESP32s que necesitan configuración al inicio"""
         try:
-            payload = json.loads(msg.payload.decode())
-        except json.JSONDecodeError as e:
-            logging.error(f"Error decodificando JSON: {e}")
-            return
+            # Corregir la ruta de acceso a la colección 'registered'
+            esp32s_ref = self.db.collection('esp32/registered/documents')
+            esp32s = esp32s_ref.stream()
 
-        if not payload or all(not v for v in payload.values()):
-            logging.info("Ignorando mensaje vacío")
-            return
+            for esp32_doc in esp32s:
+                try:
+                    esp32_data = esp32_doc.to_dict()
+                    esp32_id = esp32_doc.id
+                    
+                    # Si no tiene asignación, buscar una existente
+                    if not esp32_data.get('client_id') or not esp32_data.get('panel_id'):
+                        existing_panel = self._find_existing_panel_assignment(esp32_id)
+                        if existing_panel:
+                            esp32_data.update(existing_panel)
+                            esp32_doc.reference.update(existing_panel)
+                    
+                    # Si tiene asignación y necesita configuración, enviarla
+                    if (esp32_data.get('client_id') and 
+                        esp32_data.get('panel_id') and 
+                        esp32_data.get('status') in ['AWAITING_CONFIG', None]):
+                        self._send_config(esp32_id, esp32_data)
+                        
+                except Exception as e:
+                    logging.error(f"Error procesando ESP32 {esp32_doc.id}: {e}")
+                    
+        except Exception as e:
+            logging.error(f"Error verificando configuraciones pendientes: {e}", exc_info=True)
 
-        # Log inicial
-        logging.info(f"Mensaje recibido en {msg.topic}: {payload}")
-
-        # Validar timestamp
-        if not validate_message_timestamp(payload):
-            logging.info(f"Ignorando mensaje con timestamp inválido en {msg.topic}")
-            return
-
-        # Procesar según el tópico
-        if msg.topic.startswith("esp32/register/"):
-            # Extraer ESP32 ID del tópico
-            esp32_id = msg.topic.split('/')[-1]
-            handle_esp32_registration(client, esp32_id, payload)
-        elif msg.topic == "esp32/network_info":
-            # Mantener compatibilidad con formato antiguo
-            handle_network_info(client, payload)
-
-    except Exception as e:
-        logging.error(f"Error procesando mensaje: {e}", exc_info=True)
-
-def handle_esp32_registration(client, esp32_id: str, payload: Dict[str, Any]):
-    """Maneja el registro inicial de un ESP32"""
-    try:
-        mac = payload.get('mac')
-        ip = payload.get('ip')
-
-        if not mac:
-            logging.error(f"MAC address faltante en payload: {payload}")
-            return
-
-        logging.info(f"Procesando registro de ESP32 {esp32_id} - MAC: {mac}, IP: {ip}")
-
-        # Buscar configuración existente
-        existing_config = check_existing_config_by_mac(mac)
-        
-        # Preparar datos base
-        esp32_data = {
-            'MAC': mac,
-            'IP': ip or '',
-            'status': 'AWAITING_CONFIG',
-            'lastUpdate': firestore.SERVER_TIMESTAMP
-        }
-
-        if existing_config:
-            logging.info(f"Configuración existente encontrada: {existing_config}")
-            esp32_data.update({
-                'client_id': existing_config['client_id'],
-                'panel_id': existing_config['panel_id']
-            })
-            
-            # Enviar configuración completa
-            config_message = {
-                'client_id': existing_config['client_id'],
-                'panel_id': existing_config['panel_id'],
-                'esp32_id': esp32_id,
-                'panel_name': existing_config['panel_name'],
-                'location': existing_config['location'],
-                'client_name': existing_config['client_name'],
-                'relay_states': existing_config['relay_states'],
-                'status': 'CONFIGURED',
-                'message_id': f"{int(time.time())}-{random.randint(1000,9999)}",
-                'timestamp': {
-                    'value': int(time.time() * 1000),
-                    'type': 'realtime'
-                }
-            }
-        else:
-            logging.info(f"Sin configuración previa para MAC {mac}")
-            # Enviar configuración de espera
-            config_message = {
-                'status': 'WAITING',
-                'message': 'Esperando asignación de panel',
-                'check_interval': 60,
-                'keepalive': 30,
-                'message_id': f"{int(time.time())}-{random.randint(1000,9999)}",
-                'timestamp': {
-                    'value': int(time.time() * 1000),
-                    'type': 'realtime'
-                }
-            }
-            # Inicializar como nuevo dispositivo
-            esp32_data['firstSeen'] = firestore.SERVER_TIMESTAMP
-
-        # Actualizar/crear documento en Firestore
-        esp32_ref = db.document(f'esp32/registered/{esp32_id}')
-        esp32_ref.set(esp32_data, merge=True)
-
-        # Enviar configuración vía MQTT
-        client.publish(
-            f"esp32/config/{esp32_id}",
-            json.dumps(config_message),
-            qos=2,
-            retain=False
-        )
-        
-        logging.info(f"Configuración enviada a ESP32 {esp32_id}")
-
-    except Exception as e:
-        logging.error(f"Error en handle_esp32_registration: {e}", exc_info=True)
-
-def main():
-    client = mqtt.Client(client_id=MQTT_CLIENT_ID, clean_session=True)
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
-    
-    # Configurar TLS
-    client.tls_set(ca_certs='combined_ca.crt')
-    
-    logging.info(f"Conectando a {MQTT_BROKER}:{MQTT_PORT}")
-    client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
-    client.loop_forever()
+    def stop(self):
+        """Detiene el gestor de configuración"""
+        try:
+            self.mqtt_client.loop_stop()
+            self.mqtt_client.disconnect()
+            logging.info("Gestor de configuración ESP32 detenido")
+        except Exception as e:
+            logging.error(f"Error deteniendo gestor de configuración: {e}", exc_info=True)
 
 if __name__ == '__main__':
-    main()
+    # Configuración de logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    
+    # Iniciar gestor
+    config_manager = ESP32ConfigManager()
+    
+    try:
+        config_manager.start()
+        
+        # Mantener el script corriendo
+        while True:
+            time.sleep(1)
+            
+    except KeyboardInterrupt:
+        logging.info("Deteniendo gestor de configuración...")
+        config_manager.stop()
+    except Exception as e:
+        logging.error(f"Error fatal: {e}", exc_info=True)
+        config_manager.stop()

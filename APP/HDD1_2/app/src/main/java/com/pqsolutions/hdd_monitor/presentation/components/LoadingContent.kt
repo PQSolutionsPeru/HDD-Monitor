@@ -123,7 +123,6 @@ fun DefaultErrorContent(
             Button(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onRetry()
                 }
             ) {
@@ -147,7 +146,6 @@ fun LoadingButton(
         onClick = {
             if (!isLoading) {
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 onClick()
             }
         },

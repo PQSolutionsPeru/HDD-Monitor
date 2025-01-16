@@ -7,6 +7,7 @@ import json
 import threading
 
 def handle_mqtt_message(msg):
+    """Maneja los mensajes MQTT recibidos"""
     try:
         if msg.retain:
             logging.info(f"Ignorando mensaje retain en {msg.topic}")
@@ -16,6 +17,7 @@ def handle_mqtt_message(msg):
         if not payload:
             return
 
+        # Solo maneja mensajes de panels
         if msg.topic.startswith("clients/") and "panels" in msg.topic:
             firestore_handler.handle_panel_message(msg.topic, payload)
             

@@ -85,7 +85,6 @@ fun AdminDashboardScreen(
                 Button(
                     onClick = {
                         performHapticFeedback(context)
-                        playSoundEffect(context, R.raw.button_click)
                         onLogoutClick()
                     },
                     modifier = Modifier
@@ -161,7 +160,6 @@ private fun DashboardActions(
             onClick = {
                 Log.d(TAG, "Manage Users button clicked")
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 onManageUsersClick()
             },
             text = stringResource(R.string.manage_clients)
@@ -171,7 +169,6 @@ private fun DashboardActions(
             onClick = {
                 Log.d(TAG, "View Events button clicked")
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 onViewEventsClick()
             },
             text = stringResource(R.string.view_events)
@@ -181,7 +178,6 @@ private fun DashboardActions(
             onClick = {
                 Log.d(TAG, "View Notification History button clicked")
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 onViewNotificationHistoryClick()
             },
             text = stringResource(R.string.view_notification_history)
@@ -191,7 +187,6 @@ private fun DashboardActions(
             onClick = {
                 Log.d(TAG, "Configure ESP32 button clicked")
                 performHapticFeedback(context)
-                playSoundEffect(context, R.raw.button_click)
                 onConfigureEsp32Click()
             },
             text = stringResource(R.string.configure_esp32)

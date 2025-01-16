@@ -28,7 +28,6 @@ fun SnackbarHandler(
     LaunchedEffect(messageFlow) {
         messageFlow.collect { message ->
             performHapticFeedback(context)
-            playSoundEffect(context, R.raw.button_click)
 
             val result = snackbarHostState.showSnackbar(
                 message = message,
@@ -118,7 +117,6 @@ fun TopSnackbar(
             IconButton(
                 onClick = {
                     performHapticFeedback(context)
-                    playSoundEffect(context, R.raw.button_click)
                     onDismiss()
                 }
             ) {
