@@ -12,14 +12,15 @@ class MQTTConfig(BaseConfig):
             
             # Intervalos y tiempos
             "status_interval": 300000,     # 5 minutos
-            "health_timeout": 60000,       # 1 minuto
-            "reconnect_delay": 5000,       # 5 segundos
-            "keepalive": 30,              # 30 segundos
+            "health_timeout": 300000,      # 5 minutos (aumentado)
+            "reconnect_delay": 10000,      # 10 segundos (aumentado)
+            "keepalive": 120,             # 2 minutos (aumentado)
+            "ping_interval": 30000,       # 30 segundos (nuevo)
             
             # Reintentos y delays
-            "initial_retry_delay": 1000,   # 1 segundo
-            "max_retry_delay": 30000,      # 30 segundos
-            "max_retries": 3,             # 3 intentos
+            "initial_retry_delay": 5000,   # 5 segundos (aumentado)
+            "max_retry_delay": 60000,      # 1 minuto (aumentado)
+            "max_retries": 5,             # 5 intentos (aumentado)
             
             # Límites de buffer y cola
             "buffer_size": 256,           # 256 bytes
@@ -69,3 +70,6 @@ class MQTTConfig(BaseConfig):
 
     def get_max_retries(self):
         return self.config.get('max_retries', self.DEFAULT_CONFIG['max_retries'])
+    
+    def get_health_timeout(self):
+        return self.config.get('health_timeout', self.DEFAULT_CONFIG['health_timeout'])

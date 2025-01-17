@@ -351,17 +351,18 @@ def setup_mqtt_connection(managers):
 def handle_running_mode(managers):
     """Handles system in running mode"""
     try:
-        # Process MQTT messages
+        # Process MQTT messages and check connection health
         if managers["mqtt"].client:
             managers["mqtt"].check_msg()
             
-        # Check connections
+            # Verificar conexión MQTT con mecanismo ping/pong
+            if not managers["mqtt"].check_connection():
+                print("[RUNNING] MQTT connection unhealthy")
+                return False
+            
+        # Check WiFi separately
         if not managers["wifi"].check_connection():
             print("[RUNNING] WiFi connection lost")
-            return False
-            
-        if not managers["mqtt"].check_connection():
-            print("[RUNNING] MQTT connection lost")
             return False
             
         return True
