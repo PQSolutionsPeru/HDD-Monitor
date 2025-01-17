@@ -92,6 +92,9 @@ class MQTTManager:
         """Conecta al broker MQTT con manejo de errores mejorado"""
         try:
             print("[MQTT] Iniciando conexión...")
+            print(f"[MQTT] - Broker: {self.MQTT_BROKER}")
+            print(f"[MQTT] - Puerto: {self.MQTT_PORT}")
+            print(f"[MQTT] - Cliente ID: {self.MQTT_CLIENT_ID}")
             gc.collect()
             
             if not self.wifi_manager.check_connection():
@@ -121,7 +124,10 @@ class MQTTManager:
                 config_topic = f"esp32/config/{self.esp32_id}"
                 print(f"[MQTT] Suscribiendo a: {config_topic}")
                 self.client.set_callback(self._handle_config_message)
+                print(f"[MQTT] Intentando suscribirse a: {config_topic}")
                 self.client.subscribe(config_topic.encode())
+                print("[MQTT] Ejecutando suscripción...")
+                print("[MQTT] Suscripción exitosa")
 
                 info = {
                     'esp32_id': self.esp32_id,
@@ -134,49 +140,85 @@ class MQTTManager:
                     },
                     'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
                 }
+                
+                print(f"[MQTT] Enviando info inicial: {info}")
 
                 self._setup_lwt()
                 
                 # Publicar estado inicial
-                self.publish_event(
+                result = self.publish_event(
                     "esp32/network_info",
                     info,
                     qos=1,
                     retain=False
                 )
+                print(f"[MQTT] Resultado envío info inicial: {'Exitoso' if result else 'Fallido'}")
 
+            print("[MQTT] Setup completed successfully")
             return True
 
         except Exception as e:
             print(f"[MQTT] Error en conexión: {str(e)}")
+            import sys
+            sys.print_exception(e)
             return False
 
     def _handle_config_message(self, topic, msg):
         """Maneja mensajes de configuración desde la VM"""
         try:
             print(f"[MQTT] Mensaje de configuración recibido en: {topic}")
+            print(f"[MQTT] Contenido del mensaje: {msg}")
             
             # Decodificar mensaje
             try:
-                config = json.loads(msg.decode())
+                msg_str = msg.decode()
+                print(f"[MQTT] Mensaje decodificado: {msg_str}")
+                config = json.loads(msg_str)
+                print(f"[MQTT] Configuración parseada exitosamente")
             except Exception as e:
                 print(f"[MQTT] Error decodificando mensaje: {e}")
+                print(f"[MQTT] Tipo de mensaje: {type(msg)}")
                 return
 
             # Validar estructura del mensaje
-            if not all(key in config for key in ['client_id', 'panel_id', 'status']):
-                print("[MQTT] Mensaje de configuración incompleto")
+            required_fields = ['status', 'client_id', 'panel_id', 'mqtt', 'relays']
+            missing_fields = []
+            for field in required_fields:
+                if field not in config:
+                    missing_fields.append(field)
+                    print(f"[MQTT] Campo faltante: {field}")
+            
+            if missing_fields:
+                print(f"[MQTT] Campos faltantes en la configuración: {missing_fields}")
                 return
 
             # Procesar configuración
             if config['status'] == 'REGISTERED':
-                print(f"[MQTT] ESP32 registrado - Cliente: {config['client_id']}, Panel: {config['panel_id']}")
+                print("[MQTT] Aplicando configuración...")
+                print(f"[MQTT] Cliente: {config['client_id']}")
+                print(f"[MQTT] Panel: {config['panel_id']}")
+                
+                # Guardar configuración
                 self.client_id = config['client_id']
                 self.panel_id = config['panel_id']
                 
-                # Publicar confirmación
+                # Guardar configuración de relay
+                self.relay_config = config['relays']
+                print(f"[MQTT] Configuración de relays: {self.relay_config}")
+                
+                # Configurar tópicos MQTT
+                base_topic = config['mqtt']['base_topic']
+                self.topics = {
+                    'status': f"{base_topic}/status",
+                    'relays': f"{base_topic}/relays",
+                    'config': f"esp32/config/{self.esp32_id}",
+                    'response': f"esp32/config/{self.esp32_id}/response"
+                }
+                print(f"[MQTT] Tópicos configurados: {self.topics}")
+                
+                # Enviar confirmación
                 self.publish_event(
-                    f"esp32/config/{self.esp32_id}/response",
+                    self.topics['response'],
                     {
                         'esp32_id': self.esp32_id,
                         'status': 'CONFIG_ACCEPTED',
@@ -184,26 +226,18 @@ class MQTTManager:
                         'panel_id': self.panel_id,
                         'timestamp': utime.ticks_ms(),
                         'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
-                    },
-                    qos=1
+                    }
                 )
                 
-                # Actualizar modo de operación
+                print("[MQTT] Configuración aplicada exitosamente")
                 self.operation_mode = 'RUNNING'
-                
-            elif config['status'] == 'NOT_REGISTERED':
-                print("[MQTT] ESP32 no registrado en la base de datos")
-                # Esperar nuevo registro
-                
-            elif config['status'] == 'PANEL_NOT_FOUND':
-                print("[MQTT] ESP32 registrado pero sin panel asignado")
-                # Esperar asignación de panel
-                
             else:
-                print(f"[MQTT] Estado desconocido: {config['status']}")
+                print(f"[MQTT] Estado no reconocido: {config['status']}")
 
         except Exception as e:
-            print(f"[MQTT] Error procesando mensaje de configuración: {e}")
+            print(f"[MQTT] Error procesando configuración: {e}")
+            import sys
+            sys.print_exception(e)
 
     def subscribe(self, topic, callback=None):
         """Suscribe a tópico con verificación de conexión"""
@@ -230,37 +264,50 @@ class MQTTManager:
     def publish_event(self, topic, message, qos=1, retain=False):
         """Publica evento MQTT respetando límites de buffer"""
         try:
+            print(f"[MQTT] Intentando publicar en tópico: {topic}")
+            print(f"[MQTT] Mensaje a enviar: {message}")
+            
             msg_str = json.dumps(message)
             if len(msg_str) > self.MSG_BUFFER_SIZE:
                 print(f"[MQTT] Mensaje excede el tamaño máximo: {len(msg_str)} > {self.MSG_BUFFER_SIZE}")
                 return False
 
             if not self.ensure_connection():
+                print("[MQTT] No hay conexión disponible para publicar")
                 if len(self.message_queue) < self.MAX_QUEUE_SIZE:
+                    print("[MQTT] Agregando mensaje a la cola")
                     self.message_queue.append((topic, message, qos, retain))
                 return False
 
             try:
+                print("[MQTT] Enviando mensaje...")
                 self.client.publish(
                     topic.encode(),
                     msg_str.encode(),
                     qos=qos,
                     retain=retain
                 )
+                print("[MQTT] Mensaje enviado exitosamente")
                 
                 # Actualizar último reporte si es un mensaje de estado
                 if "status" in message or "relay_states" in message:
                     self.last_status_report = utime.ticks_ms()
+                    print(f"[MQTT] Actualizado último reporte de estado: {self.last_status_report}")
                 
                 return True
+                
             except Exception as e:
                 print(f"[MQTT] Error de publicación: {e}")
+                print("[MQTT] Intentando agregar a cola de mensajes")
                 if len(self.message_queue) < self.MAX_QUEUE_SIZE:
                     self.message_queue.append((topic, message, qos, retain))
+                    print("[MQTT] Mensaje agregado a la cola")
                 return False
 
         except Exception as e:
             print(f"[MQTT] Error en publish_event: {e}")
+            import sys
+            sys.print_exception(e)
             return False
 
     def check_msg(self):

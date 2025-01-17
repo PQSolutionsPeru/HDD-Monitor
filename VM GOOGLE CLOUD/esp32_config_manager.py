@@ -1,13 +1,35 @@
-import logging
 from google.cloud import firestore
-import paho.mqtt.client as mqtt
-import ssl
-import json
-import time
+import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 import pytz
+import json
+import time
+import paho.mqtt.client as mqtt
+import ssl
 from config import ESP32_CONFIG_MQTT as MQTT_CONFIG
+
+# Estados del ESP32
+ESP32_STATES = {
+    'AWAITING_CONFIG': 'AWAITING_CONFIG',
+    'CONFIGURED': 'CONFIGURED',
+    'ERROR': 'ERROR',
+    'OK': 'OK',
+    'DISC': 'DISC',  # Estado de desconexión
+    'REGISTERED': 'REGISTERED'  # Estado para configuración inicial
+}
+
+# Estados de relay
+RELAY_STATES = {
+    'OK': 'OK',
+    'DISC': 'DISC',
+    'ERROR': 'ERROR'
+}
+
+# Estados por defecto
+DEFAULT_STATUS = 'OK'
+DEFAULT_RELAY_STATUS = RELAY_STATES['DISC']  # Estado inicial de los relays
+DEFAULT_ESP32_STATUS = ESP32_STATES['AWAITING_CONFIG']
 
 class ESP32ConfigManager:
     def __init__(self):
@@ -20,6 +42,211 @@ class ESP32ConfigManager:
         # Caché de configuraciones
         self._config_cache = {}
         self._esp32_status = {}
+
+    def _handle_registration(self, esp32_id: str, payload: Dict[str, Any]):
+        """Maneja el registro inicial de un ESP32"""
+        try:
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+
+            current_time = datetime.now(pytz.UTC)
+
+            # Buscar asignación previa en panels
+            existing_panel = self._find_existing_panel_assignment(esp32_id)
+            
+            if not esp32_doc.exists:
+                # Nuevo ESP32 - registrar
+                esp32_data = {
+                    'MAC': payload.get('MAC', ''),
+                    'IP': payload.get('IP', ''),
+                    'firstSeen': current_time,
+                    'lastUpdate': current_time,
+                    'status': payload.get('status', ESP32_STATES['AWAITING_CONFIG']),
+                    'client_id': existing_panel['client_id'] if existing_panel else '',
+                    'panel_id': existing_panel['panel_id'] if existing_panel else ''
+                }
+                esp32_ref.set(esp32_data)
+                logging.info(f"Nuevo ESP32 registrado: {esp32_id}")
+                
+                # Si tenía asignación previa, enviar configuración
+                if existing_panel:
+                    self._send_config(esp32_id, esp32_data)
+            else:
+                # Actualizar información existente
+                updates = {
+                    'IP': payload.get('IP', ''),
+                    'lastUpdate': current_time,
+                    'status': payload.get('status', ESP32_STATES['AWAITING_CONFIG'])
+                }
+                
+                # Si no tiene asignación pero existe una previa, actualizarla
+                esp32_data = esp32_doc.to_dict()
+                if not esp32_data.get('client_id') and not esp32_data.get('panel_id') and existing_panel:
+                    updates.update({
+                        'client_id': existing_panel['client_id'],
+                        'panel_id': existing_panel['panel_id']
+                    })
+                    
+                esp32_ref.update(updates)
+                logging.info(f"ESP32 {esp32_id} actualizado con: {updates}")
+                
+                # Enviar configuración si tiene asignación
+                if esp32_data.get('client_id') and esp32_data.get('panel_id'):
+                    self._send_config(esp32_id, esp32_data)
+                elif existing_panel:
+                    esp32_data.update(updates)
+                    self._send_config(esp32_id, esp32_data)
+
+        except Exception as e:
+            logging.error(f"Error en registro de ESP32: {e}", exc_info=True)
+
+    def _send_config(self, esp32_id: str, esp32_data: Dict[str, Any]):
+        """Envía la configuración al ESP32"""
+        try:
+            client_id = esp32_data.get('client_id')
+            panel_id = esp32_data.get('panel_id')
+
+            if not client_id or not panel_id:
+                logging.error(f"ESP32 {esp32_id} no tiene asignación de cliente/panel")
+                return
+
+            # Obtener configuración del panel
+            panel_ref = self.db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}')
+            panel_doc = panel_ref.get()
+
+            if not panel_doc.exists:
+                logging.error(f"Panel {panel_id} no encontrado para ESP32 {esp32_id}")
+                return
+
+            panel_data = panel_doc.to_dict()
+
+            # Obtener configuración de relays
+            relays_ref = panel_ref.collection('relays')
+            relays = {}
+            for relay_doc in relays_ref.stream():
+                relay_data = relay_doc.to_dict()
+                status = relay_data.get('status')
+                # Si no hay estado o el estado no es válido, usar el estado por defecto
+                if not status or status not in RELAY_STATES:
+                    status = DEFAULT_RELAY_STATUS
+                relays[relay_doc.id] = {
+                    'name': relay_data.get('name', relay_doc.id),
+                    'status': status
+                }
+
+            # Preparar configuración
+            config = {
+                'client_id': client_id,
+                'panel_id': panel_id,
+                'panel_name': panel_data.get('name', ''),
+                'location': panel_data.get('location', ''),
+                'status': ESP32_STATES['REGISTERED'],  # Estado inicial para configuración
+                'relays': relays,
+                'mqtt': {
+                    'broker': MQTT_CONFIG['BROKER'],
+                    'port': MQTT_CONFIG['PORT'],
+                    'user': MQTT_CONFIG['USER'],
+                    'password': MQTT_CONFIG['PASSWORD'],
+                    'client_id': f"esp32_{esp32_id}",
+                    'topics': {
+                        'status': f"clients/{client_id}/panels/{panel_id}/status",
+                        'relays': f"clients/{client_id}/panels/{panel_id}/relays",
+                        'config': f"esp32/config/{esp32_id}"
+                    }
+                }
+            }
+
+            # Log de la configuración preparada
+            logging.info(f"Preparando configuración para ESP32 {esp32_id}: {json.dumps(config, indent=2)}")
+
+            # Actualizar caché
+            self._config_cache[esp32_id] = (time.time(), config)
+
+            # Log detallado antes de enviar
+            config_json = json.dumps(config)
+            logging.info(f"Configuración JSON a enviar: {config_json}")
+            
+            # Verificar que el campo status está presente
+            parsed_config = json.loads(config_json)
+            if 'status' not in parsed_config:
+                logging.error("Campo 'status' no presente en la configuración JSON")
+            
+            # Enviar configuración
+            self.mqtt_client.publish(
+                f"esp32/config/{esp32_id}",
+                config_json,
+                qos=MQTT_CONFIG['QOS']
+            )
+            
+            # Actualizar estado en Firestore
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            esp32_ref.update({
+                'status': ESP32_STATES['CONFIGURED'],
+                'lastUpdate': datetime.now(pytz.UTC)
+            })
+            
+            logging.info(f"Configuración enviada a ESP32 {esp32_id}")
+
+        except Exception as e:
+            logging.error(f"Error enviando configuración: {e}", exc_info=True)
+
+    def _handle_config_response(self, esp32_id: str, payload: Dict[str, Any]):
+        """Maneja respuestas a la configuración enviada"""
+        try:
+            if payload.get('status') == 'SUCCESS':
+                esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+                esp32_ref.update({
+                    'status': ESP32_STATES['CONFIGURED'],
+                    'lastUpdate': datetime.now(pytz.UTC)
+                })
+                logging.info(f"ESP32 {esp32_id} configurado exitosamente")
+            else:
+                logging.error(f"Error configurando ESP32 {esp32_id}: {payload.get('message', 'Unknown error')}")
+                # Actualizar estado de error
+                esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+                esp32_ref.update({
+                    'status': ESP32_STATES['ERROR'],
+                    'lastUpdate': datetime.now(pytz.UTC),
+                    'error_message': payload.get('message', 'Unknown error')
+                })
+
+        except Exception as e:
+            logging.error(f"Error procesando respuesta de configuración: {e}", exc_info=True)
+
+    def _handle_status_update(self, esp32_id: str, payload: Dict[str, Any]):
+        """Maneja actualizaciones de estado de los ESP32"""
+        try:
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+
+            if esp32_doc.exists:
+                esp32_data = esp32_doc.to_dict()
+                current_time = datetime.now(pytz.UTC)
+
+                # Si no tiene asignación, buscar una existente
+                if not esp32_data.get('client_id') or not esp32_data.get('panel_id'):
+                    existing_panel = self._find_existing_panel_assignment(esp32_id)
+                    if existing_panel:
+                        esp32_data.update(existing_panel)
+                        esp32_ref.update(existing_panel)
+
+                # Actualizar estado
+                updates = {
+                    'lastUpdate': current_time,
+                    'status': payload.get('status', esp32_data.get('status'))
+                }
+                esp32_ref.update(updates)
+                logging.info(f"Estado de ESP32 {esp32_id} actualizado: {updates}")
+
+                # Verificar si necesita configuración
+                if ((payload.get('status') == ESP32_STATES['AWAITING_CONFIG'] or 
+                    not payload.get('status')) and 
+                    esp32_data.get('client_id') and 
+                    esp32_data.get('panel_id')):
+                    self._send_config(esp32_id, esp32_data)
+
+        except Exception as e:
+            logging.error(f"Error procesando actualización de estado: {e}", exc_info=True)
 
     def _setup_mqtt_client(self) -> mqtt.Client:
         """Configura y retorna el cliente MQTT"""
@@ -111,64 +338,6 @@ class ESP32ConfigManager:
         if rc != 0:
             logging.warning(f"Desconexión inesperada del broker MQTT: {rc}")
 
-    def _handle_registration(self, esp32_id: str, payload: Dict[str, Any]):
-        """Maneja el registro inicial de un ESP32"""
-        try:
-            # Usar la ruta correcta para el documento
-            esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
-            esp32_doc = esp32_ref.get()
-
-            current_time = datetime.now(pytz.UTC)
-
-            # Buscar asignación previa en panels
-            existing_panel = self._find_existing_panel_assignment(esp32_id)
-            
-            if not esp32_doc.exists:
-                # Nuevo ESP32 - registrar
-                esp32_data = {
-                    'MAC': payload.get('MAC', ''),
-                    'IP': payload.get('IP', ''),
-                    'firstSeen': current_time,
-                    'lastUpdate': current_time,
-                    'status': payload.get('status', 'AWAITING_CONFIG'),
-                    'client_id': existing_panel['client_id'] if existing_panel else '',
-                    'panel_id': existing_panel['panel_id'] if existing_panel else ''
-                }
-                esp32_ref.set(esp32_data)
-                logging.info(f"Nuevo ESP32 registrado: {esp32_id}")
-                
-                # Si tenía asignación previa, enviar configuración
-                if existing_panel:
-                    self._send_config(esp32_id, esp32_data)
-            else:
-                # Actualizar información existente
-                updates = {
-                    'IP': payload.get('IP', ''),
-                    'lastUpdate': current_time,
-                    'status': payload.get('status', 'AWAITING_CONFIG')
-                }
-                
-                # Si no tiene asignación pero existe una previa, actualizarla
-                esp32_data = esp32_doc.to_dict()
-                if not esp32_data.get('client_id') and not esp32_data.get('panel_id') and existing_panel:
-                    updates.update({
-                        'client_id': existing_panel['client_id'],
-                        'panel_id': existing_panel['panel_id']
-                    })
-                    
-                esp32_ref.update(updates)
-                logging.info(f"ESP32 {esp32_id} actualizado con: {updates}")
-                
-                # Enviar configuración si tiene asignación
-                if esp32_data.get('client_id') and esp32_data.get('panel_id'):
-                    self._send_config(esp32_id, esp32_data)
-                elif existing_panel:
-                    esp32_data.update(updates)
-                    self._send_config(esp32_id, esp32_data)
-
-        except Exception as e:
-            logging.error(f"Error en registro de ESP32: {e}", exc_info=True)
-
     def _find_existing_panel_assignment(self, esp32_id: str) -> Optional[Dict[str, str]]:
         """Busca si el ESP32 está asignado a algún panel"""
         try:
@@ -191,149 +360,6 @@ class ESP32ConfigManager:
         except Exception as e:
             logging.error(f"Error buscando asignación de panel: {e}", exc_info=True)
             return None
-
-    def _handle_status_update(self, esp32_id: str, payload: Dict[str, Any]):
-        """Maneja actualizaciones de estado de los ESP32"""
-        try:
-            esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
-            esp32_doc = esp32_ref.get()
-
-            if esp32_doc.exists:
-                esp32_data = esp32_doc.to_dict()
-                current_time = datetime.now(pytz.UTC)
-
-                # Si no tiene asignación, buscar una existente
-                if not esp32_data.get('client_id') or not esp32_data.get('panel_id'):
-                    existing_panel = self._find_existing_panel_assignment(esp32_id)
-                    if existing_panel:
-                        esp32_data.update(existing_panel)
-                        esp32_ref.update(existing_panel)
-
-                # Actualizar estado
-                updates = {
-                    'lastUpdate': current_time,
-                    'status': payload.get('status', esp32_data.get('status'))
-                }
-                esp32_ref.update(updates)
-                logging.info(f"Estado de ESP32 {esp32_id} actualizado: {updates}")
-
-                # Verificar si necesita configuración
-                if ((payload.get('status') == 'AWAITING_CONFIG' or 
-                    not payload.get('status')) and 
-                    esp32_data.get('client_id') and 
-                    esp32_data.get('panel_id')):
-                    self._send_config(esp32_id, esp32_data)
-
-        except Exception as e:
-            logging.error(f"Error procesando actualización de estado: {e}", exc_info=True)
-
-    def _handle_status_update(self, esp32_id: str, payload: Dict[str, Any]):
-        """Maneja actualizaciones de estado de los ESP32"""
-        try:
-            esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
-            esp32_doc = esp32_ref.get()
-
-            if esp32_doc.exists:
-                esp32_data = esp32_doc.to_dict()
-                current_time = datetime.now(pytz.UTC)
-
-                # Actualizar estado
-                updates = {
-                    'lastUpdate': current_time,
-                    'status': payload.get('status', esp32_data.get('status'))
-                }
-                esp32_ref.update(updates)
-                logging.info(f"Estado de ESP32 {esp32_id} actualizado: {updates}")
-
-                # Verificar si necesita configuración
-                if (payload.get('status') == 'AWAITING_CONFIG' and 
-                    esp32_data.get('client_id') and 
-                    esp32_data.get('panel_id')):
-                    self._send_config(esp32_id, esp32_data)
-
-        except Exception as e:
-            logging.error(f"Error procesando actualización de estado: {e}", exc_info=True)
-
-    def _handle_config_response(self, esp32_id: str, payload: Dict[str, Any]):
-        """Maneja respuestas a la configuración enviada"""
-        try:
-            if payload.get('status') == 'SUCCESS':
-                esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
-                esp32_ref.update({
-                    'status': 'CONFIGURED',
-                    'lastUpdate': datetime.now(pytz.UTC)
-                })
-                logging.info(f"ESP32 {esp32_id} configurado exitosamente")
-            else:
-                logging.error(f"Error configurando ESP32 {esp32_id}: {payload.get('message', 'Unknown error')}")
-
-        except Exception as e:
-            logging.error(f"Error procesando respuesta de configuración: {e}", exc_info=True)
-
-    def _send_config(self, esp32_id: str, esp32_data: Dict[str, Any]):
-        """Envía la configuración al ESP32"""
-        try:
-            client_id = esp32_data.get('client_id')
-            panel_id = esp32_data.get('panel_id')
-
-            if not client_id or not panel_id:
-                logging.error(f"ESP32 {esp32_id} no tiene asignación de cliente/panel")
-                return
-
-            # Obtener configuración del panel
-            panel_ref = self.db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}')
-            panel_doc = panel_ref.get()
-
-            if not panel_doc.exists:
-                logging.error(f"Panel {panel_id} no encontrado para ESP32 {esp32_id}")
-                return
-
-            panel_data = panel_doc.to_dict()
-
-            # Obtener configuración de relays
-            relays_ref = panel_ref.collection('relays')
-            relays = {}
-            for relay_doc in relays_ref.stream():
-                relay_data = relay_doc.to_dict()
-                relays[relay_doc.id] = {
-                    'name': relay_data.get('name', relay_doc.id),
-                    'status': relay_data.get('status', 'OK')
-                }
-
-            # Preparar configuración
-            config = {
-                'client_id': client_id,
-                'panel_id': panel_id,
-                'panel_name': panel_data.get('name', ''),
-                'location': panel_data.get('location', ''),
-                'relays': relays,
-                'mqtt': {
-                    'broker': MQTT_CONFIG['BROKER'],
-                    'port': MQTT_CONFIG['PORT'],
-                    'user': MQTT_CONFIG['USER'],
-                    'password': MQTT_CONFIG['PASSWORD'],
-                    'client_id': f"esp32_{esp32_id}",
-                    'topics': {
-                        'status': f"clients/{client_id}/panels/{panel_id}/status",
-                        'relays': f"clients/{client_id}/panels/{panel_id}/relays",
-                        'config': f"esp32/config/{esp32_id}"
-                    }
-                }
-            }
-
-            # Actualizar caché
-            self._config_cache[esp32_id] = (time.time(), config)
-
-            # Enviar configuración
-            self.mqtt_client.publish(
-                f"esp32/config/{esp32_id}",
-                json.dumps(config),
-                qos=MQTT_CONFIG['QOS']
-            )
-            logging.info(f"Configuración enviada a ESP32 {esp32_id}")
-
-        except Exception as e:
-            logging.error(f"Error enviando configuración: {e}", exc_info=True)
 
     def assign_panel(self, esp32_id: str, client_id: str, panel_id: str):
         """Asigna un ESP32 a un panel específico"""

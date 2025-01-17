@@ -78,12 +78,9 @@ def setup_relay_monitoring(managers, esp32_id):
             relay_pin = managers["relay"].setup_relay(pin_num, relay_callback)
             print(f"[RELAY] Configured relay on pin {pin_num} ({pin_name})")
             
-            # Get and report initial state
+            # Get and log initial state (no need to force callback)
             initial_state = "DISC" if relay_pin.value() else "OK"
             print(f"[RELAY] Initial state of relay {pin_num} ({pin_name}): {initial_state}")
-            
-            # Force callback for initial state
-            relay_callback(relay_pin, pin_num)
             
         return True
         
