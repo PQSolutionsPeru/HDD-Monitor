@@ -36,93 +36,72 @@ class FirestoreHandler:
             for client in clients:
                 def create_snapshot_handler(client_id):
                     snapshot_key = f"events_{client_id}"
+                    initial_snapshot_processed = False
+                    last_snapshot = {}  # Almacenar el snapshot anterior
                     
                     def on_snapshot(doc_snapshot, changes, read_time):
-                        # Manejar la carga inicial
-                        if snapshot_key not in self._events_initial_snapshots:
-                            self._events_initial_snapshots.add(snapshot_key)
+                        nonlocal initial_snapshot_processed, last_snapshot
+                        
+                        # Solo loggear la carga inicial una vez
+                        if not initial_snapshot_processed:
+                            initial_snapshot_processed = True
+                            # Guardar el estado inicial de los documentos
+                            for doc in doc_snapshot:
+                                last_snapshot[doc.id] = doc.to_dict()
                             logging.info(f"Carga inicial de eventos para cliente {client_id}")
                             return
 
+                        # Procesar todos los cambios después de la carga inicial
                         for change in changes:
                             try:
-                                if change.type.name in ['MODIFIED', 'ADDED', 'REMOVED']:
-                                    doc = change.document
-                                    new_data = doc.to_dict() if change.type.name != 'REMOVED' else None
-                                    old_data = None
+                                doc = change.document
+                                new_data = doc.to_dict() if change.type.name != 'REMOVED' else None
+                                old_data = last_snapshot.get(doc.id, {})
 
-                                    # Solo procesar eventos nuevos después de la carga inicial
-                                    if change.type.name == 'ADDED':
-                                        if new_data:
-                                            logging.info(f"Nuevo evento detectado:")
-                                            logging.info(f"ID: {doc.id}")
-                                            logging.info(f"Estado inicial: {new_data.get('status')}")
-                                            
-                                            self.notification_handler.process_event_update(
-                                                doc.reference,
-                                                {},
-                                                new_data
-                                            )
+                                if change.type.name == 'ADDED':
+                                    if new_data:
+                                        logging.info(f"Nuevo evento detectado:")
+                                        logging.info(f"ID: {doc.id}")
+                                        logging.info(f"Estado inicial: {new_data.get('status')}")
+                                        self.notification_handler.process_event_update(
+                                            doc.reference,
+                                            {},
+                                            new_data
+                                        )
+                                        last_snapshot[doc.id] = new_data
+                                
+                                elif change.type.name == 'MODIFIED':
+                                    logging.info(f"Evento modificado detectado:")
+                                    logging.info(f"ID: {doc.id}")
+                                    logging.info(f"Estado anterior: {old_data.get('status')}")
+                                    logging.info(f"Nuevo estado: {new_data.get('status')}")
                                     
-                                    # Para modificaciones, verificar cualquier cambio relevante
-                                    elif change.type.name == 'MODIFIED':
-                                        # Obtener datos anteriores
-                                        for snap in doc_snapshot:
-                                            if snap.id == doc.id:
-                                                old_data = snap.to_dict()
-                                                break
-                                        
-                                        if old_data and new_data:
-                                            changes_detected = []
-                                            
-                                            # Verificar cambios importantes
-                                            fields_to_check = {
-                                                'status': 'status',
-                                                'title': 'title',
-                                                'text': 'text',
-                                                'type': 'type',
-                                                'date_time': 'date_time',
-                                                'acceptedByAccountId': 'acceptedByAccountId',
-                                                'finishedByAccountId': 'finishedByAccountId'
-                                            }
-
-                                            for field, key in fields_to_check.items():
-                                                if old_data.get(key) != new_data.get(key):
-                                                    changes_detected.append((field, old_data.get(key), new_data.get(key)))
-                                            
-                                            if changes_detected:
-                                                logging.info(f"Cambios detectados en evento {doc.id}:")
-                                                for field, old_val, new_val in changes_detected:
-                                                    logging.info(f"- {field}: {old_val} -> {new_val}")
+                                    self.notification_handler.process_event_update(
+                                        doc.reference,
+                                        old_data,
+                                        new_data
+                                    )
+                                    last_snapshot[doc.id] = new_data
+                                
+                                elif change.type.name == 'REMOVED':
+                                    logging.info(f"Evento eliminado detectado: {doc.id}")
+                                    self.notification_handler.process_event_update(
+                                        doc.reference,
+                                        last_snapshot.get(doc.id, {}),
+                                        None
+                                    )
+                                    last_snapshot.pop(doc.id, None)
                                                 
-                                                self.notification_handler.process_event_update(
-                                                    doc.reference,
-                                                    old_data,
-                                                    new_data
-                                                )
-
-                                    elif change.type.name == 'REMOVED':
-                                        # Obtener datos anteriores para el evento eliminado
-                                        for snap in doc_snapshot:
-                                            if snap.id == doc.id:
-                                                old_data = snap.to_dict()
-                                                break
-                                                
-                                        if old_data:
-                                            logging.info(f"Evento eliminado detectado: {doc.id}")
-                                            # Para eventos eliminados, old_data contiene la última información conocida
-                                            self.notification_handler.process_event_update(
-                                                doc.reference,
-                                                old_data,
-                                                None
-                                            )
-                                            
                             except Exception as e:
                                 logging.error(f"Error procesando cambio de evento: {e}", exc_info=True)
-                    
+
+                        # Actualizar el snapshot con el estado actual de todos los documentos
+                        current_snapshot = {doc.id: doc.to_dict() for doc in doc_snapshot}
+                        last_snapshot.update(current_snapshot)
+                        
                     return on_snapshot
 
-                # Configurar observador de eventos para cada cliente
+                # Observar colección de eventos de cada cliente
                 events_ref = clients_ref.document(client.id).collection('events')
                 watch = events_ref.on_snapshot(create_snapshot_handler(client.id))
                 self._watch_references.append(watch)

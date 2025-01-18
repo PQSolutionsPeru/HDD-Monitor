@@ -18,20 +18,20 @@ class NotificationHandler:
             if not account_id:
                 return 'Usuario desconocido'
 
-            if role == 'admin' or (not role and account_id):
-                # Intentar primero en admins
+            # Buscar primero en admins si el rol es admin o no se especifica
+            if role == 'admin' or not role:
                 admin_ref = self.db.document(f'hdd-monitor/accounts/admins/{account_id}')
                 admin_doc = admin_ref.get()
                 if admin_doc.exists:
-                    return admin_doc.get('name', 'Admin')
+                    return admin_doc.to_dict().get('name', 'Admin')
 
-            # Si no es admin o no se encontró, buscar en usuarios
+            # Si no es admin o no se encontró, buscar en usuarios de todos los clientes
             clients_ref = self.db.collection('hdd-monitor/accounts/clients')
             for client in clients_ref.stream():
                 user_ref = client.reference.collection('users').document(account_id)
                 user_doc = user_ref.get()
                 if user_doc.exists:
-                    return user_doc.get('name', 'Usuario')
+                    return user_doc.to_dict().get('name', 'Usuario')
 
             return 'Usuario desconocido'
             
@@ -48,14 +48,19 @@ class NotificationHandler:
 
             # Determinar tipo de actualización
             update_type = None
+            should_notify = False
+
             if not old_data and new_data:
                 update_type = 'CREATE'
+                should_notify = True
             elif not new_data and old_data:
                 update_type = 'DELETE'
+                should_notify = True
             elif old_data and new_data:
                 # Verificar cambios específicos
                 if old_data.get('status') != new_data.get('status'):
-                    if new_data.get('status') == 'ACEPTADO' and old_data.get('status') == 'PROGRAMADO':
+                    should_notify = True
+                    if new_data.get('status') == 'ACEPTADO':
                         update_type = 'ACCEPT'
                     elif new_data.get('status') == 'FINALIZADO':
                         update_type = 'FINISH'
@@ -63,15 +68,34 @@ class NotificationHandler:
                         update_type = 'REOPEN'
                     else:
                         update_type = 'STATUS_CHANGE'
+                # Verificar cambios en campos relacionados con aceptación/finalización
+                elif (not old_data.get('acceptedByAccountId') and new_data.get('acceptedByAccountId')):
+                    should_notify = True
+                    update_type = 'ACCEPT'
+                elif (old_data.get('acceptedByAccountId') != new_data.get('acceptedByAccountId') and 
+                    new_data.get('acceptedByAccountId')):
+                    should_notify = True
+                    update_type = 'ACCEPT'
+                elif (not old_data.get('finishedByAccountId') and new_data.get('finishedByAccountId')):
+                    should_notify = True
+                    update_type = 'FINISH'
+                elif (old_data.get('finishedByAccountId') != new_data.get('finishedByAccountId') and 
+                    new_data.get('finishedByAccountId')):
+                    should_notify = True
+                    update_type = 'FINISH'
                 elif old_data.get('date_time') != new_data.get('date_time'):
+                    should_notify = True
                     update_type = 'RESCHEDULE'
                 elif (old_data.get('title') != new_data.get('title') or 
-                      old_data.get('text') != new_data.get('text')):
+                    old_data.get('text') != new_data.get('text')):
+                    should_notify = True
                     update_type = 'EDIT'
                 elif old_data.get('type') != new_data.get('type'):
+                    should_notify = True
                     update_type = 'TYPE_CHANGE'
 
-            if update_type:
+            if should_notify and update_type:
+                logging.info(f"Procesando notificación de tipo: {update_type}")
                 # Obtener información necesaria para la notificación
                 client_doc = self.db.document(f'hdd-monitor/accounts/clients/{client_id}').get()
                 client_data = client_doc.to_dict() or {}
