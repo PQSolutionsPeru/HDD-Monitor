@@ -48,54 +48,36 @@ class ESP32ConfigManager:
         try:
             esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
             esp32_doc = esp32_ref.get()
-
             current_time = datetime.now(pytz.UTC)
 
-            # Buscar asignación previa en panels
-            existing_panel = self._find_existing_panel_assignment(esp32_id)
-            
             if not esp32_doc.exists:
-                # Nuevo ESP32 - registrar
+                # Para nuevo ESP32, solo registrar información básica
                 esp32_data = {
                     'MAC': payload.get('MAC', ''),
                     'IP': payload.get('IP', ''),
                     'firstSeen': current_time,
                     'lastUpdate': current_time,
-                    'status': payload.get('status', ESP32_STATES['AWAITING_CONFIG']),
-                    'client_id': existing_panel['client_id'] if existing_panel else '',
-                    'panel_id': existing_panel['panel_id'] if existing_panel else ''
+                    'status': ESP32_STATES['AWAITING_CONFIG']
                 }
                 esp32_ref.set(esp32_data)
                 logging.info(f"Nuevo ESP32 registrado: {esp32_id}")
                 
-                # Si tenía asignación previa, enviar configuración
-                if existing_panel:
-                    self._send_config(esp32_id, esp32_data)
             else:
-                # Actualizar información existente
-                updates = {
-                    'IP': payload.get('IP', ''),
-                    'lastUpdate': current_time,
-                    'status': payload.get('status', ESP32_STATES['AWAITING_CONFIG'])
-                }
-                
-                # Si no tiene asignación pero existe una previa, actualizarla
+                # Para ESP32 existente
                 esp32_data = esp32_doc.to_dict()
-                if not esp32_data.get('client_id') and not esp32_data.get('panel_id') and existing_panel:
-                    updates.update({
-                        'client_id': existing_panel['client_id'],
-                        'panel_id': existing_panel['panel_id']
-                    })
-                    
-                esp32_ref.update(updates)
-                logging.info(f"ESP32 {esp32_id} actualizado con: {updates}")
                 
-                # Enviar configuración si tiene asignación
+                # Verificar si ya tiene asignación
                 if esp32_data.get('client_id') and esp32_data.get('panel_id'):
                     self._send_config(esp32_id, esp32_data)
-                elif existing_panel:
-                    esp32_data.update(updates)
-                    self._send_config(esp32_id, esp32_data)
+                else:
+                    # Solo actualizar información básica
+                    updates = {
+                        'IP': payload.get('IP', ''),
+                        'lastUpdate': current_time,
+                        'status': ESP32_STATES['AWAITING_CONFIG']
+                    }
+                    esp32_ref.update(updates)
+                    logging.info(f"ESP32 {esp32_id} actualizado con: {updates}")
 
         except Exception as e:
             logging.error(f"Error en registro de ESP32: {e}", exc_info=True)
@@ -193,7 +175,8 @@ class ESP32ConfigManager:
     def _handle_config_response(self, esp32_id: str, payload: Dict[str, Any]):
         """Maneja respuestas a la configuración enviada"""
         try:
-            if payload.get('status') == 'SUCCESS':
+            # Aceptar tanto 'SUCCESS' como 'CONFIG_ACCEPTED'
+            if payload.get('status') in ['SUCCESS', 'CONFIG_ACCEPTED']:
                 esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
                 esp32_ref.update({
                     'status': ESP32_STATES['CONFIGURED'],
@@ -201,13 +184,13 @@ class ESP32ConfigManager:
                 })
                 logging.info(f"ESP32 {esp32_id} configurado exitosamente")
             else:
-                logging.error(f"Error configurando ESP32 {esp32_id}: {payload.get('message', 'Unknown error')}")
-                # Actualizar estado de error
+                error_msg = payload.get('message', 'Unknown error')
+                logging.error(f"Error configurando ESP32 {esp32_id}: {error_msg}")
                 esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
                 esp32_ref.update({
                     'status': ESP32_STATES['ERROR'],
                     'lastUpdate': datetime.now(pytz.UTC),
-                    'error_message': payload.get('message', 'Unknown error')
+                    'error_message': error_msg
                 })
 
         except Exception as e:
@@ -410,11 +393,44 @@ class ESP32ConfigManager:
             # Verificar ESP32s que necesitan configuración
             self._check_pending_configurations()
             
+            # Añadir observador para nuevas asignaciones de paneles
+            self._watch_panel_assignments()
+            
             logging.info("Gestor de configuración ESP32 iniciado")
             
         except Exception as e:
             logging.error(f"Error iniciando gestor de configuración: {e}", exc_info=True)
             raise
+
+    def _watch_panel_assignments(self):
+        """Observa cambios en asignaciones de paneles"""
+        try:
+            # Obtener ESP32s en estado AWAITING_CONFIG
+            esp32s_ref = self.db.collection('hdd-monitor/esp32/registered')
+            query = esp32s_ref.where('status', '==', ESP32_STATES['AWAITING_CONFIG'])
+            
+            def on_snapshot(doc_snapshot, changes, read_time):
+                for change in changes:
+                    try:
+                        if change.type.name == 'MODIFIED':
+                            esp32_data = change.document.to_dict()
+                            esp32_id = change.document.id
+                            
+                            # Si se asignó a un panel
+                            if esp32_data.get('client_id') and esp32_data.get('panel_id'):
+                                logging.info(f"Detectada nueva asignación para ESP32 {esp32_id}")
+                                self._send_config(esp32_id, esp32_data)
+                                
+                    except Exception as e:
+                        logging.error(f"Error procesando cambio de panel: {e}")
+
+            # Iniciar observador
+            query_watch = query.on_snapshot(on_snapshot)
+            self._watch_references.append(query_watch)
+            logging.info("Observador de asignaciones de paneles iniciado")
+            
+        except Exception as e:
+            logging.error(f"Error iniciando observador de paneles: {e}", exc_info=True)
 
     def _check_pending_configurations(self):
         """Verifica ESP32s que necesitan configuración al inicio"""
