@@ -362,19 +362,65 @@ class BleViewModel @Inject constructor(
 
     private fun observeESP32Status(esp32Id: String) {
         viewModelScope.launch {
-            esp32Repository.observeESP32Status(esp32Id).collect { status ->
-                Log.d(TAG, "ESP32 $esp32Id estado: $status")
-                when (status) {
-                    ESP32Device.STATUS_RUNNING,
-                    ESP32Device.STATUS_CONFIGURED -> {  // <-- Agregar este estado
-                        _state.value = BleState.ConfigurationSuccess
-                        disconnect()
-                        timeoutJob?.cancel()
-                    }
-                    ESP32Device.STATUS_OFFLINE -> {
-                        _state.value = BleState.ConfigurationError("El dispositivo se ha desconectado")
+            try {
+                esp32Repository.observeESP32Status(esp32Id).collect { status ->
+                    Log.d(TAG, "ESP32 $esp32Id estado: $status")
+                    when (status) {
+                        ESP32Device.STATUS_CONFIGURED -> {
+                            // Configuración aceptada por el ESP32
+                            currentESP32?.let { esp32Device ->
+                                _state.value = BleState.ConfigurationSuccess(esp32Device)
+                            } ?: run {
+                                _state.value = BleState.ConfigurationSuccess(
+                                    ESP32Device(
+                                        documentName = esp32Id,
+                                        status = status
+                                    )
+                                )
+                            }
+                            disconnect()
+                            timeoutJob?.cancel()
+                        }
+                        ESP32Device.STATUS_RUNNING -> {
+                            // El ESP32 está en modo operación normal
+                            currentESP32?.let { esp32Device ->
+                                _state.value = BleState.ConfigurationSuccess(esp32Device)
+                            } ?: run {
+                                _state.value = BleState.ConfigurationSuccess(
+                                    ESP32Device(
+                                        documentName = esp32Id,
+                                        status = status
+                                    )
+                                )
+                            }
+                            disconnect()
+                            timeoutJob?.cancel()
+                        }
+                        "ERROR" -> { // Usando el string directamente como alternativa
+                            _state.value = BleState.ConfigurationError("Error configurando el ESP32")
+                            disconnect()
+                            timeoutJob?.cancel()
+                        }
+                        ESP32Device.STATUS_OFFLINE,
+                        ESP32Device.STATUS_DISC -> {
+                            _state.value = BleState.ConfigurationError("El dispositivo se ha desconectado")
+                            disconnect()
+                            timeoutJob?.cancel()
+                        }
+                        ESP32Device.STATUS_AWAITING_CONFIG -> {
+                            // El ESP32 aún está esperando configuración, seguimos esperando
+                            Log.d(TAG, "ESP32 esperando configuración")
+                        }
+                        else -> {
+                            Log.d(TAG, "Estado no manejado: $status")
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error observando estado del ESP32", e)
+                _state.value = BleState.ConfigurationError("Error monitoreando el estado del dispositivo: ${e.message}")
+                disconnect()
+                timeoutJob?.cancel()
             }
         }
     }

@@ -241,8 +241,13 @@ fun BleConfigScreen(
                     }
 
                     is BleState.ConfigurationSuccess -> {
+                        val esp32Device = (state as? BleState.ConfigurationSuccess)?.esp32Device
                         SuccessSection(
-                            message = "¡Configuración completada!\nEl panel ha sido creado exitosamente.",
+                            message = buildString {
+                                appendLine("¡Configuración completada!")
+                                appendLine("ESP32 #${esp32Device?.documentName} configurado exitosamente.")
+                                appendLine("El panel ha sido creado y está listo para usar.")
+                            },
                             onFinishClick = onConfigurationComplete
                         )
                     }

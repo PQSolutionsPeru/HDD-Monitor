@@ -25,6 +25,8 @@ data class ESP32Device(
         const val STATUS_RUNNING = "RUNNING"
         const val STATUS_OFFLINE = "OFFLINE"
         const val STATUS_CONFIGURED = "CONFIGURED"
+        const val STATUS_ERROR = "ERROR"
+        const val STATUS_DISC = "DISC"
     }
 
     fun toMap(): Map<String, Any> = mapOf(
