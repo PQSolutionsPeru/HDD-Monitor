@@ -365,9 +365,10 @@ class BleViewModel @Inject constructor(
             esp32Repository.observeESP32Status(esp32Id).collect { status ->
                 Log.d(TAG, "ESP32 $esp32Id estado: $status")
                 when (status) {
-                    ESP32Device.STATUS_RUNNING -> {
+                    ESP32Device.STATUS_RUNNING,
+                    ESP32Device.STATUS_CONFIGURED -> {  // <-- Agregar este estado
                         _state.value = BleState.ConfigurationSuccess
-                        disconnect() // Desconectar BLE una vez confirmado
+                        disconnect()
                         timeoutJob?.cancel()
                     }
                     ESP32Device.STATUS_OFFLINE -> {

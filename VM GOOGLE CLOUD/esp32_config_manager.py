@@ -43,6 +43,9 @@ class ESP32ConfigManager:
         self._config_cache = {}
         self._esp32_status = {}
 
+        # Lista para mantener referencias de observadores
+        self._watch_references = [] 
+
     def _handle_registration(self, esp32_id: str, payload: Dict[str, Any]):
         """Maneja el registro inicial de un ESP32"""
         try:
@@ -466,6 +469,15 @@ class ESP32ConfigManager:
     def stop(self):
         """Detiene el gestor de configuración"""
         try:
+            # Detener todos los observadores
+            for watch in self._watch_references:
+                try:
+                    watch.unsubscribe()
+                except Exception as e:
+                    logging.error(f"Error deteniendo observador: {e}")
+            self._watch_references.clear()
+            
+            # Detener cliente MQTT
             self.mqtt_client.loop_stop()
             self.mqtt_client.disconnect()
             logging.info("Gestor de configuración ESP32 detenido")
