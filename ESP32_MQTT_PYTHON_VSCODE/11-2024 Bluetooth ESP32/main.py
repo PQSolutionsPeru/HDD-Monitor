@@ -14,8 +14,8 @@ MAX_LOOP_TIME = 1000           # 1000ms maximum per cycle
 MIN_MEMORY_THRESHOLD = 15000   # 15KB minimum free memory
 MQTT_RETRY_COUNT = 5           # 5 MQTT attempts
 WIFI_RETRY_COUNT = 5           # 5 WiFi attempts
-WATCHDOG_TIMEOUT = 60000       # 60 seconds watchdog
-CHECK_INTERVAL = 2000          # 2 seconds between checks
+WATCHDOG_TIMEOUT = 120000      # 120 seconds watchdog (aumentado)
+CHECK_INTERVAL = 5000          # 5 seconds between checks (aumentado)
 STARTUP_DELAY = 5000           # 5 seconds at startup
 BLE_CONFIG_TIMEOUT = 300000    # 5 minutes for BLE configuration
 
@@ -37,56 +37,6 @@ def check_memory():
         print(f"[MEMORY] Memory after cleanup: {free_mem} bytes")
         return free_mem >= MIN_MEMORY_THRESHOLD
     return True
-
-def setup_relay_monitoring(managers, esp32_id):
-    """Configures relay monitoring"""
-    try:
-        print("\n[RELAY] Configuring relays...")
-        managers["relay"] = RelayManager()
-        relay_config = managers["relay"].config
-        
-        def relay_callback(pin, pin_num):
-            try:
-                state = "DISC" if pin.value() else "OK"
-                pin_names = relay_config.get_relay_pins()
-                pin_name = pin_names.get(pin_num, str(pin_num))
-                print(f"[RELAY] Change in relay {pin_num} ({pin_name}): {state}")
-                
-                if managers["mqtt"].client_id and managers["mqtt"].panel_id:
-                    message = {
-                        "esp32_id": esp32_id,
-                        "relay": pin_name,
-                        "state": state,
-                        "timestamp": {
-                            "value": utime.ticks_ms(),
-                            "type": "realtime"
-                        }
-                    }
-                    
-                    managers["mqtt"].publish_event(
-                        f"clients/{managers['mqtt'].client_id}/panels/{managers['mqtt'].panel_id}",
-                        message,
-                        retain=False,
-                        qos=1
-                    )
-            except Exception as e:
-                print(f"[RELAY] Callback error: {e}")
-        
-        # Configure each relay using config
-        pin_config = relay_config.get_relay_pins()
-        for pin_num, pin_name in pin_config.items():
-            relay_pin = managers["relay"].setup_relay(pin_num, relay_callback)
-            print(f"[RELAY] Configured relay on pin {pin_num} ({pin_name})")
-            
-            # Get and log initial state (no need to force callback)
-            initial_state = "DISC" if relay_pin.value() else "OK"
-            print(f"[RELAY] Initial state of relay {pin_num} ({pin_name}): {initial_state}")
-            
-        return True
-        
-    except Exception as e:
-        print(f"[RELAY] Setup error: {e}")
-        return False
 
 def pre_init_cleanup():
     """Limpieza inicial del sistema antes de cualquier inicialización"""
@@ -290,64 +240,6 @@ def wait_for_mqtt_config(managers, timeout=300000):
     print("[MQTT] Configuration timeout")
     return False
 
-def setup_mqtt_connection(managers):
-    """Sets up MQTT connection and waits for VM configuration if needed"""
-    try:
-        managers["watchdog"].feed()
-        esp32_id = managers["esp32_id"].get_id()
-        
-        if not esp32_id:
-            print("[MQTT] Error: No ESP32 ID available")
-            return False
-            
-        print(f"[MQTT] Setting up connection for ESP32 ID: {esp32_id}")
-        managers["mqtt"].esp32_id = esp32_id
-        
-        # Un solo intento de conexión MQTT
-        if not managers["mqtt"].connect():
-            print("[MQTT] Could not establish MQTT connection")
-            return False
-            
-        # Suscripción al tópico de configuración
-        config_topic = f"esp32/config/{esp32_id}"
-        if not managers["mqtt"].subscribe(config_topic):
-            print("[MQTT] Subscription failed")
-            return False
-        
-        print("[MQTT] Setup completed successfully")
-        
-        # Solo esperar configuración si no tenemos una válida
-        if not managers["mqtt"].client_id or not managers["mqtt"].panel_id:
-            print("[MQTT] No valid configuration found. Waiting for VM...")
-            
-            # Esperar la configuración del panel
-            start_time = utime.ticks_ms()
-            max_wait = 300000  # 5 minutos
-            
-            while utime.ticks_diff(utime.ticks_ms(), start_time) < max_wait:
-                managers["watchdog"].feed()
-                managers["mqtt"].check_msg()
-                
-                if not managers["wifi"].check_connection():
-                    print("[MQTT] WiFi connection lost while waiting for config")
-                    return False
-                    
-                if managers["mqtt"].client_id and managers["mqtt"].panel_id:
-                    print("[MQTT] Configuration received successfully")
-                    return True
-                    
-                utime.sleep_ms(100)
-                
-            print("[MQTT] Configuration wait timeout")
-            return False
-        else:
-            print("[MQTT] Valid configuration already exists")
-            return True
-            
-    except Exception as e:
-        print(f"[MQTT] Setup error: {e}")
-        return False
-
 def handle_running_mode(managers):
     """Handles system in running mode"""
     try:
@@ -369,6 +261,226 @@ def handle_running_mode(managers):
         
     except Exception as e:
         print(f"[RUNNING] Error: {e}")
+        return False
+
+def handle_config_state(managers):
+    """Maneja el estado de configuración con feeding del watchdog"""
+    try:
+        print("\n[MAIN] === Iniciando manejo de estado CONFIG ===")
+        managers["watchdog"].feed()  # Feed inicial
+        
+        print("[MAIN] Verificando conexión WiFi...")
+        if not managers["wifi"].check_connection():
+            print("[MAIN] Perdida conexión WiFi")
+            return SystemState.INITIAL
+            
+        managers["watchdog"].feed()  # Feed después de verificar WiFi
+        print("[MAIN] WiFi conectado y verificado")
+        print("[MAIN] Verificando estado MQTT...")
+        
+        # Verificar si MQTT ya tiene configuración
+        if managers["mqtt"].client_id and managers["mqtt"].panel_id:
+            print(f"[MAIN] MQTT ya configurado - Client: {managers['mqtt'].client_id}, Panel: {managers['mqtt'].panel_id}")
+        else:
+            print("[MAIN] MQTT no configurado, intentando setup...")
+            managers["watchdog"].feed()  # Feed antes del setup MQTT
+            if not setup_mqtt_connection(managers):
+                print("[MAIN] Error en configuración MQTT")
+                return SystemState.CONFIG
+                
+        managers["watchdog"].feed()  # Feed después de MQTT
+        print("[MAIN] MQTT verificado correctamente")
+        print("[MAIN] Iniciando configuración de relays...")
+        
+        # Intentar configuración de relays
+        if setup_relay_monitoring(managers, managers["esp32_id"].get_id()):
+            print("[MAIN] Relays configurados exitosamente")
+            print("[MAIN] === Cambiando a estado RUNNING ===\n")
+            managers["watchdog"].feed()  # Feed final
+            return SystemState.RUNNING
+        else:
+            print("[MAIN] Error en configuración de relays")
+            return SystemState.CONFIG
+            
+    except Exception as e:
+        print(f"[MAIN] Error en CONFIG state: {str(e)}")
+        import sys
+        sys.print_exception(e)
+        return SystemState.CONFIG
+
+def setup_mqtt_connection(managers):
+    """Sets up MQTT connection and waits for VM configuration if needed"""
+    try:
+        managers["watchdog"].feed()
+        esp32_id = managers["esp32_id"].get_id()
+        
+        if not esp32_id:
+            print("[MQTT] Error: No ESP32 ID available")
+            return False
+            
+        print(f"[MQTT] Setting up connection for ESP32 ID: {esp32_id}")
+        managers["mqtt"].esp32_id = esp32_id
+        
+        # Feed watchdog antes de la conexión MQTT
+        managers["watchdog"].feed()
+        
+        # Un solo intento de conexión MQTT
+        if not managers["mqtt"].connect():
+            print("[MQTT] Could not establish MQTT connection")
+            return False
+            
+        # Suscripción al tópico de configuración
+        config_topic = f"esp32/config/{esp32_id}"
+        if not managers["mqtt"].subscribe(config_topic):
+            print("[MQTT] Subscription failed")
+            return False
+        
+        print("[MQTT] Setup completed successfully")
+        managers["watchdog"].feed()  # Feed después de la configuración inicial
+        
+        # Solo esperar configuración si no tenemos una válida
+        if not managers["mqtt"].client_id or not managers["mqtt"].panel_id:
+            print("[MQTT] No valid configuration found. Waiting for VM...")
+            
+            # Esperar la configuración del panel con timeout
+            start_time = utime.ticks_ms()
+            max_wait = 300000  # 5 minutos
+            last_feed = utime.ticks_ms()
+            feed_interval = 5000  # Feed cada 5 segundos
+            
+            while utime.ticks_diff(utime.ticks_ms(), start_time) < max_wait:
+                # Feed periódico mientras espera
+                current_time = utime.ticks_ms()
+                if utime.ticks_diff(current_time, last_feed) >= feed_interval:
+                    managers["watchdog"].feed()
+                    last_feed = current_time
+                
+                managers["mqtt"].check_msg()
+                
+                if not managers["wifi"].check_connection():
+                    print("[MQTT] WiFi connection lost while waiting for config")
+                    return False
+                    
+                if managers["mqtt"].client_id and managers["mqtt"].panel_id:
+                    print("[MQTT] Configuration received successfully")
+                    managers["watchdog"].feed()  # Feed final después de recibir config
+                    return True
+                    
+                utime.sleep_ms(100)
+                
+            print("[MQTT] Configuration wait timeout")
+            return False
+        else:
+            print("[MQTT] Valid configuration already exists")
+            return True
+            
+    except Exception as e:
+        print(f"[MQTT] Setup error: {e}")
+        return False
+
+def setup_relay_monitoring(managers, esp32_id):
+    """Configura el monitoreo de relays con mejor manejo de errores"""
+    try:
+        print("\n[RELAY] === Iniciando configuración de relays ===")
+        managers["relay"] = RelayManager()
+        relay_config = managers["relay"].config
+        
+        print(f"[RELAY] Configuración actual: {relay_config.config}")
+        
+        def relay_callback(pin, pin_num):
+            try:
+                state = "DISC" if pin.value() else "OK"
+                pin_names = relay_config.get_relay_pins()
+                pin_name = pin_names.get(pin_num, str(pin_num))
+                print(f"[RELAY] Cambio en relay {pin_num} ({pin_name}): {state}")
+                
+                if managers["mqtt"].client_id and managers["mqtt"].panel_id:
+                    message = {
+                        "esp32_id": esp32_id,
+                        "relay": pin_name,
+                        "state": state,
+                        "timestamp": {
+                            "value": utime.ticks_ms(),
+                            "type": "realtime"
+                        },
+                        "client_id": managers["mqtt"].client_id,
+                        "panel_id": managers["mqtt"].panel_id
+                    }
+                    
+                    publish_topic = managers["mqtt"].topics.get('relays', 
+                        f"clients/{managers['mqtt'].client_id}/panels/{managers['mqtt'].panel_id}/relays")
+                    
+                    print(f"[RELAY] Publicando cambio en {publish_topic}")
+                    managers["mqtt"].publish_event(
+                        publish_topic,
+                        message,
+                        retain=False,
+                        qos=1
+                    )
+            except Exception as e:
+                print(f"[RELAY] Callback error: {str(e)}")
+                import sys
+                sys.print_exception(e)
+        
+        # Configurar cada relay usando config
+        pin_config = relay_config.get_relay_pins()
+        print(f"[RELAY] Configuración de pines: {pin_config}")
+        
+        configured_pins = []
+        all_states = {}  # Colectar todos los estados iniciales
+        
+        for pin_num, pin_name in pin_config.items():
+            try:
+                print(f"[RELAY] Configurando pin {pin_num} para relay {pin_name}")
+                relay_pin = managers["relay"].setup_relay(int(pin_num), relay_callback)
+                if relay_pin:
+                    configured_pins.append(pin_num)
+                    # Obtener estado inicial
+                    initial_state = "DISC" if relay_pin.value() else "OK"
+                    all_states[pin_name] = initial_state
+                    print(f"[RELAY] Estado inicial de relay {pin_num} ({pin_name}): {initial_state}")
+                    
+            except Exception as e:
+                print(f"[RELAY] Error configurando pin {pin_num}: {str(e)}")
+                continue
+        
+        # Enviar un solo mensaje con todos los estados iniciales
+        if configured_pins and managers["mqtt"].client_id and managers["mqtt"].panel_id:
+            message = {
+                "esp32_id": esp32_id,
+                "states": all_states,
+                "type": "initial_states",
+                "timestamp": {
+                    "value": utime.ticks_ms(),
+                    "type": "realtime"
+                },
+                "client_id": managers["mqtt"].client_id,
+                "panel_id": managers["mqtt"].panel_id
+            }
+            
+            publish_topic = managers["mqtt"].topics.get('relays',
+                f"clients/{managers['mqtt'].client_id}/panels/{managers['mqtt'].panel_id}/relays")
+                
+            print(f"[RELAY] Publicando estados iniciales en {publish_topic}")
+            managers["mqtt"].publish_event(
+                publish_topic,
+                message,
+                retain=False,
+                qos=1
+            )
+        
+        if not configured_pins:
+            print("[RELAY] No se pudo configurar ningún relay")
+            return False
+            
+        print(f"[RELAY] Configuración completada. Pines configurados: {configured_pins}")
+        print("[RELAY] === Fin de configuración de relays ===\n")
+        return True
+        
+    except Exception as e:
+        print(f"[RELAY] Error general en setup: {str(e)}")
+        import sys
+        sys.print_exception(e)
         return False
 
 def main():
@@ -399,37 +511,38 @@ def main():
                 managers["watchdog"].feed()
                 gc.collect()
                 
+                print(f"\n[MAIN] === Estado actual: {current_state} ===")
+                
                 # Process current state
                 if current_state == SystemState.INITIAL:
-                    # Solo entrar en modo BLE si no hay configuración o la conexión falló
                     if not has_wifi_config or not managers["wifi"].check_connection():
                         if setup_wifi_mode(managers):
+                            print("[MAIN] WiFi configurado, cambiando a CONFIG")
                             current_state = SystemState.CONFIG
-                        
+                            
                 elif current_state == SystemState.CONFIG:
-                    # Verificar conexión WiFi antes de MQTT
-                    if managers["wifi"].check_connection():
-                        if managers["mqtt"].check_connection() or setup_mqtt_connection(managers):
-                            if setup_relay_monitoring(managers, managers["esp32_id"].get_id()):
-                                current_state = SystemState.RUNNING
-                            else:
-                                raise Exception("Relay setup failed")
-                    else:
-                        current_state = SystemState.INITIAL
+                    new_state = handle_config_state(managers)
+                    if new_state != current_state:
+                        print(f"[MAIN] Cambiando estado de {current_state} a {new_state}")
+                        current_state = new_state
                 
                 elif current_state == SystemState.RUNNING:
                     if not handle_running_mode(managers):
+                        print("[MAIN] Error en RUNNING, volviendo a CONFIG")
                         current_state = SystemState.CONFIG
                 
                 # Memory check and cleanup
                 if not check_memory():
+                    print("[MAIN] Memoria baja, realizando limpieza")
                     gc.collect()
                     utime.sleep_ms(100)
                     
                 utime.sleep_ms(CHECK_INTERVAL)
                 
             except Exception as e:
-                print(f"[MAIN] Loop error: {e}")
+                print(f"[MAIN] Loop error: {str(e)}")
+                import sys
+                sys.print_exception(e)
                 if "watchdog" in managers:
                     managers["watchdog"].force_reset("loop_error")
                 else:
@@ -438,11 +551,13 @@ def main():
     except KeyboardInterrupt:
         print("\n[MAIN] Program interrupted by user")
     except Exception as e:
-        print(f"\n[MAIN] Fatal error: {e}")
+        print(f"\n[MAIN] Fatal error: {str(e)}")
+        import sys
+        sys.print_exception(e)
     finally:
         # Cleanup
         if "mqtt" in managers:
-            managers["mqtt"].close()  # Cambio de disconnect() a close() para liberar el device del pool
+            managers["mqtt"].close()
         if "wifi" in managers:
             managers["wifi"].disconnect()
         gc.collect()

@@ -9,6 +9,7 @@ import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
 import com.pqsolutions.hdd_monitor.data.ClientRepository
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.presentation.state.BleState
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -33,27 +34,35 @@ class DashboardViewModel @Inject constructor(
     private var panelsJob: Job? = null
 
     init {
-        //Log.d(TAG, "DashboardViewModel initialized")
+        Log.d(TAG, "DashboardViewModel initialized")
         loadPanels()
     }
 
     fun loadPanels() {
-        //Log.d(TAG, "loadPanels() called")
+        Log.d(TAG, "loadPanels() called")
         panelsJob?.cancel()
         panelsJob = viewModelScope.launch {
             try {
-                _uiState.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
-                //Log.d(TAG, "Current user: ${currentUser?.documentName}")
+                Log.d(TAG, "Current user: ${currentUser?.documentName}, Role: ${currentUser?.role}")
 
                 if (currentUser != null) {
-                    val clientDocName = if (currentUser.role == UserRole.ADMIN) null else currentUser.clientDocName
-                    ////Log.d(TAG, "Fetching panels for client document: $clientDocName")
+                    _uiState.update { it.copy(isLoading = true, error = null) }
+
+                    val clientDocName = when (currentUser.role) {
+                        UserRole.USER -> {
+                            Log.d(TAG, "User role detected, using client: ${currentUser.clientDocName}")
+                            currentUser.clientDocName
+                        }
+                        UserRole.ADMIN -> {
+                            Log.d(TAG, "Admin role detected, fetching all panels")
+                            null
+                        }
+                    }
 
                     panelRepository.getPanels(clientDocName).collect { panels ->
-                        //Log.d(TAG, "Received ${panels.size} panels")
+                        Log.d(TAG, "Received ${panels.size} panels for client: $clientDocName")
 
-                        // Validar los nombres de documentos
                         val validPanels = panels.filter { panel ->
                             val isValid = panel.documentName.startsWith(DocumentPrefixes.PANEL) &&
                                     panel.clientName.startsWith(DocumentPrefixes.CLIENT)
@@ -62,19 +71,12 @@ class DashboardViewModel @Inject constructor(
                             }
                             isValid
                         }
+                        Log.d(TAG, "Valid panels count: ${validPanels.size}")
 
-                        validPanels.forEach { panel ->
-                            //Log.d(TAG, "Panel: ${panel.name} " +
-                                    "(DocName: ${panel.documentName}, " +
-                                    "ClientDoc: ${panel.clientName})"
-                            //Log.d(TAG, "Relays: ${panel.relays}")
-                        }
-
-                        // Obtener los nombres de los clientes
                         val clientsMap = mutableMapOf<String, String>()
-                        validPanels.map { it.clientName }.distinct().forEach { clientDocName ->
-                            clientRepository.getClient(clientDocName).getOrNull()?.let { client ->
-                                clientsMap[clientDocName] = client.name
+                        validPanels.map { it.clientName }.distinct().forEach { docName ->
+                            clientRepository.getClient(docName).getOrNull()?.let { client ->
+                                clientsMap[docName] = client.name
                             }
                         }
 
@@ -92,28 +94,19 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun updatePanels(panels: List<Panel>, clientsMap: Map<String, String>) {
-        //Log.d(TAG, "updatePanels called with ${panels.size} panels")
+        Log.d(TAG, "Updating panels - Count: ${panels.size}")
         _uiState.update { currentState ->
-            //Log.d(TAG, "Current state before update: $currentState")
             val groupedPanels = panels.groupBy { clientsMap[it.clientName] ?: it.clientName }
-            //Log.d(TAG, "Grouped panels by client names: ${groupedPanels.keys}")
 
-            // Ya no necesitamos mapear los paneles para actualizar overallStatus
-            // porque es una propiedad calculada en la clase Panel
-            //Log.d(TAG, "Updated panels: ${panels.map { it.name to it.overallStatus }}")
-
-            val newState = currentState.copy(
+            currentState.copy(
                 isLoading = false,
-                panels = panels,  // Usamos los paneles directamente
+                panels = panels,
                 groupedPanels = groupedPanels,
                 clientNames = clientsMap,
                 error = null,
                 lastUpdate = System.currentTimeMillis()
             )
-            //Log.d(TAG, "New state: $newState")
-            newState
         }
-        logPanelState("After updatePanels")
     }
 
     private fun determineOverallPanelStatus(panel: Panel): String {

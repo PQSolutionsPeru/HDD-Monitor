@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,8 +64,14 @@ fun AdminDashboardScreen(
     Log.d(TAG, "AdminDashboardScreen composition started")
 
     val uiState by viewModel.uiState.collectAsState()
+    Log.d(TAG, "Current UI State: $uiState")
     val notificationUiState by notificationViewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    LaunchedEffect(key1 = Unit) {
+        Log.d(TAG, "LaunchedEffect: Loading panels for admin dashboard")
+        viewModel.loadPanels()
+    }
 
     HDD1_2Theme {
         Scaffold(
@@ -206,10 +213,9 @@ private fun DashboardButton(onClick: () -> Unit, text: String) {
 
 @Composable
 fun AdminPanelItem(panel: Panel) {
-    Log.d(TAG, "Rendering AdminPanelItem: ${panel.name}, Status: ${panel.overallStatus}")
+    Log.d(TAG, "Rendering AdminPanelItem: ${panel.name}, Status: ${panel.hasIssues}")
     var expanded by remember { mutableStateOf(false) }
-    val hasIssues = panel.overallStatus != "OK"
-    val statusColor = if (hasIssues) Color.Red else Color.Green
+    val statusColor = if (panel.hasIssues) Color.Red else Color.Green
 
     Card(
         modifier = Modifier
@@ -217,7 +223,7 @@ fun AdminPanelItem(panel: Panel) {
             .animateContentSize()
             .clickable { expanded = !expanded },
         colors = CardDefaults.cardColors(
-            containerColor = if (hasIssues) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
+            containerColor = if (panel.hasIssues) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -225,7 +231,7 @@ fun AdminPanelItem(panel: Panel) {
             Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
             Text(text = "ID ESP32: ${panel.esp32_id}", style = MaterialTheme.typography.bodyMedium)
             Text(
-                text = "Estado: ${panel.overallStatus}",
+                text = "Estado: ${if (panel.hasIssues) panel.relaysInDisc else "OK"}",
                 color = statusColor,
                 style = MaterialTheme.typography.bodyMedium
             )

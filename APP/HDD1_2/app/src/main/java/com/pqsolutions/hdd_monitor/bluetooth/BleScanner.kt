@@ -36,11 +36,15 @@ class BleScanner @Inject constructor(
             val device = result.device
             if (hasBluetoothPermissions()) {
                 val deviceName = device.name
-                if (deviceName?.startsWith("ESP32-") == true) {
+                // Agregar log para todos los dispositivos encontrados
+                Log.d(TAG, "Dispositivo encontrado - Nombre: $deviceName, MAC: ${device.address}, RSSI: ${result.rssi}")
+
+                // Hacer la verificación más flexible
+                if (deviceName != null && (deviceName.contains("ESP32", ignoreCase = true))) {
                     val currentDevices = _foundDevices.value.toMutableSet()
                     currentDevices.add(device)
                     _foundDevices.value = currentDevices
-                    Log.d(TAG, "ESP32 encontrado: $deviceName")
+                    Log.d(TAG, "ESP32 encontrado y agregado: $deviceName")
                 }
             }
         }
@@ -52,9 +56,11 @@ class BleScanner @Inject constructor(
                     "Error registrando aplicación para escaneo"
                 ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED ->
                     "Bluetooth LE no soportado"
+                ScanCallback.SCAN_FAILED_INTERNAL_ERROR ->
+                    "Error interno de escaneo"
                 else -> "Error desconocido: $errorCode"
             }
-            Log.e(TAG, errorMsg)
+            Log.e(TAG, "Error de escaneo: $errorMsg")
             stopScan()
         }
     }
@@ -75,11 +81,12 @@ class BleScanner @Inject constructor(
                 .setReportDelay(0L)
                 .build()
 
-            bleScanner?.startScan(null, settings, scanCallback)
-            Log.d(TAG, "Escaneo BLE iniciado")
-        } catch (e: SecurityException) {
-            Log.e(TAG, "Error de permisos al iniciar escaneo", e)
-            stopScan()
+            // Agregar filtro específico para ESP32
+            val scanFilter = ScanFilter.Builder()
+                .build()
+
+            bleScanner?.startScan(listOf(scanFilter), settings, scanCallback)
+            Log.d(TAG, "Escaneo BLE iniciado con configuración actualizada")
         } catch (e: Exception) {
             Log.e(TAG, "Error iniciando escaneo", e)
             stopScan()

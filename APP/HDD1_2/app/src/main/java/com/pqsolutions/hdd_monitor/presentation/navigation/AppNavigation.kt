@@ -111,6 +111,7 @@ fun AppNavigation(
                         onLogoutClick = { handleLogout(viewModel) },
                         onViewNotificationHistoryClick = { safeNavigate(navController, Screen.NotificationHistory.route) },
                         onViewEventsClick = { safeNavigate(navController, Screen.Events.route) },
+                        onConfigureEsp32Click = { safeNavigate(navController, Screen.BleConfig.route) },
                         hasPendingNotifications = hasPendingNotifications,
                         selectedPanelId = panelId
                     )

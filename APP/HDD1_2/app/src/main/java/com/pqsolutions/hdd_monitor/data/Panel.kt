@@ -6,23 +6,25 @@ data class Panel(
     val documentName: String = "",
     val name: String = "",
     val location: String = "",
-    val esp32_id: String = "",  // ID del ESP32 asociado
+    val esp32_id: String = "",
     val clientName: String = "",
     val lastUpdate: Long = System.currentTimeMillis(),
-    val relays: List<Relay> = listOf(
+    var relays: List<Relay> = listOf(
         Relay(RELAY_ALARM, STATUS_DISC),
         Relay(RELAY_PROBLEM, STATUS_DISC),
         Relay(RELAY_SUPERVISION, STATUS_DISC)
     )
 ) : Serializable {
 
-    val overallStatus: String
-        get() = when {
-            relays.any { it.status == STATUS_DISC } ->
-                relays.filter { it.status == STATUS_DISC }
-                    .joinToString(", ") { it.name }
-            else -> STATUS_OK
-        }
+    val overallStatus: Boolean
+        get() = relays.none { it.status == STATUS_DISC }
+
+    val relaysInDisc: String
+        get() = relays.filter { it.status == STATUS_DISC }
+            .joinToString(", ") { it.name }
+
+    val hasIssues: Boolean
+        get() = !overallStatus
 
     fun toMap(): Map<String, Any?> = mapOf(
         "documentName" to documentName,
@@ -41,8 +43,7 @@ data class Panel(
         return copy(relays = updatedRelays)
     }
 
-    fun isValid(): Boolean =
-        name.isNotBlank() && location.isNotBlank()
+    fun isValid(): Boolean = name.isNotBlank() && location.isNotBlank()
 
     fun hasValidESP32(): Boolean = esp32_id.isNotEmpty()
 

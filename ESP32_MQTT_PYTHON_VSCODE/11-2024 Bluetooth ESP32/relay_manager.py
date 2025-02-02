@@ -25,7 +25,6 @@ class RelayManager:
                     self.debounce(pin_num, p, callback)
                 except Exception as e:
                     print(f"[RELAY] Error crítico en callback del pin {pin_num}: {e}")
-                    # Reiniciar interrupción
                     try:
                         p.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=None)
                         utime.sleep_ms(100)
@@ -35,18 +34,14 @@ class RelayManager:
                         print(f"[RELAY] Error fatal reiniciando interrupción: {e}")
             
             # Configurar interrupción inicial
-            pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, 
-                   handler=safe_callback)
+            pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=safe_callback)
             
-            # Leer y notificar estado inicial
+            # Solo almacenar estado inicial sin notificar
             initial_state = pin.value()
             self.relay_states[pin_num] = initial_state
-            if callback:
-                callback(pin, pin_num)
-                
             print(f"[RELAY] Pin {pin_num} configurado exitosamente")
             return pin
-            
+                
         except Exception as e:
             print(f"[RELAY] Error crítico configurando pin {pin_num}: {e}")
             return None

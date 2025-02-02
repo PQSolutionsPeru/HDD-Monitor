@@ -40,6 +40,8 @@ import org.json.JSONObject
 import java.nio.charset.Charset
 import java.util.UUID
 import javax.inject.Inject
+import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.data.UserRepository
 
 private const val TAG = "BleViewModel"
 private const val SCAN_TIMEOUT = 30000L // 30 segundos
@@ -52,7 +54,8 @@ class BleViewModel @Inject constructor(
     private val bleConnector: BleConnector,
     private val clientRepository: ClientRepository,
     private val panelRepository: PanelRepository,
-    private val esp32Repository: ESP32Repository
+    private val esp32Repository: ESP32Repository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<BleState>(BleState.Initial)
@@ -118,6 +121,44 @@ class BleViewModel @Inject constructor(
         }
     }
 
+    fun createNewPanelForNormalUser(
+        panelName: String,
+        location: String
+    ) {
+        viewModelScope.launch {
+            try {
+                if (currentESP32 == null) {
+                    _state.value = BleState.Error("No hay ESP32 seleccionado")
+                    return@launch
+                }
+
+                // Obtener el usuario actual y su clientId
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser == null) {
+                    _state.value = BleState.Error("No se encontró información del usuario")
+                    return@launch
+                }
+
+                val clientId = currentUser.clientDocName
+                if (clientId.isEmpty()) {
+                    _state.value = BleState.Error("No se encontró información del cliente")
+                    return@launch
+                }
+
+                // Usar el clientId del usuario actual
+                createNewPanel(
+                    clientId = clientId,
+                    panelName = panelName,
+                    location = location
+                )
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating panel for normal user", e)
+                _state.value = BleState.Error("Error creando panel: ${e.message}")
+            }
+        }
+    }
+
     fun hasRequiredPermissions(): Boolean =
         BlePermissionHandler.allPermissionsGranted(context)
 
@@ -173,6 +214,16 @@ class BleViewModel @Inject constructor(
                     }
                 }
             }
+        }
+    }
+
+    suspend fun isUserAdmin(): Boolean {
+        return try {
+            val currentUser = userRepository.getCurrentUser()
+            currentUser?.role == UserRole.ADMIN
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking user role", e)
+            false
         }
     }
 
@@ -511,9 +562,24 @@ class BleViewModel @Inject constructor(
         _state.value = BleState.SelectingClient(esp32Device)
     }
 
-    fun moveToCreatePanel(esp32Device: ESP32Device, clientId: String) {
+    fun moveToCreatePanel(esp32Device: ESP32Device, clientId: String?) {
         timeoutJob?.cancel()
-        _state.value = BleState.CreatingPanel(esp32Device, clientId)
+        viewModelScope.launch {
+            try {
+                val currentUser = userRepository.getCurrentUser()
+                val finalClientId = clientId ?: currentUser?.clientDocName
+
+                if (finalClientId == null) {
+                    _state.value = BleState.Error("No se pudo determinar el cliente")
+                    return@launch
+                }
+
+                _state.value = BleState.CreatingPanel(esp32Device, finalClientId)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error moving to create panel", e)
+                _state.value = BleState.Error("Error: ${e.message}")
+            }
+        }
     }
 
     fun onWifiConfigured(esp32Device: ESP32Device) {

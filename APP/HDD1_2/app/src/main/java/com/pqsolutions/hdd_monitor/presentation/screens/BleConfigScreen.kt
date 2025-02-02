@@ -54,6 +54,11 @@ fun BleConfigScreen(
     var panelLocation by remember { mutableStateOf("") }
     var showClientMenu by remember { mutableStateOf(false) }
 
+    val isAdmin = remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        isAdmin.value = viewModel.isUserAdmin()
+    }
+
     val state by viewModel.state.collectAsState()
     val devices by viewModel.devices.collectAsState()
     val clients by viewModel.clients.collectAsState()
@@ -62,7 +67,6 @@ fun BleConfigScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    // Monitorear cambios de estado
     LaunchedEffect(state) {
         Log.d(TAG, "Estado actual: $state")
         when (state) {
@@ -77,7 +81,7 @@ fun BleConfigScreen(
             }
             is BleState.WifiConfigured -> {
                 Log.d(TAG, "WiFi configurado exitosamente")
-                viewModel.startWifiConfigTimeout()  // Usar la función en lugar de acceder directamente a la constante
+                viewModel.startWifiConfigTimeout()
             }
             is BleState.WaitingForRunningMode -> {
                 Log.d(TAG, "Esperando confirmación de modo operación")
@@ -125,7 +129,6 @@ fun BleConfigScreen(
         }
     }
 
-    // Monitor de dispositivos encontrados
     LaunchedEffect(devices) {
         Log.d(TAG, "Dispositivos encontrados: ${devices.size}")
         devices.forEach { device ->
@@ -202,40 +205,61 @@ fun BleConfigScreen(
 
                     is BleState.SelectingClient -> {
                         val esp32Device = (state as BleState.SelectingClient).esp32Device
-                        ClientSelectionSection(
-                            esp32Device = esp32Device,
-                            clients = clients,
-                            selectedClientName = selectedClientName,
-                            showClientMenu = showClientMenu,
-                            onClientMenuChange = { showClientMenu = it },
-                            onClientSelect = { client ->
-                                Log.d(TAG, "Cliente seleccionado: ${client.name}")
-                                selectedClientName = client.name
-                                selectedClientId = client.documentName
-                                showClientMenu = false
-                            },
-                            onContinueClick = {
-                                viewModel.moveToCreatePanel(esp32Device, selectedClientId)
-                            }
-                        )
+                        if (isAdmin.value) {
+                            ClientSelectionSection(
+                                esp32Device = esp32Device,
+                                clients = clients,
+                                selectedClientName = selectedClientName,
+                                showClientMenu = showClientMenu,
+                                onClientMenuChange = { showClientMenu = it },
+                                onClientSelect = { client ->
+                                    Log.d(TAG, "Cliente seleccionado: ${client.name}")
+                                    selectedClientName = client.name
+                                    selectedClientId = client.documentName
+                                    showClientMenu = false
+                                },
+                                onContinueClick = {
+                                    viewModel.moveToCreatePanel(esp32Device, selectedClientId)
+                                }
+                            )
+                        } else {
+                            CreatePanelSection(
+                                esp32Device = esp32Device,
+                                panelName = panelName,
+                                panelLocation = panelLocation,
+                                onPanelNameChange = { panelName = it },
+                                onPanelLocationChange = { panelLocation = it },
+                                onCreateClick = {
+                                    viewModel.createNewPanelForNormalUser(
+                                        panelName = panelName,
+                                        location = panelLocation
+                                    )
+                                }
+                            )
+                        }
                     }
 
                     is BleState.CreatingPanel -> {
                         val esp32Device = (state as BleState.CreatingPanel).esp32Device
                         CreatePanelSection(
                             esp32Device = esp32Device,
-                            clientId = selectedClientId,
                             panelName = panelName,
                             panelLocation = panelLocation,
                             onPanelNameChange = { panelName = it },
                             onPanelLocationChange = { panelLocation = it },
                             onCreateClick = {
-                                Log.d(TAG, "Creando panel: $panelName para cliente: $selectedClientId")
-                                viewModel.createNewPanel(
-                                    clientId = selectedClientId,
-                                    panelName = panelName,
-                                    location = panelLocation
-                                )
+                                if (isAdmin.value) {
+                                    viewModel.createNewPanel(
+                                        clientId = selectedClientId,
+                                        panelName = panelName,
+                                        location = panelLocation
+                                    )
+                                } else {
+                                    viewModel.createNewPanelForNormalUser(
+                                        panelName = panelName,
+                                        location = panelLocation
+                                    )
+                                }
                             }
                         )
                     }
@@ -274,7 +298,6 @@ fun BleConfigScreen(
         }
     }
 
-    // Diálogos
     if (showPermissionDialog) {
         PermissionDialog(
             onDismiss = { showPermissionDialog = false },
@@ -486,11 +509,9 @@ private fun ClientSelectionSection(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CreatePanelSection(
     esp32Device: ESP32Device,
-    clientId: String,
     panelName: String,
     panelLocation: String,
     onPanelNameChange: (String) -> Unit,
