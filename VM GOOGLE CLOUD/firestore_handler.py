@@ -1,4 +1,6 @@
 from google.cloud import firestore
+import firebase_admin
+from firebase_admin import credentials, messaging
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -7,12 +9,22 @@ from notification_handler import NotificationHandler
 
 class FirestoreHandler:
     def __init__(self):
-        self.db = firestore.Client(project='fir-hdd-monitor-d00de')
+        # Primero inicializar Firebase Admin con las credenciales
+        creds = firebase_admin.credentials.Certificate('/home/pqsolutionsperu/vm-service-key.json')
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(creds)
+            
+        # Luego inicializar Firestore
+        self.db = firestore.Client(
+            project='fir-hdd-monitor-d00de',
+            credentials=creds.get_credential()
+        )
+                    
         self.notification_handler = NotificationHandler(self.db)
         self._watch_references = []
-        self._relay_states = {}  # Caché para estados de relays
+        self._relay_states = {}
         self._initial_load_complete = False
-        self._events_initial_snapshots = set()  # Para rastrear snapshots iniciales
+        self._events_initial_snapshots = set()
 
     def _cache_relay_state(self, relay_path: str, state: Dict[str, Any]):
         """Almacena el estado de un relay en el caché local"""
@@ -112,47 +124,6 @@ class FirestoreHandler:
 
     def watch_relay_states(self):
         """Observa cambios en estados de relays en todos los paneles"""
-        def on_snapshot(doc_snapshot, changes, read_time):
-            if not self._initial_load_complete:
-                # Cargar estado inicial de todos los relays
-                for doc in doc_snapshot:
-                    self._cache_relay_state(doc.reference.path, doc.to_dict())
-                self._initial_load_complete = True
-                logging.info("Estado inicial de relays cargado")
-                return
-
-            for change in changes:
-                try:
-                    if change.type.name == 'MODIFIED':
-                        doc = change.document
-                        new_data = doc.to_dict()
-                        relay_path = doc.reference.path
-                        
-                        # Obtener estado anterior del caché
-                        cached_state = self._get_cached_relay_state(relay_path)
-                        
-                        logging.info(f"Cambio detectado en relay: {doc.id}")
-                        logging.info(f"Estado anterior (caché): {cached_state.get('status') if cached_state else None}")
-                        logging.info(f"Nuevo estado: {new_data.get('status')}")
-                        
-                        # Solo procesar si hay un cambio real en el estado
-                        if (cached_state and 
-                            cached_state.get('status') != new_data.get('status') and
-                            new_data.get('source', '') != 'mqtt'):
-                            
-                            logging.info(f"Procesando cambio real de estado en relay {doc.id}")
-                            self.notification_handler.process_relay_update(
-                                doc.reference,
-                                {'status': cached_state.get('status')},
-                                new_data
-                            )
-                            
-                        # Actualizar caché con el nuevo estado
-                        self._cache_relay_state(relay_path, new_data)
-                        
-                except Exception as e:
-                    logging.error(f"Error procesando cambio de relay: {e}", exc_info=True)
-
         try:
             # Obtener todos los clientes
             clients_ref = self.db.collection('hdd-monitor/accounts/clients')
@@ -164,14 +135,49 @@ class FirestoreHandler:
                 panels = panels_ref.stream()
 
                 for panel in panels:
-                    # Observar colección de relays de cada panel
+                    # Obtener estado inicial de los relays
                     relays_ref = panels_ref.document(panel.id).collection('relays')
-                    watch = relays_ref.on_snapshot(on_snapshot)
+                    for relay_doc in relays_ref.stream():
+                        self._relay_states[relay_doc.reference.path] = relay_doc.to_dict()
+
+                    # Observar colección de relays de cada panel
+                    watch = relays_ref.on_snapshot(self._on_relay_snapshot)
                     self._watch_references.append(watch)
                     logging.info(f"Observador de relays iniciado para panel {panel.id} del cliente {client.id}")
 
         except Exception as e:
             logging.error(f"Error iniciando observadores de relays: {e}", exc_info=True)
+
+    def _on_relay_snapshot(self, doc_snapshot, changes, read_time):
+        """Maneja cambios en los relays"""
+        for change in changes:
+            try:
+                if change.type.name == 'MODIFIED':
+                    doc = change.document
+                    new_data = doc.to_dict()
+                    doc_path = doc.reference.path
+                    
+                    # Obtener estado anterior del caché
+                    old_data = self._relay_states.get(doc_path)
+                    
+                    if old_data is None:
+                        # Si no hay estado anterior en caché, obtenerlo de Firestore
+                        old_data = {'status': new_data.get('status')}
+                        self._relay_states[doc_path] = old_data
+                    
+                    logging.info(f"Cambio detectado en relay: {doc.id}")
+                    logging.info(f"Estado anterior: {old_data.get('status')}")
+                    logging.info(f"Nuevo estado: {new_data.get('status')}")
+                    
+                    # Procesar cambio de estado y notificar solo si hay cambio real
+                    if old_data.get('status') != new_data.get('status'):
+                        self.notification_handler.process_relay_update(doc.reference, old_data, new_data)
+                    
+                    # Actualizar caché con el nuevo estado
+                    self._relay_states[doc_path] = new_data
+                    
+            except Exception as e:
+                logging.error(f"Error procesando cambio de relay: {e}", exc_info=True)
 
     def handle_panel_message(self, topic: str, payload: Dict[str, Any]):
         """Maneja mensajes MQTT de paneles"""

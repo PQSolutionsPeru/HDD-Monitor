@@ -13,9 +13,9 @@ logging.basicConfig(
 # Configuración MQTT
 MQTT_BROKER = 'node02.myqtthub.com'
 MQTT_PORT = 8883
-MQTT_CLIENT_ID = 'compute_engine'
-MQTT_USER = 'compute_engine'
-MQTT_PASSWORD = 'compute_engine'
+MQTT_CLIENT_ID = 'mqtt_firestore_handler'
+MQTT_USER = 'mqtt_firestore_handler'
+MQTT_PASSWORD = 'mqtt_firestore_handler'
 
 def on_connect(client, userdata, flags, rc):
     """Callback que se ejecuta cuando se conecta al broker"""

@@ -8,123 +8,159 @@ from config import MQTT_CONFIG
 
 class MQTTClient:
     def __init__(self, message_handler: Callable):
-        # Volvemos a MQTT v3.1.1 para mejor compatibilidad
+        """Inicializa el cliente MQTT"""
+        # Usar client_id fijo en lugar de uno con timestamp
+        self.client_id = MQTT_CONFIG['CLIENT_ID']
         self.client = mqtt.Client(
-            client_id=MQTT_CONFIG['CLIENT_ID'],
+            client_id=self.client_id,
             clean_session=True,
             protocol=mqtt.MQTTv311
         )
         self.message_handler = message_handler
+        self.connected = False
         self.setup_client()
 
     def setup_client(self):
-        # Configurar credenciales
-        self.client.username_pw_set(MQTT_CONFIG['USER'], MQTT_CONFIG['PASSWORD'])
-        
-        # Configurar TLS
-        self.client.tls_set(
-            ca_certs=MQTT_CONFIG['TLS_CA_CERTS'],
-            tls_version=ssl.PROTOCOL_TLSv1_2,
-            cert_reqs=ssl.CERT_REQUIRED,
-            ciphers='ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384'
-        )
-        
-        # Configurar callbacks
-        self.client.on_connect = self._on_connect
-        self.client.on_message = self._on_message
-        self.client.on_disconnect = self._on_disconnect
-        
-        # Configurar will message
-        self.client.will_set(
-            f"system/status/{MQTT_CONFIG['CLIENT_ID']}",
-            payload=json.dumps({
+        """Configura el cliente MQTT"""
+        try:
+            # Configurar credenciales
+            self.client.username_pw_set(MQTT_CONFIG['USER'], MQTT_CONFIG['PASSWORD'])
+            
+            # Configuración TLS similar a la que funciona en el debug
+            context = ssl.create_default_context()
+            context.load_verify_locations(MQTT_CONFIG['TLS_CA_CERTS'])
+            context.check_hostname = False  # Importante: igual que en el script de debug
+            
+            self.client.tls_set_context(context)
+            self.client.tls_insecure_set(False)
+            
+            # Callbacks
+            self.client.on_connect = self._on_connect
+            self.client.on_message = self._on_message
+            self.client.on_disconnect = self._on_disconnect
+            self.client.on_subscribe = self._on_subscribe
+            
+            # Will message
+            will_payload = json.dumps({
                 "status": "OFFLINE",
+                "client_id": self.client_id,
                 "timestamp": int(time.time() * 1000)
-            }),
-            qos=MQTT_CONFIG['QOS'],
-            retain=True
-        )
+            })
+            self.client.will_set(
+                f"system/status/{self.client_id}",
+                payload=will_payload,
+                qos=2,
+                retain=True
+            )
+            
+            logging.info(f"Cliente MQTT configurado con ID: {self.client_id}")
+            
+        except Exception as e:
+            logging.error(f"Error configurando cliente MQTT: {str(e)}", exc_info=True)
+            raise
+
+    def connect_and_loop(self):
+        """Maneja la conexión y reconexión"""
+        retry_count = 0
+        max_retries = 10
+        
+        while True:
+            try:
+                if not self.connected:
+                    logging.info(f"Intentando conexión MQTT a {MQTT_CONFIG['BROKER']}:{MQTT_CONFIG['PORT']}...")
+                    
+                    self.client.connect(
+                        MQTT_CONFIG['BROKER'],
+                        MQTT_CONFIG['PORT'],
+                        keepalive=60
+                    )
+                
+                retry_count = 0
+                self.client.loop_forever()
+                
+            except Exception as e:
+                retry_count += 1
+                delay = min(2 ** retry_count, 60)
+                
+                logging.error(f"Error en conexión MQTT (intento {retry_count}): {str(e)}")
+                
+                try:
+                    self.client.disconnect()
+                except:
+                    pass
+                
+                self.connected = False
+                time.sleep(delay)
+                
+                if retry_count >= max_retries:
+                    logging.warning("Reiniciando cliente MQTT...")
+                    self.client = mqtt.Client(
+                        client_id=self.client_id,
+                        clean_session=True,
+                        protocol=mqtt.MQTTv311
+                    )
+                    self.setup_client()
+                    retry_count = 0
 
     def _on_connect(self, client, userdata, flags, rc):
-        """Callback para cuando se establece la conexión"""
+        """Callback de conexión"""
         if rc == 0:
-            logging.info("Conectado al Broker MQTT!")
+            self.connected = True
+            logging.info("Conectado al broker MQTT!")
             
             # Publicar estado online
+            online_payload = json.dumps({
+                "status": "ONLINE",
+                "client_id": self.client_id,
+                "timestamp": int(time.time() * 1000)
+            })
             self.client.publish(
-                f"system/status/{MQTT_CONFIG['CLIENT_ID']}",
-                payload=json.dumps({
-                    "status": "ONLINE",
-                    "timestamp": int(time.time() * 1000)
-                }),
-                qos=MQTT_CONFIG['QOS'],
+                f"system/status/{self.client_id}",
+                payload=online_payload,
+                qos=2,
                 retain=True
             )
             
             # Suscribirse a tópicos
-            topics = [
-                ("clients/+/panels/+/#", MQTT_CONFIG['QOS']),
-                ("system/status/+", MQTT_CONFIG['QOS']),
-                ("esp32/register/+", MQTT_CONFIG['QOS'])
-            ]
-            
-            for topic, qos in topics:
-                self.client.subscribe(topic, qos)
-                logging.info(f"Suscrito a: {topic} (QoS {qos})")
+            self._subscribe_to_topics()
         else:
-            error_messages = {
-                1: "Versión de protocolo incorrecta",
-                2: "Identificador rechazado",
-                3: "Servidor no disponible",
-                4: "Credenciales incorrectas",
-                5: "No autorizado"
-            }
-            error_msg = error_messages.get(rc, f"Error desconocido: {rc}")
-            logging.error(f"Error de conexión: {error_msg}")
+            self.connected = False
+            logging.error(f"Error de conexión MQTT, código: {rc}")
+
+    def _subscribe_to_topics(self):
+        """Suscribe a los tópicos necesarios"""
+        topics = [
+            ("clients/+/panels/+/#", 2),
+            ("system/status/+", 2),
+            ("esp32/register/+", 2)
+        ]
+        
+        for topic, qos in topics:
+            try:
+                result, mid = self.client.subscribe(topic, qos)
+                if result == mqtt.MQTT_ERR_SUCCESS:
+                    logging.info(f"Suscrito a: {topic}")
+            except Exception as e:
+                logging.error(f"Error en suscripción a {topic}: {e}")
 
     def _on_message(self, client, userdata, msg):
-        """Callback para cuando se recibe un mensaje"""
-        self.message_handler(msg)
+        """Procesa mensajes recibidos"""
+        try:
+            if msg.retain:
+                logging.info(f"Ignorando mensaje retain en {msg.topic}")
+                return
+            self.message_handler(msg)
+        except Exception as e:
+            logging.error(f"Error procesando mensaje: {e}")
 
     def _on_disconnect(self, client, userdata, rc):
-        """Callback para cuando se desconecta del broker"""
+        """Maneja desconexiones"""
+        self.connected = False
         if rc != 0:
             logging.warning(f"Desconexión inesperada, código: {rc}")
-        
-        try:
-            self.client.publish(
-                f"system/status/{MQTT_CONFIG['CLIENT_ID']}",
-                payload=json.dumps({
-                    "status": "OFFLINE",
-                    "timestamp": int(time.time() * 1000)
-                }),
-                qos=MQTT_CONFIG['QOS'],
-                retain=True
-            )
-        except Exception as e:
-            logging.error(f"Error publicando estado offline: {e}")
+        else:
+            logging.info("Desconexión normal del broker MQTT")
 
-    def connect_and_loop(self):
-        """Inicia la conexión y el loop de eventos"""
-        retry_count = 0
-        while True:
-            try:
-                self.client.connect(
-                    MQTT_CONFIG['BROKER'],
-                    MQTT_CONFIG['PORT'],
-                    keepalive=MQTT_CONFIG['KEEPALIVE']
-                )
-                retry_count = 0
-                self.client.loop_forever()
-            except Exception as e:
-                retry_count += 1
-                delay = min(
-                    MQTT_CONFIG['RECONNECT_DELAY_MIN'] * (2 ** retry_count),
-                    MQTT_CONFIG['RECONNECT_DELAY_MAX']
-                )
-                logging.error(f"Error en conexión (intento {retry_count}): {e}")
-                
-                if retry_count >= MQTT_CONFIG['MAX_RETRIES']:
-                    raise Exception("Máximo de reintentos alcanzado")
-                    
-                time.sleep(delay)
+    def _on_subscribe(self, client, userdata, mid, granted_qos):
+        """Confirma suscripciones"""
+        logging.info(f"Suscripción confirmada con QoS: {granted_qos}")

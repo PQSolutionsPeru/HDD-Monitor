@@ -5,12 +5,11 @@ from firebase_admin import messaging
 import firebase_admin
 from datetime import datetime
 import pytz
+import time
 
 class NotificationHandler:
     def __init__(self, db: firestore.Client):
         self.db = db
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app()
 
     def get_account_name(self, account_id: str, role: str = None) -> str:
         """Obtiene el nombre de la cuenta basado en su ID y rol"""
@@ -40,7 +39,6 @@ class NotificationHandler:
             return 'Usuario desconocido'
 
     def process_event_update(self, event_ref: firestore.DocumentReference, old_data: Dict[str, Any], new_data: Dict[str, Any]):
-        """Procesa actualizaciones de eventos y crea notificaciones"""
         try:
             path_parts = event_ref.path.split('/')
             client_id = path_parts[3]
@@ -121,6 +119,7 @@ class NotificationHandler:
 
         except Exception as e:
             logging.error(f"Error en process_event_update: {e}", exc_info=True)
+            raise
 
     def get_event_message(self, update_type: str, event_data: Dict[str, Any]) -> str:
         """Genera el mensaje de notificación según el tipo de actualización"""
@@ -157,7 +156,6 @@ class NotificationHandler:
         return messages.get(update_type, '')
 
     def process_relay_update(self, relay_ref: firestore.DocumentReference, old_data: Dict[str, Any], new_data: Dict[str, Any]):
-        """Procesa actualizaciones de relays y crea notificaciones"""
         try:
             if old_data.get('status') != new_data.get('status'):
                 path_parts = relay_ref.path.split('/')
@@ -183,6 +181,7 @@ class NotificationHandler:
         
         except Exception as e:
             logging.error(f"Error en process_relay_update: {e}", exc_info=True)
+            raise
 
     def send_fcm_notifications(self, client_id: str, notification_data: Dict[str, Any], notification_type: str):
         """Envía notificaciones FCM a usuarios y administradores"""
@@ -199,43 +198,39 @@ class NotificationHandler:
             client_doc = self.db.document(f'hdd-monitor/accounts/clients/{client_id}').get()
             client_data = client_doc.to_dict() or {}
             client_name = client_data.get('name', '')
-            
-            # Preparar mensaje base y convertir a strings
-            base_data = {
-                'clientDocName': str(client_id),
-                'timestamp': str(int(datetime.now().timestamp() * 1000))
-            }
 
+            # Crear notificación según el tipo
             if notification_type == 'relay':
-                relay_data = {
-                    'relayName': str(notification_data.get('relay', '')),
-                    'oldStatus': str(notification_data.get('old_status', '')),
-                    'newStatus': str(notification_data.get('state', '')),
-                    'type': 'relay',
-                    'panelDocName': str(notification_data.get('panel_id', ''))
-                }
-                base_data.update(relay_data)
-                
                 notification = messaging.Notification(
                     title=f"{client_name} - Cambio de Estado",
                     body=notification_data.get('message', '')
                 )
+                base_data = {
+                    'clientDocName': str(client_id),
+                    'relayName': str(notification_data.get('relay', '')),
+                    'oldStatus': str(notification_data.get('old_status', '')),
+                    'newStatus': str(notification_data.get('state', '')),
+                    'type': 'relay',
+                    'panelDocName': str(notification_data.get('panel_id', '')),
+                    'timestamp': str(int(time.time() * 1000))
+                }
             else:
-                event_data = {
+                notification = messaging.Notification(
+                    title=f"Evento {notification_data.get('type', '')}",
+                    body=notification_data.get('message', '')
+                )
+                base_data = {
+                    'clientDocName': str(client_id),
                     'eventId': str(notification_data.get('event_id', '')),
                     'eventType': str(notification_data.get('type', '')),
                     'status': str(notification_data.get('status', '')),
                     'action': str(notification_data.get('action', '')),
                     'type': 'event',
-                    'panelDocName': str(notification_data.get('panel_id', ''))
+                    'panelDocName': str(notification_data.get('panel_id', '')),
+                    'timestamp': str(int(time.time() * 1000))
                 }
-                base_data.update(event_data)
-                
-                notification = messaging.Notification(
-                    title=f"Evento {notification_data.get('type', '')}",
-                    body=notification_data.get('message', '')
-                )
 
+            # Configuración de Android
             android_config = messaging.AndroidConfig(
                 priority='high',
                 notification=messaging.AndroidNotification(
@@ -246,10 +241,13 @@ class NotificationHandler:
                 )
             )
 
-            # Asegurarse que todos los valores son strings
+            # Asegurar que todos los valores son strings
             message_data = {k: str(v) if v is not None else '' for k, v in base_data.items()}
 
-            # Enviar a usuarios
+            # Batch para actualizar tokens inválidos
+            batch = self.db.batch()
+            
+            # Enviar a usuarios del cliente
             for user_doc in users_snap:
                 user_data = user_doc.to_dict()
                 if token := user_data.get('fcmToken'):
@@ -260,10 +258,21 @@ class NotificationHandler:
                             token=token,
                             android=android_config
                         )
-                        messaging.send(message)
-                        logging.info(f"Notificación enviada a usuario: {user_doc.id}")
+                        response = messaging.send(message)
+                        logging.info(f"Notificación enviada a usuario {user_doc.id}. Response: {response}")
+                    except messaging.UnregisteredError as e:
+                        logging.warning(f"Token FCM no registrado para usuario {user_doc.id}: {e}")
+                        batch.update(user_doc.reference, {'fcmToken': None})
+                    except messaging.QuotaExceededError as e:
+                        logging.error(f"Cuota excedida para usuario {user_doc.id}: {e}")
+                    except messaging.ThirdPartyAuthError as e:
+                        logging.error(f"Error de autenticación para usuario {user_doc.id}: {e}")
+                    except messaging.SenderIdMismatchError as e:
+                        logging.error(f"Error de Sender ID para usuario {user_doc.id}: {e}")
+                    except messaging.ApiCallError as e:
+                        logging.error(f"Error de API para usuario {user_doc.id}: {e}")
                     except Exception as e:
-                        logging.error(f"Error enviando FCM a usuario: {e}")
+                        logging.error(f"Error enviando FCM a usuario {user_doc.id}: {str(e)}")
 
             # Enviar a administradores
             for admin_doc in admins_snap:
@@ -276,11 +285,39 @@ class NotificationHandler:
                             token=token,
                             android=android_config
                         )
-                        messaging.send(message)
-                        logging.info(f"Notificación enviada a admin: {admin_doc.id}")
+                        response = messaging.send(message)
+                        logging.info(f"Notificación enviada a admin {admin_doc.id}. Response: {response}")
+                    except messaging.UnregisteredError as e:
+                        logging.warning(f"Token FCM no registrado para admin {admin_doc.id}: {e}")
+                        batch.update(admin_doc.reference, {'fcmToken': None})
+                    except messaging.QuotaExceededError as e:
+                        logging.error(f"Cuota excedida para admin {admin_doc.id}: {e}")
+                    except messaging.ThirdPartyAuthError as e:
+                        logging.error(f"Error de autenticación para admin {admin_doc.id}: {e}")
+                    except messaging.SenderIdMismatchError as e:
+                        logging.error(f"Error de Sender ID para admin {admin_doc.id}: {e}")
+                    except messaging.ApiCallError as e:
+                        logging.error(f"Error de API para admin {admin_doc.id}: {e}")
                     except Exception as e:
-                        logging.error(f"Error enviando FCM a admin: {e}")
+                        logging.error(f"Error enviando FCM a admin {admin_doc.id}: {str(e)}")
 
+            # Confirmar actualizaciones de tokens inválidos
+            batch.commit()
+
+            # Crear documento de notificación
+            try:
+                notifications_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
+                notification_data['date_time'] = datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M')
+                notification_data['lastUpdate'] = datetime.now(pytz.UTC)
+                notification_data['documentName'] = f"notification_{client_id}_{int(time.time() * 1000)}"
+                notification_data['isRead'] = False
+                
+                notifications_ref.document(notification_data['documentName']).set(notification_data)
+                
+            except Exception as e:
+                logging.error(f"Error guardando notificación en Firestore: {e}")
+
+            # Limpiar notificaciones antiguas
             self.cleanup_notifications(client_id)
 
         except Exception as e:

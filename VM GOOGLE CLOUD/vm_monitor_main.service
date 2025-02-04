@@ -7,6 +7,7 @@ StartLimitIntervalSec=300
 StartLimitBurst=5
 
 [Service]
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/home/pqsolutionsperu/vm-service-key.json
 Type=simple
 User=pqsolutionsperu
 Group=pqsolutionsperu

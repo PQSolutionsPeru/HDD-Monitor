@@ -7,7 +7,7 @@ import json
 import time
 import paho.mqtt.client as mqtt
 import ssl
-from config import ESP32_MQTT_CONFIG as MQTT_CONFIG
+from config import ESP32_CONFIG_MQTT as MQTT_CONFIG
 
 # Estados del ESP32
 ESP32_STATES = {
@@ -125,14 +125,14 @@ class ESP32ConfigManager:
                 'panel_id': panel_id,
                 'panel_name': panel_data.get('name', ''),
                 'location': panel_data.get('location', ''),
-                'status': ESP32_STATES['REGISTERED'],
+                'status': ESP32_STATES['REGISTERED'],  # Estado inicial para configuración
                 'relays': relays,
                 'mqtt': {
                     'broker': MQTT_CONFIG['BROKER'],
                     'port': MQTT_CONFIG['PORT'],
-                    'user': esp32_id,
-                    'password': esp32_id,
-                    'client_id': esp32_id,
+                    'user': MQTT_CONFIG['USER'],
+                    'password': MQTT_CONFIG['PASSWORD'],
+                    'client_id': f"esp32_{esp32_id}",
                     'topics': {
                         'status': f"clients/{client_id}/panels/{panel_id}/status",
                         'relays': f"clients/{client_id}/panels/{panel_id}/relays",
@@ -149,6 +149,12 @@ class ESP32ConfigManager:
 
             # Log detallado antes de enviar
             config_json = json.dumps(config)
+            logging.info(f"Configuración JSON a enviar: {config_json}")
+            
+            # Verificar que el campo status está presente
+            parsed_config = json.loads(config_json)
+            if 'status' not in parsed_config:
+                logging.error("Campo 'status' no presente en la configuración JSON")
             
             # Enviar configuración
             self.mqtt_client.publish(
@@ -231,13 +237,21 @@ class ESP32ConfigManager:
     def _setup_mqtt_client(self) -> mqtt.Client:
         """Configura y retorna el cliente MQTT"""
         client = mqtt.Client(
-            client_id=MQTT_CONFIG['CLIENT_ID'],
+            client_id=ESP32_CONFIG_MQTT['CLIENT_ID'],
             clean_session=True,
             protocol=mqtt.MQTTv311
         )
         
         # Configurar credenciales
         client.username_pw_set(MQTT_CONFIG['USER'], MQTT_CONFIG['PASSWORD'])
+        
+        # Configurar TLS
+        client.tls_set(
+            ca_certs=MQTT_CONFIG['TLS_CA_CERTS'],
+            tls_version=ssl.PROTOCOL_TLSv1_2,
+            cert_reqs=ssl.CERT_REQUIRED,
+            ciphers='ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384'
+        )
         
         # Configurar callbacks
         client.on_connect = self._on_connect
@@ -424,7 +438,8 @@ class ESP32ConfigManager:
     def _check_pending_configurations(self):
         """Verifica ESP32s que necesitan configuración al inicio"""
         try:
-            esp32s_ref = self.db.collection('hdd-monitor/esp32/registered')
+            # Corregir la ruta de acceso a la colección 'registered'
+            esp32s_ref = self.db.collection('esp32/registered/documents')
             esp32s = esp32s_ref.stream()
 
             for esp32_doc in esp32s:
