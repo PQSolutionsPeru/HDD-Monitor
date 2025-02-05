@@ -18,6 +18,7 @@ import com.pqsolutions.hdd_monitor.presentation.screens.*
 import com.pqsolutions.hdd_monitor.presentation.state.MainUiEvent
 import com.pqsolutions.hdd_monitor.presentation.state.MainUiState
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
+import com.pqsolutions.hdd_monitor.presentation.viewmodel.LoginViewModel
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
 
@@ -65,7 +66,9 @@ fun AppNavigation(
         }
 
         composable(Screen.Login.route) {
+            val loginViewModel = hiltViewModel<LoginViewModel>()
             LoginScreen(
+                loginViewModel = loginViewModel,
                 onLoginClick = { email, password ->
                     Log.d(TAG, "Login attempt with email: $email")
                     viewModel.onEvent(MainUiEvent.Login(email, password))
