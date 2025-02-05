@@ -161,9 +161,8 @@ class FirestoreHandler:
                     old_data = self._relay_states.get(doc_path)
                     
                     if old_data is None:
-                        # Si no hay estado anterior en caché, obtenerlo de Firestore
-                        old_data = {'status': new_data.get('status')}
-                        self._relay_states[doc_path] = old_data
+                        logging.error(f"Error crítico: Estado no encontrado en caché para relay {doc.id}")
+                        return
                     
                     logging.info(f"Cambio detectado en relay: {doc.id}")
                     logging.info(f"Estado anterior: {old_data.get('status')}")
