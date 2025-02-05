@@ -251,7 +251,7 @@ class PanelRepository @Inject constructor(
             }
         }
 
-        val panelDocName = IdManager.generatePanelDocumentName(clientDocName)
+        val panelDocName = IdManager.generatePanelDocumentName(panel.name, clientDocName)
         Log.d(TAG, "Creating new panel: $panelDocName")
 
         // Ejecutar todo en una transacción

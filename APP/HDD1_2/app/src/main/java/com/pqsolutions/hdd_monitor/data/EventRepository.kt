@@ -144,7 +144,7 @@ class EventRepository @Inject constructor(
         val now = LocalDateTime.now().format(DATE_FORMATTER)
 
         for (clientDocName in clientDocNames) {
-            val eventDocName = IdManager.generateEventDocumentName(clientDocName)
+            val eventDocName = IdManager.generateEventDocumentName("Evento", clientDocName)
             Log.d(TAG, "Creating new event with document name: $eventDocName for client: $clientDocName")
 
             var panelName: String? = null

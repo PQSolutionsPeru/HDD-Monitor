@@ -136,7 +136,7 @@ fun AdminDashboardScreen(
 
                         items(
                             items = clientPanels,
-                            key = { panel -> "${panel.clientName}_${panel.documentName}" }
+                            key = { panel -> "${panel.documentName}_${panel.lastUpdate}" }
                         ) { panel ->
                             AdminPanelItem(panel)
                             Spacer(modifier = Modifier.height(8.dp))

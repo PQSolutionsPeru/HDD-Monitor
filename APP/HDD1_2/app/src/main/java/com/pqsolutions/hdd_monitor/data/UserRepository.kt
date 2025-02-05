@@ -42,7 +42,7 @@ class UserRepository @Inject constructor(
 
     suspend fun createClient(client: Client): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val documentName = IdManager.generateClientDocumentName()
+            val documentName = IdManager.generateClientDocumentName(client.name)
             val clientData = mapOf(
                 "documentName" to documentName,
                 "name" to client.name
@@ -208,8 +208,8 @@ class UserRepository @Inject constructor(
     suspend fun createUser(user: UserData): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val documentName = when (user.role) {
-                UserRole.ADMIN -> IdManager.generateAdminDocumentName()
-                UserRole.USER -> IdManager.generateUserDocumentName(user.clientDocName)
+                UserRole.ADMIN -> IdManager.generateAdminDocumentName(user.name)
+                UserRole.USER -> IdManager.generateUserDocumentName(user.name, user.clientDocName)
             }
 
             val collectionPath = when (user.role) {

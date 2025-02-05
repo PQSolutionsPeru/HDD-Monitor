@@ -96,11 +96,12 @@ class DashboardViewModel @Inject constructor(
     private fun updatePanels(panels: List<Panel>, clientsMap: Map<String, String>) {
         Log.d(TAG, "Updating panels - Count: ${panels.size}")
         _uiState.update { currentState ->
-            val groupedPanels = panels.groupBy { clientsMap[it.clientName] ?: it.clientName }
+            val uniquePanels = panels.distinctBy { it.documentName }
+            val groupedPanels = uniquePanels.groupBy { clientsMap[it.clientName] ?: it.clientName }
 
             currentState.copy(
                 isLoading = false,
-                panels = panels,
+                panels = uniquePanels,
                 groupedPanels = groupedPanels,
                 clientNames = clientsMap,
                 error = null,

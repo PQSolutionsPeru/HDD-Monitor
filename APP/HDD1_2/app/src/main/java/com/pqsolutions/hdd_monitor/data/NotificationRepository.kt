@@ -336,7 +336,7 @@ class NotificationRepository @Inject constructor(
         relayName: String,
         message: String
     ): Result<Unit> = runCatching {
-        val notificationDocName = IdManager.generateNotificationDocumentName(clientDocName)
+        val notificationDocName = IdManager.generateNotificationDocumentName(message, clientDocName)
         val now = LocalDateTime.now(Constants.TimeZone.PERU_ZONE)
 
         val notificationData = hashMapOf(

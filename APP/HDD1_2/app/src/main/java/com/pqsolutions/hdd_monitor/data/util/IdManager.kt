@@ -1,88 +1,88 @@
 package com.pqsolutions.hdd_monitor.data.util
 
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-
 object IdManager {
     // Prefijos para tipos de documentos
     const val PREFIX_ADMIN = "admin"
     private const val PREFIX_USER = "user"
     private const val PREFIX_EVENT = "event"
-    private const val PREFIX_NOTIFICATION = "notification"
+    private const val PREFIX_NOTIFICATION = "notif"
     private const val PREFIX_PANEL = "panel"
     private const val PREFIX_CLIENT = "client"
 
-    // Formato de timestamp para nombres de documentos
-    private val timestampFormatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+    // Longitud estándar para IDs
+    private const val ID_LENGTH = 8
 
-    // Longitud del componente aleatorio
-    private const val RANDOM_LENGTH = 6
+    /**
+     * Genera un ID único basado en un nombre y un prefijo
+     */
+    private fun generateUniqueId(name: String, prefix: String): String {
+        val normalizedName = name
+            .replace(Regex("[^A-Za-z0-9]"), "") // Elimina caracteres especiales
+            .take(4) // Toma los primeros 4 caracteres
+            .uppercase()
+
+        val randomPart = generateRandomString(4) // 4 caracteres aleatorios
+        return "${prefix}_${normalizedName}${randomPart}"
+    }
 
     /**
      * Genera un nombre de documento para un cliente
      */
-    fun generateClientDocumentName(): String {
-        val timestamp = LocalDateTime.now().format(timestampFormatter)
-        val random = generateRandomString(RANDOM_LENGTH)
-        return "${PREFIX_CLIENT}_${timestamp}_$random"
+    fun generateClientDocumentName(clientName: String): String {
+        return generateUniqueId(clientName, PREFIX_CLIENT)
     }
 
     /**
      * Genera un nombre de documento para un administrador
      */
-    fun generateAdminDocumentName(): String {
-        val timestamp = LocalDateTime.now().format(timestampFormatter)
-        val random = generateRandomString(RANDOM_LENGTH)
-        return "${PREFIX_ADMIN}_${timestamp}_$random"
+    fun generateAdminDocumentName(adminName: String): String {
+        return generateUniqueId(adminName, PREFIX_ADMIN)
     }
 
     /**
      * Genera un nombre de documento para un usuario dentro de un cliente
      */
-    fun generateUserDocumentName(clientDocName: String): String {
-        val timestamp = LocalDateTime.now().format(timestampFormatter)
-        val random = generateRandomString(RANDOM_LENGTH)
-        return "${PREFIX_USER}_${clientDocName}_${timestamp}_$random"
+    fun generateUserDocumentName(userName: String, clientDocName: String): String {
+        val userPart = generateUniqueId(userName, PREFIX_USER)
+        return "${userPart}_${clientDocName}"
     }
 
     /**
      * Genera un nombre de documento para un evento de un cliente
      */
-    fun generateEventDocumentName(clientDocName: String): String {
-        val timestamp = LocalDateTime.now().format(timestampFormatter)
-        val random = generateRandomString(RANDOM_LENGTH)
-        return "${PREFIX_EVENT}_${clientDocName}_${timestamp}_$random"
+    fun generateEventDocumentName(eventName: String, clientDocName: String): String {
+        val eventPart = generateUniqueId(eventName, PREFIX_EVENT)
+        return "${eventPart}_${clientDocName}"
     }
 
     /**
      * Genera un nombre de documento para una notificación de un cliente
      */
-    fun generateNotificationDocumentName(clientDocName: String): String {
-        val timestamp = LocalDateTime.now().format(timestampFormatter)
-        val random = generateRandomString(RANDOM_LENGTH)
-        return "${PREFIX_NOTIFICATION}_${clientDocName}_${timestamp}_$random"
+    fun generateNotificationDocumentName(notificationText: String, clientDocName: String): String {
+        val notifPart = generateUniqueId(notificationText, PREFIX_NOTIFICATION)
+        return "${notifPart}_${clientDocName}"
     }
 
     /**
      * Genera un nombre de documento para un panel de un cliente
      */
-    fun generatePanelDocumentName(clientDocName: String): String {
-        val timestamp = LocalDateTime.now().format(timestampFormatter)
-        val random = generateRandomString(RANDOM_LENGTH)
-        return "${PREFIX_PANEL}_${clientDocName}_${timestamp}_$random"
+    fun generatePanelDocumentName(panelName: String, clientDocName: String): String {
+        val panelPart = generateUniqueId(panelName, PREFIX_PANEL)
+        return "${panelPart}_${clientDocName}"
     }
 
     /**
      * Valida el formato de un nombre de documento
      */
     fun validateDocumentName(documentName: String, type: DocumentType): Boolean {
+        val basePattern = "[A-Z0-9]{8}"
         val pattern = when (type) {
-            DocumentType.ADMIN -> """^${PREFIX_ADMIN}_\d{14}_[A-Z0-9]{6}$"""
-            DocumentType.USER -> """^${PREFIX_USER}_${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}_\d{14}_[A-Z0-9]{6}$"""
-            DocumentType.CLIENT -> """^${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}$"""
-            DocumentType.EVENT -> """^${PREFIX_EVENT}_${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}_\d{14}_[A-Z0-9]{6}$"""
-            DocumentType.NOTIFICATION -> """^${PREFIX_NOTIFICATION}_${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}_\d{14}_[A-Z0-9]{6}$"""
-            DocumentType.PANEL -> """^${PREFIX_PANEL}_${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6}_\d{14}_[A-Z0-9]{6}$"""
+            DocumentType.ADMIN -> """^${PREFIX_ADMIN}_$basePattern$"""
+            DocumentType.CLIENT -> """^${PREFIX_CLIENT}_$basePattern$"""
+            DocumentType.USER -> """^${PREFIX_USER}_${basePattern}_(${PREFIX_CLIENT}_${basePattern})$"""
+            DocumentType.EVENT -> """^${PREFIX_EVENT}_${basePattern}_(${PREFIX_CLIENT}_${basePattern})$"""
+            DocumentType.NOTIFICATION -> """^${PREFIX_NOTIFICATION}_${basePattern}_(${PREFIX_CLIENT}_${basePattern})$"""
+            DocumentType.PANEL -> """^${PREFIX_PANEL}_${basePattern}_(${PREFIX_CLIENT}_${basePattern})$"""
         }
 
         return Regex(pattern).matches(documentName) || isLegacyDocumentName(documentName)
@@ -110,7 +110,7 @@ object IdManager {
      * Extrae el nombre del documento del cliente de un nombre de documento secundario
      */
     fun extractClientDocumentName(documentName: String): String? {
-        val pattern = """^(?:${PREFIX_EVENT}|${PREFIX_NOTIFICATION}|${PREFIX_PANEL})_(${PREFIX_CLIENT}_\d{14}_[A-Z0-9]{6})""".toRegex()
+        val pattern = """^(?:${PREFIX_EVENT}|${PREFIX_NOTIFICATION}|${PREFIX_PANEL})_[A-Z0-9]{8}_(${PREFIX_CLIENT}_[A-Z0-9]{8})""".toRegex()
         return pattern.find(documentName)?.groupValues?.get(1)
     }
 
