@@ -183,6 +183,10 @@
     <string name="error_deleting_user">Error al eliminar el usuario</string>
     <string name="error_connection">Error de conexión</string>
     <string name="error_try_again">Intente nuevamente más tarde</string>
+    <string name="confirm_finalization">Confirmar finalización</string>
+    <string name="finalize_event_confirmation_message">¿Está seguro que desea finalizar este evento? Esta acción no se puede deshacer.</string>
+    <string name="finalize">Finalizar</string>
+    <string name="event">evento</string>
 
     <!-- Mensajes WhatsApp -->
     <string name="whatsapp_event_message">Buen día, quisiera conversar sobre el evento \"%1$s\"</string>

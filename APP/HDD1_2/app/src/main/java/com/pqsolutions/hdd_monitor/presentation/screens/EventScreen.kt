@@ -52,13 +52,12 @@ fun EventScreen(
     val listState = rememberLazyListState()
     var showFilterMenu by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
+    val dialogState = rememberDialogState()
 
     LaunchedEffect(Unit) {
         if (eventId != null) {
-            // Si hay un eventId específico, cargar solo ese evento
             viewModel.loadSpecificEvent(eventId)
         } else {
-            // Si no hay eventId, cargar todos los eventos
             viewModel.loadEvents()
         }
         if (isAdmin) {
@@ -66,7 +65,6 @@ fun EventScreen(
         }
     }
 
-    // Efecto para desplazarse al evento específico si existe
     LaunchedEffect(state.events, eventId) {
         if (eventId != null && state.events.isNotEmpty()) {
             val eventIndex = state.events.indexOfFirst {
@@ -93,7 +91,6 @@ fun EventScreen(
                     onBackClick = onBackClick,
                     actions = {
                         if (eventId == null) {
-                            // Solo mostrar filtros y ordenamiento en la vista general
                             IconButton(onClick = { showFilterMenu = true }) {
                                 Icon(
                                     Icons.Default.FilterList,
@@ -172,7 +169,7 @@ fun EventScreen(
                 )
             },
             floatingActionButton = {
-                if (eventId == null) { // Solo mostrar FAB en la vista general
+                if (eventId == null) {
                     FloatingActionButton(
                         onClick = {
                             performHapticFeedback(context)
@@ -230,7 +227,18 @@ fun EventScreen(
                                 },
                                 onDeleteClick = {
                                     performHapticFeedback(context)
-                                    viewModel.deleteEvent(event.clientDocName, event.documentName)
+                                    dialogState.show {
+                                        DeleteConfirmationDialog(
+                                            itemType = "evento",
+                                            onConfirmDelete = {
+                                                viewModel.deleteEvent(event.clientDocName, event.documentName)
+                                                dialogState.dismiss()
+                                            },
+                                            onDismiss = {
+                                                dialogState.dismiss()
+                                            }
+                                        )
+                                    }
                                 },
                                 onAcceptClick = {
                                     performHapticFeedback(context)
@@ -242,11 +250,25 @@ fun EventScreen(
                                 },
                                 onFinalizeClick = {
                                     performHapticFeedback(context)
-                                    viewModel.updateEventStatus(
-                                        event.clientDocName,
-                                        event.documentName,
-                                        EventStatus.STATUS_FINALIZADO
-                                    )
+                                    dialogState.show {
+                                        ConfirmationDialog(
+                                            title = "Confirmar finalización",
+                                            message = "¿Está seguro que desea finalizar este evento? Esta acción no se puede deshacer.",
+                                            onConfirm = {
+                                                viewModel.updateEventStatus(
+                                                    event.clientDocName,
+                                                    event.documentName,
+                                                    EventStatus.STATUS_FINALIZADO
+                                                )
+                                                dialogState.dismiss()
+                                            },
+                                            onDismiss = {
+                                                dialogState.dismiss()
+                                            },
+                                            confirmText = "Finalizar",
+                                            isDestructive = true
+                                        )
+                                    }
                                 },
                                 onReopenClick = {
                                     performHapticFeedback(context)
@@ -282,6 +304,8 @@ fun EventScreen(
                     onDismiss = { viewModel.onDialogEvent(EventDialogEvent.Dismiss) }
                 )
             }
+
+            DialogHost(dialogState)
         }
     }
 }
