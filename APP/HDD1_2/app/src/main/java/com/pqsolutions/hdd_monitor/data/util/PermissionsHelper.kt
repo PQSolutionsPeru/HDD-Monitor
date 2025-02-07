@@ -51,6 +51,24 @@ class PermissionsHelper @Inject constructor(
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
     }
+    fun checkBatteryOptimizationStatus(): Boolean {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    fun getBatteryOptimizationSettingsIntent(): Intent {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        } else {
+            Intent(Settings.ACTION_SETTINGS)
+        }
+    }
+
+    fun getRequestBatteryOptimizationIntent(): Intent {
+        return Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+    }
 
     fun getNotificationSettingsIntent(): Intent {
         return Intent().apply {

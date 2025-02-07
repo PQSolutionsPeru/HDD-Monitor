@@ -205,21 +205,28 @@ class NotificationRepository @Inject constructor(
         }
     }
 
+    private var lastCleanupTime: Long = 0
+    private val CLEANUP_INTERVAL = 60 * 60 * 1000 // 1 hora
+
     private suspend fun cleanupOldNotifications(clientDocName: String) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastCleanupTime < CLEANUP_INTERVAL) {
+            return  // Evitar limpiezas frecuentes
+        }
+
         try {
-            val cutoffTime = System.currentTimeMillis() - (HOURS_TO_KEEP * 60 * 60 * 1000)
-
-            // Eliminar notificaciones más antiguas que HOURS_TO_KEEP
-            deleteNotificationsOlderThan(clientDocName, cutoffTime)
-                .onFailure { e ->
-                    Log.e(TAG, "Error limpiando notificaciones antiguas", e)
+            val cutoffTime = currentTime - (HOURS_TO_KEEP * 60 * 60 * 1000)
+            coroutineScope {
+                launch {
+                    deleteNotificationsOlderThan(clientDocName, cutoffTime)
+                        .onFailure { e -> Log.e(TAG, "Error limpiando notificaciones antiguas", e) }
                 }
-
-            // Mantener solo las últimas MAX_NOTIFICATIONS
-            keepOnlyLastN(clientDocName, MAX_NOTIFICATIONS)
-                .onFailure { e ->
-                    Log.e(TAG, "Error manteniendo últimas notificaciones", e)
+                launch {
+                    keepOnlyLastN(clientDocName, MAX_NOTIFICATIONS)
+                        .onFailure { e -> Log.e(TAG, "Error manteniendo últimas notificaciones", e) }
                 }
+            }
+            lastCleanupTime = currentTime
         } catch (e: Exception) {
             Log.e(TAG, "Error en cleanup de notificaciones", e)
         }

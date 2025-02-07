@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor.presentation
 
+import android.app.AlertDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -72,6 +73,7 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "onCreate: Iniciando aplicación")
 
         checkAndRequestPermissions()
+        checkAndSetupBatteryOptimization()
         initializeFirebase()
         createNotificationChannels()
         requestBatteryOptimizationExemption()
@@ -92,6 +94,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun checkAndSetupBatteryOptimization() {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            // Si no está desactivada la optimización de batería, mostrar diálogo
+            AlertDialog.Builder(this)
+                .setTitle("Optimización de batería")
+                .setMessage("Para asegurar el correcto funcionamiento de la aplicación, es necesario desactivar la optimización de batería. ¿Desea hacerlo ahora?")
+                .setPositiveButton("Sí") { _, _ ->
+                    requestBatteryOptimizationExemption()
+                }
+                .setNegativeButton("Más tarde") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .show()
+        }
+    }
+
     private fun startMonitoringService() {
         val serviceIntent = Intent(this, MonitoringService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -104,13 +123,27 @@ class MainActivity : ComponentActivity() {
     private fun requestBatteryOptimizationExemption() {
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
-            val intent = Intent().apply {
-                action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-                data = Uri.parse("package:$packageName")
+            try {
+                // Primero intentamos con el diálogo directo
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                // Si falla, llevamos al usuario a la configuración general de optimización de batería
+                try {
+                    val settingsIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    startActivity(settingsIntent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "No se pudo abrir la configuración de optimización de batería", e)
+                    // Como último recurso, mostrar la configuración general de la aplicación
+                    showAppSettings()
+                }
             }
-            startActivity(intent)
         }
     }
+
+
 
     private fun showAppSettings() {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {

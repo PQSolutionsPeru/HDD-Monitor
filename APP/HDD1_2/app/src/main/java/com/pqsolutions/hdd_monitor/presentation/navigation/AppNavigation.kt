@@ -137,15 +137,25 @@ fun AppNavigation(
         }
 
         composable(Screen.NotificationHistory.route) {
+            val notificationViewModel: NotificationViewModel = hiltViewModel()
             NotificationHistoryScreen(
                 notificationViewModel = notificationViewModel,
-                onBackClick = { safeNavigateBack(navController) },
+                onBackClick = {
+                    notificationViewModel.clearError()
+                    safeNavigateBack(navController)
+                },
                 hasPendingNotifications = hasPendingNotifications,
                 onNavigateToEvent = { eventId ->
-                    navController.navigate(Screen.eventDetail(eventId))
+                    navController.navigate(Screen.eventDetail(eventId)) {
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 },
                 onNavigateToPanel = { panelId ->
-                    navController.navigate(Screen.panelDetail(panelId))
+                    navController.navigate(Screen.panelDetail(panelId)) {
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
             )
         }

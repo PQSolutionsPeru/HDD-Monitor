@@ -89,44 +89,43 @@ class NotificationViewModel @Inject constructor(
             try {
                 _uiState.update { it.copy(isLoading = true) }
                 val currentUser = userRepository.getCurrentUser()
-                if (currentUser != null) {
-                    Log.d(TAG, "Inicializando notificaciones para usuario: ${currentUser.role}")
 
-                    val notificationFlow = if (currentUser.role == UserRole.ADMIN) {
-                        Log.d(TAG, "Usando flujo global de notificaciones para admin")
-                        notificationRepository.getNotificationsFlow()
-                    } else {
-                        Log.d(TAG, "Usando flujo de cliente: ${currentUser.clientDocName}")
-                        notificationRepository.getNotificationsFlow(currentUser.clientDocName)
-                    }
+                if (currentUser == null) {
+                    _uiState.update { it.copy(
+                        error = "Usuario no encontrado",
+                        isLoading = false
+                    ) }
+                    return@launch
+                }
 
-                    notificationFlow
-                        .catch { e ->
-                            Log.e(TAG, "Error collecting notifications", e)
-                            _uiState.update { it.copy(
-                                error = e.message,
-                                isLoading = false
-                            ) }
-                        }
-                        .collect { notifications ->
-                            processNotifications(notifications)
-                        }
+                Log.d(TAG, "Inicializando notificaciones para usuario: ${currentUser.role}")
+
+                val notificationFlow = if (currentUser.role == UserRole.ADMIN) {
+                    Log.d(TAG, "Usando flujo global de notificaciones para admin")
+                    notificationRepository.getNotificationsFlow()
                 } else {
-                    _uiState.update {
-                        it.copy(
-                            error = "Usuario no encontrado",
-                            isLoading = false
-                        )
+                    Log.d(TAG, "Usando flujo de cliente: ${currentUser.clientDocName}")
+                    notificationRepository.getNotificationsFlow(currentUser.clientDocName)
+                }
+
+                // Usar un único collect para evitar múltiples subscripciones
+                try {
+                    notificationFlow.collect { notifications ->
+                        processNotifications(notifications)
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error collecting notifications", e)
+                    _uiState.update { it.copy(
+                        error = e.message,
+                        isLoading = false
+                    ) }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing notifications", e)
-                _uiState.update {
-                    it.copy(
-                        error = e.message,
-                        isLoading = false
-                    )
-                }
+                _uiState.update { it.copy(
+                    error = e.message,
+                    isLoading = false
+                ) }
             }
         }
     }

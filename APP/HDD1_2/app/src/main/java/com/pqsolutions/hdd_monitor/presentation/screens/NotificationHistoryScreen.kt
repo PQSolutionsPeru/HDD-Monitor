@@ -57,11 +57,17 @@ fun NotificationHistoryScreen(
 ) {
     val uiState by notificationViewModel.uiState.collectAsState()
 
-    // Añadir manejo seguro de LaunchedEffect
+    DisposableEffect(Unit) {
+        onDispose {
+            notificationViewModel.clearError()
+        }
+    }
+
     LaunchedEffect(Unit) {
         try {
             notificationViewModel.refresh()
-            kotlinx.coroutines.delay(1000)
+            // Esperar un poco antes de marcar como leídas
+            kotlinx.coroutines.delay(500)
             notificationViewModel.markAllAsRead()
         } catch (e: Exception) {
             Log.e("NotificationHistoryScreen", "Error en LaunchedEffect", e)
