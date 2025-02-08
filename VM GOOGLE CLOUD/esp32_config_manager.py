@@ -1,4 +1,6 @@
 from google.cloud import firestore
+import firebase_admin
+from firebase_admin import credentials, messaging
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -7,6 +9,7 @@ import json
 import time
 import paho.mqtt.client as mqtt
 import ssl
+# Importar la configuración
 from config import ESP32_CONFIG_MQTT as MQTT_CONFIG
 
 # Estados del ESP32
@@ -33,18 +36,23 @@ DEFAULT_ESP32_STATUS = ESP32_STATES['AWAITING_CONFIG']
 
 class ESP32ConfigManager:
     def __init__(self):
+        # Inicializar client_id primero
+        self.client_id = MQTT_CONFIG['CLIENT_ID']
+        self.connected = False
+        self.client = None
+        
         # Inicializar Firestore
         self.db = firestore.Client(project='fir-hdd-monitor-d00de')
         
         # Inicializar cliente MQTT
-        self.mqtt_client = self._setup_mqtt_client()
+        self.client = self._setup_mqtt_client()
         
         # Caché de configuraciones
         self._config_cache = {}
         self._esp32_status = {}
 
         # Lista para mantener referencias de observadores
-        self._watch_references = [] 
+        self._watch_references = []
 
     def _handle_registration(self, esp32_id: str, payload: Dict[str, Any]):
         """Maneja el registro inicial de un ESP32"""
@@ -157,7 +165,7 @@ class ESP32ConfigManager:
                 logging.error("Campo 'status' no presente en la configuración JSON")
             
             # Enviar configuración
-            self.mqtt_client.publish(
+            self.client.publish(
                 f"esp32/config/{esp32_id}",
                 config_json,
                 qos=MQTT_CONFIG['QOS']
@@ -236,47 +244,127 @@ class ESP32ConfigManager:
 
     def _setup_mqtt_client(self) -> mqtt.Client:
         """Configura y retorna el cliente MQTT"""
-        client = mqtt.Client(
-            client_id=ESP32_CONFIG_MQTT['CLIENT_ID'],
-            clean_session=True,
-            protocol=mqtt.MQTTv311
-        )
+        try:
+            self.client = mqtt.Client(
+                client_id=MQTT_CONFIG['CLIENT_ID'], 
+                clean_session=True,
+                protocol=mqtt.MQTTv311
+            )
+            
+            # Configurar credenciales
+            self.client.username_pw_set(MQTT_CONFIG['USER'], MQTT_CONFIG['PASSWORD'])
+            
+            # Configurar TLS con más opciones de seguridad
+            context = ssl.create_default_context()
+            context.load_verify_locations(MQTT_CONFIG['TLS_CA_CERTS'])
+            context.check_hostname = False
+            context.set_ciphers('ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384')
+            
+            self.client.tls_set_context(context)
+            self.client.tls_insecure_set(False)
+            
+            # Configurar callbacks
+            self.client.on_connect = self._on_connect
+            self.client.on_message = self._on_message
+            self.client.on_disconnect = self._on_disconnect
+            
+            # Will message
+            will_payload = json.dumps({
+                "status": "OFFLINE",
+                "client_id": self.client_id,
+                "timestamp": int(time.time() * 1000)
+            }).encode('utf-8')
+            
+            self.client.will_set(
+                f"system/status/{self.client_id}",
+                payload=will_payload,
+                qos=MQTT_CONFIG['QOS'],
+                retain=True
+            )
+            
+            return self.client
+                
+        except Exception as e:
+            logging.error(f"Error configurando cliente MQTT: {str(e)}", exc_info=True)
+            raise
+
+    def connect_and_loop(self):
+        """Maneja la conexión y reconexión"""
+        retry_count = 0
+        max_retries = MQTT_CONFIG.get('MAX_RETRIES', 10)
         
-        # Configurar credenciales
-        client.username_pw_set(MQTT_CONFIG['USER'], MQTT_CONFIG['PASSWORD'])
-        
-        # Configurar TLS
-        client.tls_set(
-            ca_certs=MQTT_CONFIG['TLS_CA_CERTS'],
-            tls_version=ssl.PROTOCOL_TLSv1_2,
-            cert_reqs=ssl.CERT_REQUIRED,
-            ciphers='ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384'
-        )
-        
-        # Configurar callbacks
-        client.on_connect = self._on_connect
-        client.on_message = self._on_message
-        client.on_disconnect = self._on_disconnect
-        
-        return client
+        while True:
+            try:
+                if not self.connected:
+                    logging.info(f"Intentando conexión MQTT a {MQTT_CONFIG['BROKER']}:{MQTT_CONFIG['PORT']}...")
+                    
+                    self.client.connect(
+                        MQTT_CONFIG['BROKER'],
+                        MQTT_CONFIG['PORT'],
+                        keepalive=MQTT_CONFIG['KEEPALIVE']
+                    )
+                
+                retry_count = 0
+                self.client.loop_forever()
+                
+            except Exception as e:
+                retry_count += 1
+                delay = min(2 ** retry_count, MQTT_CONFIG.get('RECONNECT_DELAY_MAX', 60))
+                
+                logging.error(f"Error en conexión MQTT (intento {retry_count}/{max_retries}): {str(e)}")
+                
+                try:
+                    self.client.disconnect()
+                except:
+                    pass
+                
+                self.connected = False
+                time.sleep(delay)
+                
+                if retry_count >= max_retries:
+                    logging.warning("Reiniciando cliente MQTT después de alcanzar máximo número de intentos...")
+                    self.client = self._setup_mqtt_client()
+                    retry_count = 0
 
     def _on_connect(self, client, userdata, flags, rc):
         """Callback para cuando se establece la conexión MQTT"""
         if rc == 0:
+            self.connected = True
             logging.info("Conectado al Broker MQTT!")
-            # Suscribirse a tópicos relevantes
-            topics = [
-                ("esp32/network_info", MQTT_CONFIG['QOS']),  # Añadido para capturar mensajes de red
-                ("esp32/register/+", MQTT_CONFIG['QOS']),
-                ("esp32/status/+", MQTT_CONFIG['QOS']),
-                ("esp32/config/+/response", MQTT_CONFIG['QOS'])
-            ]
             
-            for topic, qos in topics:
-                client.subscribe(topic, qos)
-                logging.info(f"Suscrito a: {topic}")
+            # Publicar estado online
+            online_payload = json.dumps({
+                "status": "ONLINE",
+                "client_id": self.client_id,
+                "timestamp": int(time.time() * 1000)
+            }).encode('utf-8')
+            
+            try:
+                self.client.publish(
+                    f"system/status/{self.client_id}",
+                    payload=online_payload,
+                    qos=MQTT_CONFIG['QOS'],
+                    retain=True
+                )
+                
+                # Suscribirse a tópicos
+                topics = [
+                    ("esp32/network_info", MQTT_CONFIG['QOS']),
+                    ("esp32/register/+", MQTT_CONFIG['QOS']),
+                    ("esp32/status/+", MQTT_CONFIG['QOS']),
+                    ("esp32/config/+/response", MQTT_CONFIG['QOS'])
+                ]
+                
+                for topic, qos in topics:
+                    self.client.subscribe(topic, qos)
+                    logging.info(f"Suscrito a: {topic}")
+            except Exception as e:
+                logging.error(f"Error en operaciones post-conexión: {e}", exc_info=True)
+                self.connected = False
+                self.client.disconnect()
         else:
-            logging.error(f"Error de conexión MQTT: {rc}")
+            self.connected = False
+            logging.error(f"Error de conexión MQTT, código: {rc}")
 
     def _on_message(self, client, userdata, msg):
         """Procesa mensajes MQTT recibidos"""
@@ -384,14 +472,14 @@ class ESP32ConfigManager:
         """Inicia el gestor de configuración"""
         try:
             # Conectar al broker MQTT
-            self.mqtt_client.connect(
+            self.client.connect(
                 MQTT_CONFIG['BROKER'],
                 MQTT_CONFIG['PORT'],
                 keepalive=MQTT_CONFIG['KEEPALIVE']
             )
             
             # Iniciar loop en segundo plano
-            self.mqtt_client.loop_start()
+            self.client.loop_start()
             
             # Verificar ESP32s que necesitan configuración
             self._check_pending_configurations()
@@ -404,6 +492,28 @@ class ESP32ConfigManager:
         except Exception as e:
             logging.error(f"Error iniciando gestor de configuración: {e}", exc_info=True)
             raise
+
+    def stop(self):
+        """Detiene el gestor de configuración"""
+        try:
+            # Detener todos los observadores
+            for watch in self._watch_references:
+                try:
+                    watch.unsubscribe()
+                except Exception as e:
+                    logging.error(f"Error deteniendo observador: {e}")
+            self._watch_references.clear()
+            
+            # Detener cliente MQTT
+            if self.client:
+                try:
+                    self.client.loop_stop()
+                    self.client.disconnect()
+                except Exception as e:
+                    logging.error(f"Error desconectando cliente MQTT: {e}")
+            logging.info("Gestor de configuración ESP32 detenido")
+        except Exception as e:
+            logging.error(f"Error deteniendo gestor de configuración: {e}", exc_info=True)
 
     def _watch_panel_assignments(self):
         """Observa cambios en asignaciones de paneles"""
@@ -465,24 +575,6 @@ class ESP32ConfigManager:
                     
         except Exception as e:
             logging.error(f"Error verificando configuraciones pendientes: {e}", exc_info=True)
-
-    def stop(self):
-        """Detiene el gestor de configuración"""
-        try:
-            # Detener todos los observadores
-            for watch in self._watch_references:
-                try:
-                    watch.unsubscribe()
-                except Exception as e:
-                    logging.error(f"Error deteniendo observador: {e}")
-            self._watch_references.clear()
-            
-            # Detener cliente MQTT
-            self.mqtt_client.loop_stop()
-            self.mqtt_client.disconnect()
-            logging.info("Gestor de configuración ESP32 detenido")
-        except Exception as e:
-            logging.error(f"Error deteniendo gestor de configuración: {e}", exc_info=True)
 
 if __name__ == '__main__':
     # Configuración de logging

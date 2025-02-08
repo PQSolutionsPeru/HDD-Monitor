@@ -18,35 +18,35 @@ MQTT_USER = 'mqtt_firestore_handler'
 MQTT_PASSWORD = 'mqtt_firestore_handler'
 
 def on_connect(client, userdata, flags, rc):
-    """Callback que se ejecuta cuando se conecta al broker"""
     if rc == 0:
         logging.info("Conectado exitosamente al broker")
-        # Intentar publicar un mensaje después de conectar
-        client.publish("test", "Mensaje de prueba", qos=1)
+        # No publicar inmediatamente, esperar un poco
+        client.connection_test_passed = True
     else:
         logging.error(f"Error de conexión, código: {rc}")
+        client.connection_test_passed = False
 
 def on_disconnect(client, userdata, rc):
-    """Callback que se ejecuta cuando se desconecta del broker"""
     if rc != 0:
         logging.error(f"Desconexión inesperada, código: {rc}")
     else:
         logging.info("Desconexión normal")
 
 def on_publish(client, userdata, mid):
-    """Callback que se ejecuta cuando se publica un mensaje"""
     logging.info(f"Mensaje {mid} publicado")
+    client.disconnect()
 
 def on_log(client, userdata, level, buf):
-    """Callback para logs detallados"""
     logging.debug(f"MQTT Log: {buf}")
 
 def create_client():
-    """Crea y configura el cliente MQTT"""
     client = mqtt.Client(
         client_id=MQTT_CLIENT_ID,
-        clean_session=True
+        clean_session=True,
+        protocol=mqtt.MQTTv311
     )
+    
+    client.connection_test_passed = False
     
     # Configurar callbacks
     client.on_connect = on_connect
@@ -61,37 +61,43 @@ def create_client():
     context = ssl.create_default_context()
     context.load_verify_locations(cafile='combined_ca.crt')
     context.check_hostname = False
+    context.set_ciphers('ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384')
     
     client.tls_set_context(context)
+    client.tls_insecure_set(False)
     
     return client
 
 def main():
-    """Función principal"""
     try:
         client = create_client()
         
         logging.info(f"Conectando a {MQTT_BROKER}:{MQTT_PORT}")
         client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
         
-        # Iniciar el loop en segundo plano
+        # Iniciar el loop
         client.loop_start()
         
-        # Esperar un poco
+        # Esperar a que se establezca la conexión
         time.sleep(2)
         
-        # Intentar publicar un mensaje
-        result = client.publish("test", "Mensaje de prueba", qos=1)
-        result.wait_for_publish()
+        if client.connection_test_passed:
+            # Intentar publicar un mensaje
+            logging.info("Enviando mensaje de prueba...")
+            result = client.publish("test", "Mensaje de prueba", qos=1)
+            
+            # Esperar a que se publique
+            if result.wait_for_publish(timeout=5.0):
+                logging.info("Mensaje publicado exitosamente")
+            else:
+                logging.error("Timeout esperando publicación del mensaje")
         
-        if result.is_published():
-            logging.info("Mensaje publicado exitosamente")
-        
-        time.sleep(3)  # Esperar respuesta
+        # Esperar un poco más antes de cerrar
+        time.sleep(3)
         
         # Desconectar limpiamente
-        client.disconnect()
         client.loop_stop()
+        client.disconnect()
         
     except KeyboardInterrupt:
         logging.info("Programa interrumpido por el usuario")
