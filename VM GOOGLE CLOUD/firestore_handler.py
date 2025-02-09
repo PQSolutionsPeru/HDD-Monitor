@@ -6,6 +6,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import pytz
 from notification_handler import NotificationHandler
+from mqtt_client import MQTTClient
+import json
 
 class FirestoreHandler:
     def __init__(self):
@@ -13,18 +15,40 @@ class FirestoreHandler:
         creds = firebase_admin.credentials.Certificate('/home/pqsolutionsperu/vm-service-key.json')
         if not firebase_admin._apps:
             firebase_admin.initialize_app(creds)
-            
+        
         # Luego inicializar Firestore
         self.db = firestore.Client(
             project='fir-hdd-monitor-d00de',
             credentials=creds.get_credential()
         )
-                    
+            
         self.notification_handler = NotificationHandler(self.db)
+        
+        # Iniciar cliente MQTT con referencia a la base de datos
+        self.mqtt_client = MQTTClient(self.handle_mqtt_message, db=self.db)
+        
         self._watch_references = []
         self._relay_states = {}
         self._initial_load_complete = False
         self._events_initial_snapshots = set()
+
+    def handle_mqtt_message(self, msg):
+        """Maneja los mensajes MQTT recibidos"""
+        try:
+            if msg.retain:
+                logging.info(f"Ignorando mensaje retain en {msg.topic}")
+                return
+
+            payload = json.loads(msg.payload.decode())
+            if not payload:
+                return
+
+            # Solo maneja mensajes de panels
+            if msg.topic.startswith("clients/") and "panels" in msg.topic:
+                self.handle_panel_message(msg.topic, payload)
+            
+        except Exception as e:
+            logging.error(f"Error procesando mensaje: {e}", exc_info=True)
 
     def _cache_relay_state(self, relay_path: str, state: Dict[str, Any]):
         """Almacena el estado de un relay en el caché local"""

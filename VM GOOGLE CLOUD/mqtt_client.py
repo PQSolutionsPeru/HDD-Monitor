@@ -7,17 +7,21 @@ from typing import Optional, Callable
 from config import MQTT_CONFIG
 
 class MQTTClient:
-    def __init__(self, message_handler: Callable):
+    def __init__(self, message_handler: Callable, db=None):
         """Inicializa el cliente MQTT"""
-        # Usar client_id fijo en lugar de uno con timestamp
         self.client_id = MQTT_CONFIG['CLIENT_ID']
+        self.message_handler = message_handler
+        self.connected = False
+        self.db = db  # Referencia a la base de datos
+        self._setup_mqtt_client()
+
+    def _setup_mqtt_client(self):
+        """Configura una nueva instancia del cliente MQTT"""
         self.client = mqtt.Client(
             client_id=self.client_id,
             clean_session=True,
             protocol=mqtt.MQTTv311
         )
-        self.message_handler = message_handler
-        self.connected = False
         self.setup_client()
 
     def setup_client(self):
@@ -26,10 +30,10 @@ class MQTTClient:
             # Configurar credenciales
             self.client.username_pw_set(MQTT_CONFIG['USER'], MQTT_CONFIG['PASSWORD'])
             
-            # Configuración TLS similar a la que funciona en el debug
+            # Configuración TLS
             context = ssl.create_default_context()
             context.load_verify_locations(MQTT_CONFIG['TLS_CA_CERTS'])
-            context.check_hostname = False  # Importante: igual que en el script de debug
+            context.check_hostname = False
             
             self.client.tls_set_context(context)
             self.client.tls_insecure_set(False)
@@ -94,12 +98,7 @@ class MQTTClient:
                 
                 if retry_count >= max_retries:
                     logging.warning("Reiniciando cliente MQTT...")
-                    self.client = mqtt.Client(
-                        client_id=self.client_id,
-                        clean_session=True,
-                        protocol=mqtt.MQTTv311
-                    )
-                    self.setup_client()
+                    self._setup_mqtt_client()  # Usar método que preserva db
                     retry_count = 0
 
     def _on_connect(self, client, userdata, flags, rc):
@@ -132,6 +131,7 @@ class MQTTClient:
         topics = [
             ("clients/+/panels/+/#", 2),
             ("system/status/+", 2),
+            ("esp32/status/+", 2),  # Suscripción específica para estados de ESP32
             ("esp32/register/+", 2)
         ]
         
@@ -143,15 +143,57 @@ class MQTTClient:
             except Exception as e:
                 logging.error(f"Error en suscripción a {topic}: {e}")
 
+    def _handle_status_message(self, topic: str, payload: dict):
+        """Maneja mensajes de estado"""
+        try:
+            logging.info(f"Procesando mensaje de estado. Topic: {topic}, Payload: {payload}")
+            
+            if 'esp32_id' in payload and 'status' in payload:
+                esp32_id = payload['esp32_id']
+                status = payload['status']
+                
+                logging.info(f"Encontrado esp32_id: {esp32_id} con status: {status}")
+                
+                if status == 'OFFLINE':
+                    if self.db is None:
+                        logging.error("Error: db es None en MQTTClient")
+                        return
+                        
+                    logging.info(f"Dispositivo {esp32_id} está OFFLINE. Notificando a administradores...")
+                    from notification_handler import NotificationHandler
+                    notification_handler = NotificationHandler(self.db)
+                    notification_handler.send_offline_notification(esp32_id)
+                else:
+                    logging.info(f"No se envía notificación. Status: {status}, DB exists: {self.db is not None}")
+                    
+        except Exception as e:
+            logging.error(f"Error procesando mensaje de estado: {e}", exc_info=True)
+
     def _on_message(self, client, userdata, msg):
         """Procesa mensajes recibidos"""
         try:
+            logging.info(f"Mensaje recibido en tópico: {msg.topic}")
+            logging.info(f"Payload recibido: {msg.payload.decode()}")
+            
             if msg.retain:
                 logging.info(f"Ignorando mensaje retain en {msg.topic}")
                 return
+                
+            payload = json.loads(msg.payload.decode())
+            logging.info(f"Payload decodificado: {payload}")
+            
+            # Procesar mensajes de estado del sistema o ESP32
+            if msg.topic.startswith("system/status/") or msg.topic.startswith("esp32/status/"):
+                logging.info("Procesando mensaje de estado...")
+                if 'esp32_id' in payload:  # Solo procesar mensajes relacionados con ESP32
+                    self._handle_status_message(msg.topic, payload)
+                return
+                
+            # Procesar otros mensajes normalmente
             self.message_handler(msg)
+                
         except Exception as e:
-            logging.error(f"Error procesando mensaje: {e}")
+            logging.error(f"Error procesando mensaje: {e}", exc_info=True)
 
     def _on_disconnect(self, client, userdata, rc):
         """Maneja desconexiones"""

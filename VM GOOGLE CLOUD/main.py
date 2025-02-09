@@ -6,24 +6,6 @@ from firestore_handler import FirestoreHandler
 import json
 import threading
 
-def handle_mqtt_message(msg):
-    """Maneja los mensajes MQTT recibidos"""
-    try:
-        if msg.retain:
-            logging.info(f"Ignorando mensaje retain en {msg.topic}")
-            return
-
-        payload = json.loads(msg.payload.decode())
-        if not payload:
-            return
-
-        # Solo maneja mensajes de panels
-        if msg.topic.startswith("clients/") and "panels" in msg.topic:
-            firestore_handler.handle_panel_message(msg.topic, payload)
-            
-    except Exception as e:
-        logging.error(f"Error procesando mensaje: {e}", exc_info=True)
-
 def signal_handler(signum, frame):
     """Maneja la limpieza antes de cerrar"""
     logging.info("Señal de terminación recibida")
@@ -57,9 +39,8 @@ if __name__ == '__main__':
         )
         relay_watch_thread.start()
         
-        # Iniciar cliente MQTT
-        mqtt_client = MQTTClient(handle_mqtt_message)
-        mqtt_client.connect_and_loop()
+        # Usar el cliente MQTT que ya está en FirestoreHandler
+        firestore_handler.mqtt_client.connect_and_loop()
         
     except Exception as e:
         logging.error(f"Error fatal: {e}", exc_info=True)

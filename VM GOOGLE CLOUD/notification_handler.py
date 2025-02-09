@@ -183,6 +183,114 @@ class NotificationHandler:
             logging.error(f"Error en process_relay_update: {e}", exc_info=True)
             raise
 
+    def send_offline_notification(self, esp32_id: str):
+        """Envía notificación de dispositivo OFFLINE solo a administradores"""
+        try:
+            # Buscar información del ESP32
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+            
+            if not esp32_doc.exists:
+                logging.error(f"ESP32 {esp32_id} no encontrado")
+                return
+
+            esp32_data = esp32_doc.to_dict()
+            client_id = esp32_data.get('client_id')
+            panel_id = esp32_data.get('panel_id')
+
+            if not client_id or not panel_id:
+                logging.error(f"ESP32 {esp32_id} no tiene cliente o panel asignado")
+                return
+
+            # Obtener información del panel
+            panel_ref = self.db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}')
+            panel_doc = panel_ref.get()
+            panel_data = panel_doc.to_dict() or {}
+            panel_name = panel_data.get('name', 'Panel sin nombre')
+
+            # Obtener información del cliente
+            client_ref = self.db.document(f'hdd-monitor/accounts/clients/{client_id}')
+            client_doc = client_ref.get()
+            client_data = client_doc.to_dict() or {}
+            client_name = client_data.get('name', 'Cliente sin nombre')
+
+            # Obtener todos los administradores
+            admins_ref = self.db.collection('hdd-monitor/accounts/admins')
+            admins_snap = admins_ref.get()
+
+            # Preparar la notificación
+            notification = messaging.Notification(
+                title=f"Alerta de Dispositivo OFFLINE",
+                body=f"El chip con ID: {esp32_id} asignado al panel \"{panel_name}\" del cliente {client_name} está OFFLINE"
+            )
+
+            # Configuración de Android
+            android_config = messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    channel_id='relay_status',  # Usar el canal de relay existente
+                    priority='high',
+                    sound='default',
+                    visibility='public'
+                )
+            )
+
+            # Datos adicionales para la notificación
+            message_data = {
+                'type': 'relay',
+                'clientDocName': str(client_id),
+                'panelDocName': str(panel_id),
+                'relayName': 'Sistema',
+                'oldStatus': 'ONLINE',
+                'newStatus': 'OFFLINE',
+                'timestamp': str(int(time.time() * 1000))
+            }
+
+            # Enviar solo a administradores
+            batch = self.db.batch()
+            for admin_doc in admins_snap:
+                admin_data = admin_doc.to_dict()
+                if token := admin_data.get('fcmToken'):
+                    try:
+                        message = messaging.Message(
+                            notification=notification,
+                            data={k: str(v) if v is not None else '' for k, v in message_data.items()},
+                            token=token,
+                            android=android_config
+                        )
+                        response = messaging.send(message)
+                        logging.info(f"Notificación OFFLINE enviada a admin {admin_doc.id}. Response: {response}")
+                    except messaging.UnregisteredError:
+                        logging.warning(f"Token FCM no registrado para admin {admin_doc.id}")
+                        batch.update(admin_doc.reference, {'fcmToken': None})
+                    except Exception as e:
+                        logging.error(f"Error enviando FCM a admin {admin_doc.id}: {str(e)}")
+
+            # Confirmar actualizaciones de tokens inválidos
+            batch.commit()
+
+            # Guardar la notificación en Firestore
+            try:
+                notification_data = {
+                    'date_time': datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M'),
+                    'message': f'El panel "{panel_name}" está OFFLINE',
+                    'panel_name': panel_name,
+                    'lastUpdate': datetime.now(pytz.UTC),
+                    'documentName': f"notif_OFFL{esp32_id[-6:]}_{client_id}",
+                    'isRead': False,
+                    'readByAdmin': False,
+                    'timestamp': int(time.time() * 1000)
+                }
+                
+                notifications_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
+                notifications_ref.document(notification_data['documentName']).set(notification_data)
+                
+            except Exception as e:
+                logging.error(f"Error guardando notificación en Firestore: {e}")
+
+        except Exception as e:
+            logging.error(f"Error en send_offline_notification: {e}", exc_info=True)
+
     def send_fcm_notifications(self, client_id: str, notification_data: Dict[str, Any], notification_type: str):
         """Envía notificaciones FCM a usuarios y administradores"""
         try:
