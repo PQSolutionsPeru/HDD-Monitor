@@ -95,6 +95,15 @@ class MQTTManager:
                 self.connection_healthy = False
                 return False
                 
+            # Enviar ping periódico para mantener la conexión viva
+            ping_interval = 30000  # 30 segundos
+            if utime.ticks_diff(current_time, getattr(self, 'last_ping_time', 0)) >= ping_interval:
+                try:
+                    self.client.ping()
+                    self.last_ping_time = current_time
+                except:
+                    pass
+                    
             # Publicar heartbeat periódicamente
             heartbeat_interval = self.mqtt_config.get_status_interval()
             if utime.ticks_diff(current_time, getattr(self, 'last_heartbeat_time', 0)) >= heartbeat_interval:
@@ -117,14 +126,13 @@ class MQTTManager:
                         self.publish_event(
                             f"system/status/{self.esp32_id}",
                             heartbeat_msg,
-                            qos=1,
+                            qos=2,
                             retain=False
                         )
                         self.last_heartbeat_time = current_time
                         
                 except Exception as e:
                     print(f"[MQTT] Error enviando heartbeat: {e}")
-                    # No fallar por error de heartbeat
             
             return self.connection_healthy
                     
@@ -261,6 +269,10 @@ class MQTTManager:
             self.client = None
             return False
 
+    def set_relay_manager(self, relay_manager):
+        """Establece la referencia al gestor de relays"""
+        self.relay_manager = relay_manager
+
     def _handle_config_message(self, topic, msg):
         try:
             print(f"[MQTT] Mensaje de configuración recibido en: {topic}")
@@ -274,17 +286,11 @@ class MQTTManager:
                 print(f"[MQTT] Configuración parseada exitosamente")
             except Exception as e:
                 print(f"[MQTT] Error decodificando mensaje: {e}")
-                print(f"[MQTT] Tipo de mensaje: {type(msg)}")
                 return
 
             # Validar estructura del mensaje
             required_fields = ['status', 'client_id', 'panel_id', 'mqtt', 'relays']
-            missing_fields = []
-            for field in required_fields:
-                if field not in config:
-                    missing_fields.append(field)
-                    print(f"[MQTT] Campo faltante: {field}")
-            
+            missing_fields = [field for field in required_fields if field not in config]
             if missing_fields:
                 print(f"[MQTT] Campos faltantes en la configuración: {missing_fields}")
                 return
@@ -292,18 +298,13 @@ class MQTTManager:
             # Procesar configuración
             if config['status'] == 'REGISTERED':
                 print("[MQTT] Aplicando configuración...")
-                print(f"[MQTT] Cliente: {config['client_id']}")
-                print(f"[MQTT] Panel: {config['panel_id']}")
                 
                 # Guardar configuración
                 self.client_id = config['client_id']
                 self.panel_id = config['panel_id']
-                
-                # Guardar configuración de relay
                 self.relay_config = config['relays']
-                print(f"[MQTT] Configuración de relays: {self.relay_config}")
                 
-                # Configurar tópicos MQTT usando la nueva estructura
+                # Configurar tópicos MQTT
                 mqtt_config = config['mqtt']['topics']
                 self.topics = {
                     'status': mqtt_config['status'],
@@ -326,8 +327,27 @@ class MQTTManager:
                     }
                 )
                 
+                # Publicar estado actual de los relays una sola vez al iniciar
+                relay_states = {}
+                if hasattr(self, 'relay_manager'):
+                    relay_states = self.relay_manager.get_all_states()
+                
+                # Enviar estado inicial después de aceptar config
+                self.publish_event(
+                    self.topics['relays'],
+                    {
+                        'esp32_id': self.esp32_id,
+                        'relay_states': relay_states,
+                        'timestamp': utime.ticks_ms(),
+                        'message_id': f"init-{utime.ticks_ms()}-{random.randint(1000,9999)}",
+                        'type': 'initial_status'
+                    },
+                    qos=1
+                )
+                
                 print("[MQTT] Configuración aplicada exitosamente")
                 self.operation_mode = 'RUNNING'
+                
             else:
                 print(f"[MQTT] Estado no reconocido: {config['status']}")
 
@@ -359,7 +379,7 @@ class MQTTManager:
             return False
 
     def publish_event(self, topic, message, qos=1, retain=False):
-        """Publica evento MQTT respetando límites de buffer"""
+        """Publica evento MQTT respetando límites de buffer y asegurando confirmaciones QoS"""
         try:
             print(f"[MQTT] Intentando publicar en tópico: {topic}")
             print(f"[MQTT] Mensaje a enviar: {message}")
@@ -378,12 +398,26 @@ class MQTTManager:
 
             try:
                 print("[MQTT] Enviando mensaje...")
+                # Establecer socket en modo bloqueante para mensajes críticos
+                if qos > 0:
+                    self.client.sock.setblocking(True)
+                    self.client.sock.settimeout(2.0)  # 2 segundos timeout
+                
                 self.client.publish(
                     topic.encode(),
                     msg_str.encode(),
                     qos=qos,
                     retain=retain
                 )
+                
+                # Esperar un momento para mensajes críticos
+                if qos > 0:
+                    utime.sleep_ms(100)
+                
+                # Restaurar socket no bloqueante después de publicación
+                if qos > 0:
+                    self.client.sock.setblocking(False)
+                
                 print("[MQTT] Mensaje enviado exitosamente")
                 
                 # Actualizar último reporte si es un mensaje de estado
@@ -471,32 +505,26 @@ class MQTTManager:
             return
 
         try:
-            # Generar timestamp una sola vez al configurar LWT
-            current_time = utime.ticks_ms()
-            
+            # Configurar mensaje OFFLINE con el timestamp en 0 para que se asigne al momento de la desconexión
             offline_msg = {
                 'esp32_id': self.esp32_id,
                 'status': 'OFFLINE',
-                'timestamp': current_time,
-                'message_id': f"lwt-{current_time}"
+                'type': 'lwt',
+                'client_id': self.client_id,
+                'panel_id': self.panel_id,
+                'message_id': f"lwt-{self.esp32_id}-{random.randint(1000,9999)}"
             }
-            
-            if self.client_id and self.panel_id:
-                offline_msg.update({
-                    'client_id': self.client_id,
-                    'panel_id': self.panel_id
-                })
             
             # Guardar mensaje LWT para uso posterior
             self.lwt_message = offline_msg
             self.lwt_topic = f"system/status/{self.esp32_id}"
             
-            # Configurar LWT
+            # Configurar LWT con QoS 2 para garantizar entrega
             self.client.set_last_will(
                 self.lwt_topic,
                 json.dumps(offline_msg),
                 retain=False,
-                qos=1
+                qos=2
             )
             
         except Exception as e:

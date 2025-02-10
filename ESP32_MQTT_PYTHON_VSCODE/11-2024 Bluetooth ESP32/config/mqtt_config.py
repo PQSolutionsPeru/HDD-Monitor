@@ -10,20 +10,20 @@ class MQTTConfig(BaseConfig):
             "user": "ESP32-1",
             "password": "esp32",
             
-            # Intervalos y tiempos
-            "status_interval": 300000,     # 5 minutos
-            "health_timeout": 300000,      # 5 minutos (aumentado)
-            "reconnect_delay": 10000,      # 10 segundos (aumentado)
-            "keepalive": 120,             # 2 minutos (aumentado)
-            "ping_interval": 30000,       # 30 segundos (nuevo)
+            # Intervalos y tiempos optimizados para monitoreo crítico
+            "status_interval": 300000,      # 5 minuto para heartbeat
+            "health_timeout": 30000,       # 30 segundos timeout
+            "reconnect_delay": 5000,       # 5 segundos
+            "keepalive": 60,              # 1 minuto keepalive
+            "ping_interval": 15000,        # 15 segundos ping
             
             # Reintentos y delays
-            "initial_retry_delay": 5000,   # 5 segundos (aumentado)
-            "max_retry_delay": 60000,      # 1 minuto (aumentado)
-            "max_retries": 5,             # 5 intentos (aumentado)
+            "initial_retry_delay": 2000,   # 2 segundos
+            "max_retry_delay": 30000,      # 30 segundos
+            "max_retries": 5,             # 5 intentos
             
             # Límites de buffer y cola
-            "buffer_size": 256,           # 256 bytes
+            "buffer_size": 512,           # 512 bytes
             "max_queue_size": 10,         # 10 mensajes
             "max_processed_ids": 100      # 100 IDs procesados
         }

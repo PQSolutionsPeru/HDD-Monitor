@@ -192,8 +192,8 @@ class FirestoreHandler:
                     logging.info(f"Estado anterior: {old_data.get('status')}")
                     logging.info(f"Nuevo estado: {new_data.get('status')}")
                     
-                    # Procesar cambio de estado y notificar solo si hay cambio real
-                    if old_data.get('status') != new_data.get('status'):
+                    # Solo procesar si el cambio viene de MQTT (source == 'mqtt')
+                    if new_data.get('source') == 'mqtt' and old_data.get('status') != new_data.get('status'):
                         self.notification_handler.process_relay_update(doc.reference, old_data, new_data)
                     
                     # Actualizar caché con el nuevo estado
@@ -233,24 +233,30 @@ class FirestoreHandler:
             if not panel_snap.exists:
                 logging.error(f"Panel no encontrado: {panel_id}")
                 return
-                
+                    
             # Obtener estado anterior
             relay_snap = relay_ref.get()
             old_data = relay_snap.to_dict() if relay_snap.exists else {'status': None}
             
-            # Actualizar estado
-            new_data = {
-                'status': new_state,
-                'date_time': datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M'),
-                'lastUpdate': firestore.SERVER_TIMESTAMP,
-                'source': 'mqtt'  # Identificar la fuente del cambio
-            }
-            relay_ref.set(new_data, merge=True)
-            
-            # Procesar notificación si cambió el estado
+            # Solo actualizar si el estado es diferente
             if old_data.get('status') != new_state:
-                self.notification_handler.process_relay_update(relay_ref, old_data, new_data)
+                # Actualizar estado
+                new_data = {
+                    'status': new_state,
+                    'date_time': datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M'),
+                    'lastUpdate': firestore.SERVER_TIMESTAMP,
+                    'source': 'mqtt'
+                }
                 
+                # Logear el cambio para debugging
+                logging.info(f"Cambio de estado en relay {relay_name}:")
+                logging.info(f"Estado anterior en BD: {old_data.get('status')}")
+                logging.info(f"Nuevo estado del ESP32: {new_state}")
+                
+                # Actualizar en BD
+                relay_ref.set(new_data, merge=True)
+                logging.info(f"Estado actualizado para relay {relay_name}")
+                    
         except Exception as e:
             logging.error(f"Error en _update_relay_state: {e}", exc_info=True)
 

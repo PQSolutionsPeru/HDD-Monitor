@@ -3,8 +3,9 @@ import ssl
 import json
 import time
 import logging
-from typing import Optional, Callable
 from config import MQTT_CONFIG
+from typing import Dict, Any, Optional, Callable
+from google.cloud import firestore
 
 class MQTTClient:
     def __init__(self, message_handler: Callable, db=None):
@@ -98,7 +99,7 @@ class MQTTClient:
                 
                 if retry_count >= max_retries:
                     logging.warning("Reiniciando cliente MQTT...")
-                    self._setup_mqtt_client()  # Usar método que preserva db
+                    self._setup_mqtt_client()
                     retry_count = 0
 
     def _on_connect(self, client, userdata, flags, rc):
@@ -131,8 +132,8 @@ class MQTTClient:
         topics = [
             ("clients/+/panels/+/#", 2),
             ("system/status/+", 2),
-            ("esp32/status/+", 2),  # Suscripción específica para estados de ESP32
-            ("esp32/register/+", 2)
+            ("esp32/status/+", 2),
+            ("esp32/network_info", 2)
         ]
         
         for topic, qos in topics:
@@ -143,55 +144,125 @@ class MQTTClient:
             except Exception as e:
                 logging.error(f"Error en suscripción a {topic}: {e}")
 
-    def _handle_status_message(self, topic: str, payload: dict):
-        """Maneja mensajes de estado"""
+    def _handle_state_change(self, topic: str, payload: Dict[str, Any]):
+        """Maneja cambios de estado de los ESP32"""
         try:
-            logging.info(f"Procesando mensaje de estado. Topic: {topic}, Payload: {payload}")
+            esp32_id = payload['esp32_id']
+            new_status = payload['status']
+            message_type = payload.get('type', '')
             
-            if 'esp32_id' in payload and 'status' in payload:
-                esp32_id = payload['esp32_id']
-                status = payload['status']
+            logging.info(f"Procesando estado de ESP32 {esp32_id}: {new_status}")
+            
+            # Obtener estado actual
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+            
+            if esp32_doc.exists:
+                esp32_data = esp32_doc.to_dict()
+                current_status = esp32_data.get('status')
+                last_update = esp32_data.get('lastStatusUpdate', 0)
+                current_time = int(time.time())
                 
-                logging.info(f"Encontrado esp32_id: {esp32_id} con status: {status}")
+                # Modificar la lógica de procesamiento para manejar network_info
+                should_process = (
+                    message_type == 'lwt' or 
+                    topic == 'esp32/network_info' or
+                    (new_status != current_status and 
+                    (current_time - last_update) > 60)
+                )
                 
-                if status == 'OFFLINE':
-                    if self.db is None:
-                        logging.error("Error: db es None en MQTTClient")
-                        return
-                        
-                    logging.info(f"Dispositivo {esp32_id} está OFFLINE. Notificando a administradores...")
-                    from notification_handler import NotificationHandler
-                    notification_handler = NotificationHandler(self.db)
-                    notification_handler.send_offline_notification(esp32_id)
-                else:
-                    logging.info(f"No se envía notificación. Status: {status}, DB exists: {self.db is not None}")
+                if should_process:
+                    updates = {
+                        'status': new_status,
+                        'lastStatusUpdate': current_time,
+                        'lastMessageType': message_type,
+                        'lastMessageId': payload.get('message_id', '')
+                    }
                     
+                    # Si es network_info, actualizar información adicional
+                    if topic == 'esp32/network_info':
+                        updates.update({
+                            'IP': payload.get('IP'),
+                            'MAC': payload.get('MAC'),
+                            'lastNetworkUpdate': current_time
+                        })
+                    
+                    if new_status == 'OFFLINE' and current_status == 'ONLINE':
+                        logging.info(f"Dispositivo {esp32_id} está OFFLINE. Notificando...")
+                        from notification_handler import NotificationHandler
+                        notification_handler = NotificationHandler(self.db)
+                        notification_handler.send_offline_notification(esp32_id)
+                        
+                    elif new_status == 'ONLINE' and (current_status == 'OFFLINE' or topic == 'esp32/network_info'):
+                        # Notificar cuando es network_info o cuando viene de OFFLINE
+                        logging.info(f"Dispositivo {esp32_id} ha vuelto a ONLINE. Notificando...")
+                        from notification_handler import NotificationHandler
+                        notification_handler = NotificationHandler(self.db)
+                        notification_handler.send_online_notification(esp32_id)
+                    
+                    esp32_ref.update(updates)
+                    logging.info(f"Estado actualizado para ESP32 {esp32_id}")
+                    
+                    # Si el dispositivo está volviendo a ONLINE, actualizar estados de relay
+                    if new_status == 'ONLINE' and current_status == 'OFFLINE':
+                        self._update_relay_states_after_reconnection(esp32_id, esp32_data)
+
         except Exception as e:
-            logging.error(f"Error procesando mensaje de estado: {e}", exc_info=True)
+            logging.error(f"Error en manejo de estado: {e}", exc_info=True)
+
+    def _update_relay_states_after_reconnection(self, esp32_id: str, esp32_data: Dict[str, Any]):
+        """Actualiza los estados de los relays después de una reconexión"""
+        try:
+            client_id = esp32_data.get('client_id')
+            panel_id = esp32_data.get('panel_id')
+            
+            if not client_id or not panel_id:
+                return
+                
+            # Obtener la colección de relays del panel
+            relays_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}/relays')
+            
+            # Actualizar cada relay
+            for relay_doc in relays_ref.stream():
+                relay_data = relay_doc.to_dict()
+                relay_ref = relays_ref.document(relay_doc.id)
+                
+                # Marcar para actualización y notificación
+                relay_ref.update({
+                    'lastUpdate': firestore.SERVER_TIMESTAMP,
+                    'needsUpdate': True
+                })
+                
+        except Exception as e:
+            logging.error(f"Error actualizando estados de relay después de reconexión: {e}", exc_info=True)
 
     def _on_message(self, client, userdata, msg):
-        """Procesa mensajes recibidos"""
+        """Procesa mensajes MQTT recibidos"""
         try:
-            logging.info(f"Mensaje recibido en tópico: {msg.topic}")
-            logging.info(f"Payload recibido: {msg.payload.decode()}")
-            
             if msg.retain:
                 logging.info(f"Ignorando mensaje retain en {msg.topic}")
                 return
-                
+
             payload = json.loads(msg.payload.decode())
+            logging.info(f"Mensaje recibido en tópico: {msg.topic}")
             logging.info(f"Payload decodificado: {payload}")
             
             # Procesar mensajes de estado del sistema o ESP32
-            if msg.topic.startswith("system/status/") or msg.topic.startswith("esp32/status/"):
+            if (msg.topic.startswith("system/status/") or 
+                msg.topic.startswith("esp32/status/") or 
+                msg.topic == "esp32/network_info"):
+                
                 logging.info("Procesando mensaje de estado...")
-                if 'esp32_id' in payload:  # Solo procesar mensajes relacionados con ESP32
-                    self._handle_status_message(msg.topic, payload)
+                # Para network_info necesitamos asegurarnos que tiene esp32_id
+                if 'esp32_id' in payload:
+                    self._handle_state_change(msg.topic, payload)
                 return
-                
-            # Procesar otros mensajes normalmente
-            self.message_handler(msg)
-                
+                    
+            # Procesar mensajes de relay después de reconexión
+            if msg.topic.startswith("clients/"):
+                if 'relay' in payload and 'state' in payload:
+                    self.message_handler(msg)
+                    
         except Exception as e:
             logging.error(f"Error procesando mensaje: {e}", exc_info=True)
 

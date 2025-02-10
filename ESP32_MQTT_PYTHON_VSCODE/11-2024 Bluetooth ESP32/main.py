@@ -1,6 +1,7 @@
 import machine
 import utime
 import gc
+import random
 from wifi_manager import WiFiManager
 from mqtt_manager import MQTTManager
 from relay_manager import RelayManager
@@ -8,6 +9,8 @@ from watchdog_manager import WatchdogManager
 from esp32_id_manager import ESP32IdManager
 from bluetooth_manager import BluetoothManager
 from time_manager import TimeManager
+
+_last_state_check = 0
 
 # System Constants
 MAX_LOOP_TIME = 1000           # 1000ms maximum per cycle
@@ -43,13 +46,17 @@ def setup_relay_monitoring(managers, esp32_id):
     try:
         print("\n[RELAY] Configuring relays...")
         managers["relay"] = RelayManager()
+        managers["mqtt"].set_relay_manager(managers["relay"])
         relay_config = managers["relay"].config
         
         def relay_callback(pin, pin_num):
             try:
-                state = "DISC" if pin.value() else "OK"
                 pin_names = relay_config.get_relay_pins()
                 pin_name = pin_names.get(pin_num, str(pin_num))
+                
+                # Leer estado directamente del pin - LOW = OK (contacto cerrado), HIGH = DISC (contacto abierto)
+                state = "OK" if pin.value() == 0 else "DISC"
+                
                 print(f"[RELAY] Change in relay {pin_num} ({pin_name}): {state}")
                 
                 if managers["mqtt"].client_id and managers["mqtt"].panel_id:
@@ -78,8 +85,9 @@ def setup_relay_monitoring(managers, esp32_id):
             relay_pin = managers["relay"].setup_relay(pin_num, relay_callback)
             print(f"[RELAY] Configured relay on pin {pin_num} ({pin_name})")
             
-            # Get and log initial state (no need to force callback)
-            initial_state = "DISC" if relay_pin.value() else "OK"
+            # Get initial state - LOW = OK (contacto cerrado), HIGH = DISC (contacto abierto)
+            pin_value = relay_pin.value()
+            initial_state = "OK" if pin_value == 0 else "DISC"
             print(f"[RELAY] Initial state of relay {pin_num} ({pin_name}): {initial_state}")
             
         return True
@@ -349,17 +357,17 @@ def setup_mqtt_connection(managers):
         return False
 
 def handle_running_mode(managers):
-    """Handles system in running mode"""
+    """Handles system in running mode with state verification"""
     try:
         # Process MQTT messages and check connection health
         if managers["mqtt"].client:
             managers["mqtt"].check_msg()
             
-            # Verificar conexión MQTT con mecanismo ping/pong
+            # Verificar conexión MQTT
             if not managers["mqtt"].check_connection():
                 print("[RUNNING] MQTT connection unhealthy")
                 return False
-            
+                
         # Check WiFi separately
         if not managers["wifi"].check_connection():
             print("[RUNNING] WiFi connection lost")
@@ -369,6 +377,8 @@ def handle_running_mode(managers):
         
     except Exception as e:
         print(f"[RUNNING] Error: {e}")
+        import sys
+        sys.print_exception(e)
         return False
 
 def main():
