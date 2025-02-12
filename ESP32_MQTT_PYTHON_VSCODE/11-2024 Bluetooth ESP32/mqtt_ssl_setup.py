@@ -1,17 +1,14 @@
-import os
+import ssl
 
 def get_ssl_params():
     """
-    Retorna los parámetros SSL para la conexión MQTT.
-    SSL sin verificación de certificado pero con cifrado.
+    Retorna el contexto SSL para la conexión MQTT.
     """
-    import ssl
     try:
-        return {
-            'cert_reqs': ssl.CERT_NONE,  # No verificar certificado
-            'do_handshake': True,
-            'ciphers': None  # Usar ciphers por defecto
-        }
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ssl_context.verify_mode = ssl.CERT_NONE
+        ssl_context.check_hostname = False
+        return ssl_context
     except Exception as e:
         print(f"[MQTT] Error en parámetros SSL: {e}")
         return None

@@ -5,21 +5,20 @@ class MQTTConfig(BaseConfig):
         self.DEFAULT_CONFIG = {
             # Configuración del broker
             "broker": "node02.myqtthub.com",
-            "port": 1883,
+            "port": 8883,
             "client_id": "ESP32-PQ1",
             "user": "ESP32-1",
             "password": "esp32",
             
-            # Intervalos y tiempos optimizados para monitoreo crítico
-            "status_interval": 300000,      # 5 minuto para heartbeat
-            "health_timeout": 30000,       # 30 segundos timeout
-            "reconnect_delay": 5000,       # 5 segundos
-            "keepalive": 60,              # 1 minuto keepalive
-            "ping_interval": 15000,        # 15 segundos ping
+            # Intervalos y tiempos optimizados para monitoreo pasivo
+            "status_interval": 300000,     # 5 minutos para heartbeat
+            "health_timeout": 300000,      # 5 minutos
+            "reconnect_delay": 10000,      # 10 segundos
+            "keepalive": 120,             # 2 minutos
             
             # Reintentos y delays
-            "initial_retry_delay": 2000,   # 2 segundos
-            "max_retry_delay": 30000,      # 30 segundos
+            "initial_retry_delay": 5000,   # 5 segundos
+            "max_retry_delay": 60000,      # 1 minuto
             "max_retries": 5,             # 5 intentos
             
             # Límites de buffer y cola
