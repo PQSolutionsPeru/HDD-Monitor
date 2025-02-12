@@ -18,6 +18,9 @@ class MQTTManager:
         self.esp32_id = None
         self.mac_address = ubinascii.hexlify(machine.unique_id()).decode()
         
+        # Control de conexión previa
+        self.was_previously_connected = False  # Añadido para controlar reconexiones
+        
         # Obtener dispositivo del pool
         device = self.device_pool.get_device_by_mac(self.mac_address) or self.device_pool.assign_device(self.mac_address)
         if device:
@@ -78,6 +81,55 @@ class MQTTManager:
             print(f"[MQTT] Error verificando socket: {e}")
             return False
 
+    def send_heartbeat(self):
+        """Envía heartbeat al broker MQTT"""
+        try:
+            if not self.esp32_id:
+                return False
+                
+            heartbeat_msg = {
+                'esp32_id': self.esp32_id,
+                'status': 'ONLINE',
+                'timestamp': utime.ticks_ms(),
+                'type': 'heartbeat',
+                'message_id': f"hb-{utime.ticks_ms()}-{random.randint(1000,9999)}"
+            }
+            
+            if self.client_id and self.panel_id:
+                heartbeat_msg.update({
+                    'client_id': self.client_id,
+                    'panel_id': self.panel_id
+                })
+            
+            print("[MQTT] Enviando heartbeat...")
+            
+            # Verificar socket antes de enviar
+            if not self.check_socket():
+                print("[MQTT] Socket cerrado antes de heartbeat - Reconectando")
+                return False
+                
+            # Reducir QoS a 1 para evitar problemas con confirmaciones
+            result = self.publish_event(
+                f"system/status/{self.esp32_id}",
+                heartbeat_msg,
+                qos=1,
+                retain=False
+            )
+            
+            if result:
+                self.last_heartbeat_time = utime.ticks_ms()
+                print("[MQTT] Heartbeat enviado exitosamente")
+                return True
+            else:
+                print("[MQTT] Error enviando heartbeat")
+                return False
+                
+        except Exception as e:
+            print(f"[MQTT] Error en heartbeat: {e}")
+            import sys
+            sys.print_exception(e)
+            return False
+
     def check_connection(self):
         """Verifica si hay conexión MQTT usando check_msg periódico"""
         try:
@@ -120,42 +172,10 @@ class MQTTManager:
                 self.connection_healthy = False
                 return False
                 
-            # Publicar heartbeat periódicamente
+            # Verificar si toca enviar heartbeat
             heartbeat_interval = self.mqtt_config.get_status_interval()
             if utime.ticks_diff(current_time, getattr(self, 'last_heartbeat_time', 0)) >= heartbeat_interval:
-                try:
-                    if self.esp32_id:
-                        heartbeat_msg = {
-                            'esp32_id': self.esp32_id,
-                            'status': 'ONLINE',
-                            'timestamp': current_time,
-                            'type': 'heartbeat',
-                            'message_id': f"hb-{current_time}-{random.randint(1000,9999)}"
-                        }
-                        
-                        if self.client_id and self.panel_id:
-                            heartbeat_msg.update({
-                                'client_id': self.client_id,
-                                'panel_id': self.panel_id
-                            })
-                        
-                        print("[MQTT] Enviando heartbeat...")
-                        if not self.check_socket():
-                            print("[MQTT] Socket cerrado antes de heartbeat - Reconectando")
-                            self.reconnect()
-                            return False
-                            
-                        self.publish_event(
-                            f"system/status/{self.esp32_id}",
-                            heartbeat_msg,
-                            qos=2,
-                            retain=False
-                        )
-                        self.last_heartbeat_time = current_time
-                        print("[MQTT] Heartbeat enviado exitosamente")
-                        
-                except Exception as e:
-                    print(f"[MQTT] Error enviando heartbeat: {e}")
+                if not self.send_heartbeat():
                     self.reconnect()
                     return False
             
@@ -270,27 +290,31 @@ class MQTTManager:
                     print(f"[MQTT] Error en suscripción: {e}")
                     return False
 
-                # Publicar estado inicial
-                info = {
-                    'esp32_id': self.esp32_id,
-                    'MAC': self.mac_address,
-                    'IP': self.wifi_manager.current_ip,
-                    'status': 'ONLINE',
-                    'timestamp': {
-                        'value': utime.ticks_ms(),
-                        'type': 'realtime'
-                    },
-                    'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
-                }
-                
-                print("[MQTT] Enviando info inicial...")
-                result = self.publish_event(
-                    "esp32/network_info",
-                    info,
-                    qos=1,
-                    retain=False
-                )
-                print(f"[MQTT] Resultado envío info inicial: {'Exitoso' if result else 'Fallido'}")
+                # Publicar estado inicial solo si no estábamos conectados previamente
+                if not self.was_previously_connected:
+                    info = {
+                        'esp32_id': self.esp32_id,
+                        'MAC': self.mac_address,
+                        'IP': self.wifi_manager.current_ip,
+                        'status': 'ONLINE',
+                        'timestamp': {
+                            'value': utime.ticks_ms(),
+                            'type': 'realtime'
+                        },
+                        'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
+                    }
+                    
+                    print("[MQTT] Enviando info inicial...")
+                    result = self.publish_event(
+                        "esp32/network_info",
+                        info,
+                        qos=1,
+                        retain=False
+                    )
+                    print(f"[MQTT] Resultado envío info inicial: {'Exitoso' if result else 'Fallido'}")
+
+                # Marcar como conectado previamente
+                self.was_previously_connected = True
 
             print("[MQTT] Setup completed successfully")
             return True
@@ -412,61 +436,66 @@ class MQTTManager:
             return False
 
     def publish_event(self, topic, message, qos=1, retain=False):
-        """Publica evento MQTT respetando límites de buffer y asegurando confirmaciones QoS"""
+        """Publica evento MQTT con mejor manejo de errores y logging"""
         try:
             print(f"[MQTT] Intentando publicar en tópico: {topic}")
             print(f"[MQTT] Mensaje a enviar: {message}")
             
+            # Verificar tamaño del mensaje
             msg_str = json.dumps(message)
             if len(msg_str) > self.MSG_BUFFER_SIZE:
-                print(f"[MQTT] Mensaje excede el tamaño máximo: {len(msg_str)} > {self.MSG_BUFFER_SIZE}")
+                print(f"[MQTT] Error: Mensaje excede el tamaño máximo: {len(msg_str)} > {self.MSG_BUFFER_SIZE}")
                 return False
 
-            # Verificar estado del socket antes de publicar
+            # Verificar socket antes de publicar
             if not self.check_socket():
-                print("[MQTT] Socket no válido para publicar - Reconectando")
+                print("[MQTT] Socket no válido para publicar - Iniciando reconexión")
                 if not self.reconnect():
                     if len(self.message_queue) < self.MAX_QUEUE_SIZE:
-                        print("[MQTT] Agregando mensaje a la cola")
+                        print("[MQTT] Mensaje agregado a la cola de reintentos")
                         self.message_queue.append((topic, message, qos, retain))
+                    else:
+                        print("[MQTT] Error: Cola de mensajes llena")
                     return False
 
             try:
-                print("[MQTT] Enviando mensaje...")
+                print("[MQTT] Publicando mensaje...")
+                # Asegurar que el mensaje sea codificado correctamente
+                msg_bytes = msg_str.encode() if isinstance(msg_str, str) else msg_str
                 
-                # Publicar con manejo de errores detallado
-                try:
-                    self.client.publish(
-                        topic.encode(),
-                        msg_str.encode(),
-                        qos=qos,
-                        retain=retain
-                    )
-                    print("[MQTT] Mensaje enviado exitosamente")
+                self.client.publish(
+                    topic.encode() if isinstance(topic, str) else topic,
+                    msg_bytes,
+                    qos=qos,
+                    retain=retain
+                )
+                
+                print("[MQTT] Mensaje publicado exitosamente")
+                
+                # Actualizar último reporte si es mensaje de estado
+                if "status" in message or "relay_states" in message:
+                    self.last_status_report = utime.ticks_ms()
+                    print(f"[MQTT] Último reporte de estado actualizado: {self.last_status_report}")
+                
+                return True
                     
-                    # Actualizar último reporte si es un mensaje de estado
-                    if "status" in message or "relay_states" in message:
-                        self.last_status_report = utime.ticks_ms()
-                        print(f"[MQTT] Actualizado último reporte de estado: {self.last_status_report}")
-                    
-                    return True
-                    
-                except OSError as e:
-                    print(f"[MQTT] Error de socket en publicación: {e}")
-                    self.reconnect()
-                    return False
-                    
-            except Exception as e:
-                print(f"[MQTT] Error de publicación: {e}")
+            except OSError as e:
+                print(f"[MQTT] Error de red en publicación: {str(e)}")
+                import sys
+                sys.print_exception(e)
                 if len(self.message_queue) < self.MAX_QUEUE_SIZE:
-                    print("[MQTT] Agregando mensaje a la cola")
+                    print("[MQTT] Mensaje agregado a la cola de reintentos")
                     self.message_queue.append((topic, message, qos, retain))
+                self.reconnect()
                 return False
-
+                
         except Exception as e:
-            print(f"[MQTT] Error en publish_event: {e}")
+            print(f"[MQTT] Error crítico en publish_event: {str(e)}")
             import sys
             sys.print_exception(e)
+            if len(self.message_queue) < self.MAX_QUEUE_SIZE:
+                print("[MQTT] Mensaje agregado a la cola de reintentos")
+                self.message_queue.append((topic, message, qos, retain))
             return False
 
     def check_msg(self):
@@ -578,6 +607,8 @@ class MQTTManager:
             while retry_count < self.mqtt_config.get_max_retries():
                 try:
                     print(f"[MQTT] Intento de reconexión {retry_count + 1}")
+                    # Mantener was_previously_connected en True durante reconexiones
+                    self.was_previously_connected = True
                     if self.connect():
                         while self.message_queue:
                             topic, msg, qos, retain = self.message_queue.pop(0)
@@ -598,6 +629,20 @@ class MQTTManager:
                 
         except Exception as e:
             print(f"[MQTT] Error en reconnect: {e}")
+            return False
+
+    def disconnect(self):
+        """Disconnects from WiFi and cleans up"""
+        try:
+            if self.client and self.client.isconnected():
+                self.client.disconnect()
+                self.client.active(False)
+                utime.sleep_ms(500)
+            # Resetear el estado de conexión previa
+            self.was_previously_connected = False
+            return True
+        except Exception as e:
+            print(f"[MQTT] Error disconnecting: {e}")
             return False
 
     def close(self):

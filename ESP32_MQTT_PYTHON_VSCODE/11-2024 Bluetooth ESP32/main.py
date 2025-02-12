@@ -324,6 +324,30 @@ def setup_mqtt_connection(managers):
         
         print("[MQTT] Setup completed successfully")
         
+        # Solo enviar network_info en primera conexión o recuperación
+        if not managers["mqtt"].was_previously_connected:
+            network_info = {
+                'esp32_id': esp32_id,
+                'MAC': managers["mqtt"].get_mac(),
+                'IP': managers["wifi"].current_ip,
+                'status': 'ONLINE',
+                'timestamp': {
+                    'value': utime.ticks_ms(),
+                    'type': 'realtime'
+                },
+                'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
+            }
+            
+            print("[MQTT] Sending initial network info...")
+            result = managers["mqtt"].publish_event(
+                "esp32/network_info",
+                network_info,
+                qos=1,
+                retain=False
+            )
+            print(f"[MQTT] Initial network info result: {'Success' if result else 'Failed'}")
+            managers["mqtt"].was_previously_connected = True
+        
         # Solo esperar configuración si no tenemos una válida
         if not managers["mqtt"].client_id or not managers["mqtt"].panel_id:
             print("[MQTT] No valid configuration found. Waiting for VM...")
@@ -366,11 +390,13 @@ def handle_running_mode(managers):
             # Verificar conexión MQTT
             if not managers["mqtt"].check_connection():
                 print("[RUNNING] MQTT connection unhealthy")
+                managers["mqtt"].was_previously_connected = False
                 return False
                 
         # Check WiFi separately
         if not managers["wifi"].check_connection():
             print("[RUNNING] WiFi connection lost")
+            managers["mqtt"].was_previously_connected = False
             return False
             
         return True
@@ -379,6 +405,7 @@ def handle_running_mode(managers):
         print(f"[RUNNING] Error: {e}")
         import sys
         sys.print_exception(e)
+        managers["mqtt"].was_previously_connected = False
         return False
 
 def main():

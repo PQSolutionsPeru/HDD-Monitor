@@ -163,13 +163,25 @@ class MQTTClient:
                 last_update = esp32_data.get('lastStatusUpdate', 0)
                 current_time = int(time.time())
                 
-                # Modificar la lógica de procesamiento para manejar network_info
-                should_process = (
-                    message_type == 'lwt' or 
-                    topic == 'esp32/network_info' or
-                    (new_status != current_status and 
-                    (current_time - last_update) > 60)
-                )
+                # Determinar si procesar el cambio de estado
+                should_process = False
+                
+                if message_type == 'lwt':
+                    # Siempre procesar LWT (Last Will Testament)
+                    should_process = True
+                elif topic == 'esp32/network_info':
+                    # Solo procesar network_info si:
+                    # 1. Es el primer mensaje (no hay estado actual)
+                    # 2. El dispositivo estaba OFFLINE
+                    # 3. Han pasado más de 5 minutos desde la última actualización
+                    should_process = (
+                        current_status is None or
+                        current_status == 'OFFLINE' or
+                        (current_time - last_update) > 300  # 5 minutos
+                    )
+                elif new_status != current_status:
+                    # Para otros mensajes, procesar si el estado cambió y pasó suficiente tiempo
+                    should_process = (current_time - last_update) > 60
                 
                 if should_process:
                     updates = {
@@ -187,14 +199,14 @@ class MQTTClient:
                             'lastNetworkUpdate': current_time
                         })
                     
+                    # Manejar notificaciones solo para cambios reales de estado
                     if new_status == 'OFFLINE' and current_status == 'ONLINE':
                         logging.info(f"Dispositivo {esp32_id} está OFFLINE. Notificando...")
                         from notification_handler import NotificationHandler
                         notification_handler = NotificationHandler(self.db)
                         notification_handler.send_offline_notification(esp32_id)
                         
-                    elif new_status == 'ONLINE' and (current_status == 'OFFLINE' or topic == 'esp32/network_info'):
-                        # Notificar cuando es network_info o cuando viene de OFFLINE
+                    elif new_status == 'ONLINE' and current_status == 'OFFLINE':
                         logging.info(f"Dispositivo {esp32_id} ha vuelto a ONLINE. Notificando...")
                         from notification_handler import NotificationHandler
                         notification_handler = NotificationHandler(self.db)

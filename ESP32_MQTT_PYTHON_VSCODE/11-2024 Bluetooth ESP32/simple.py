@@ -112,38 +112,59 @@ class MQTTClient:
         self.sock.write(b"\xc0\0")
 
     def publish(self, topic, msg, retain=False, qos=0):
-        pkt = bytearray(b"\x30\0\0\0")
-        pkt[0] |= qos << 1 | retain
-        sz = 2 + len(topic) + len(msg)
-        if qos > 0:
-            sz += 2
-        assert sz < 2097152
-        i = 1
-        while sz > 0x7F:
-            pkt[i] = (sz & 0x7F) | 0x80
-            sz >>= 7
-            i += 1
-        pkt[i] = sz
-        self.sock.write(pkt, i + 1)
-        self._send_str(topic)
-        if qos > 0:
-            self.pid += 1
-            pid = self.pid
-            struct.pack_into("!H", pkt, 0, pid)
-            self.sock.write(pkt, 2)
-        self.sock.write(msg)
-        if qos == 1:
-            while 1:
-                op = self.wait_msg()
-                if op == 0x40:
-                    sz = self.sock.read(1)
-                    assert sz == b"\x02"
-                    rcv_pid = self.sock.read(2)
-                    rcv_pid = rcv_pid[0] << 8 | rcv_pid[1]
-                    if pid == rcv_pid:
-                        return
-        elif qos == 2:
-            assert 0
+        """Publica un mensaje con mejor manejo de errores y validación"""
+        try:
+            pkt = bytearray(b"\x30\0\0\0")
+            pkt[0] |= qos << 1 | retain
+            sz = 2 + len(topic) + len(msg)
+            if qos > 0:
+                sz += 2
+                
+            # Validación de tamaño
+            if not isinstance(sz, int) or sz >= 2097152:
+                raise ValueError(f"Message size {sz} is invalid")
+                
+            i = 1
+            while sz > 0x7F:
+                pkt[i] = (sz & 0x7F) | 0x80
+                sz >>= 7
+                i += 1
+            pkt[i] = sz
+            
+            self.sock.write(pkt, i + 1)
+            self._send_str(topic)
+            
+            if qos > 0:
+                self.pid += 1
+                pid = self.pid
+                struct.pack_into("!H", pkt, 0, pid)
+                self.sock.write(pkt, 2)
+                
+            # Asegurar que msg sea bytes
+            if isinstance(msg, str):
+                msg = msg.encode()
+            elif not isinstance(msg, (bytes, bytearray)):
+                msg = str(msg).encode()
+                
+            self.sock.write(msg)
+            
+            if qos == 1:
+                while 1:
+                    op = self.wait_msg()
+                    if op == 0x40:
+                        sz = self.sock.read(1)
+                        if not sz:
+                            raise OSError(-1)
+                        if sz == b"\x02":
+                            rcv_pid = self.sock.read(2)
+                            rcv_pid = rcv_pid[0] << 8 | rcv_pid[1]
+                            if pid == rcv_pid:
+                                return
+                        else:
+                            raise OSError(-1)
+        except Exception as e:
+            print(f"Error in publish: {str(e)}")
+            raise
 
     def subscribe(self, topic, qos=0):
         assert self.cb is not None, "Subscribe callback is not set"
