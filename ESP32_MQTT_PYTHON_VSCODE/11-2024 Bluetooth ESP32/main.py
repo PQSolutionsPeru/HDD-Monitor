@@ -9,6 +9,7 @@ from watchdog_manager import WatchdogManager
 from esp32_id_manager import ESP32IdManager
 from bluetooth_manager import BluetoothManager
 from time_manager import TimeManager
+from ota_manager import OTAManager
 
 _last_state_check = 0
 
@@ -189,6 +190,13 @@ def initialize_system():
         # Configuración final de MQTT
         if managers.get("esp32_id"):
             managers["mqtt"].esp32_id = managers["esp32_id"].get_id()
+            
+        # Inicializar OTA Manager
+        print("[INIT] Iniciando OTAManager...")
+        managers["ota"] = OTAManager(managers["mqtt"])
+        managers["mqtt"].ota_manager = managers["ota"]  # Referencia cruzada
+        utime.sleep_ms(500)
+        gc.collect()
             
         print("[INIT] Inicialización completada")
         return managers

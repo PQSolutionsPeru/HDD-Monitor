@@ -646,6 +646,141 @@ class NotificationHandler:
         except Exception as e:
             logging.error(f"Error en send_fcm_notifications: {e}", exc_info=True)
 
+    def process_ota_update(self, esp32_ref: firestore.DocumentReference, old_data: Dict[str, Any], new_data: Dict[str, Any]):
+        """Procesa actualizaciones de estado OTA y envía notificaciones solo cuando hay una actualización real"""
+        try:
+            esp32_id = esp32_ref.id
+            
+            # Ignorar heartbeats y actualizaciones de estado normal
+            if new_data.get('type') in ['status', 'heartbeat'] and not 'otaStatus' in new_data:
+                return
+
+            # No notificar si no hay cambios significativos
+            if (old_data.get('otaStatus') == new_data.get('otaStatus') and
+                old_data.get('firmwareVersion') == new_data.get('firmwareVersion') and
+                abs(old_data.get('otaProgress', 0) - new_data.get('otaProgress', 0)) < 10):
+                return
+
+            # Control de frecuencia de notificaciones (5 minutos)
+            current_time = time.time()
+            last_notification_time = getattr(self, '_last_ota_notification', {}).get(esp32_id, 0)
+            if current_time - last_notification_time < 300:  # 5 minutos
+                return
+
+            # Actualizar timestamp de última notificación
+            if not hasattr(self, '_last_ota_notification'):
+                self._last_ota_notification = {}
+            self._last_ota_notification[esp32_id] = current_time
+
+            # Solo notificar para estados significativos
+            if new_data.get('otaStatus') in ['progress', 'success', 'error']:
+                notification_data = {
+                    'title': f"Actualización OTA - ESP32 {esp32_id}",
+                    'message': self._get_ota_status_message(new_data),
+                    'esp32_id': esp32_id,
+                    'type': 'ota',
+                    'status': new_data.get('otaStatus'),
+                    'progress': new_data.get('otaProgress', 0),
+                    'version': new_data.get('firmwareVersion'),
+                    'date_time': datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M'),
+                    'documentName': f"ota_{esp32_id}_{int(time.time() * 1000)}",
+                    'isRead': False,
+                    'readByAdmin': False
+                }
+
+                # Enviar notificación
+                self.send_admin_notification(notification_data)
+                logging.info(f"Notificación OTA enviada para ESP32 {esp32_id}: {new_data.get('otaStatus')}")
+
+        except Exception as e:
+            logging.error(f"Error procesando actualización OTA: {e}", exc_info=True)
+
+    def _get_ota_status_message(self, data: Dict[str, Any]) -> str:
+        """Genera mensaje para notificación OTA"""
+        status = data.get('otaStatus')
+        progress = data.get('otaProgress', 0)
+        version = data.get('firmwareVersion', 'desconocida')
+        
+        if status == 'success':
+            return f"Actualización completada. Nueva versión: {version}"
+        elif status == 'error':
+            return f"Error en actualización: {data.get('otaMessage', 'Error desconocido')}"
+        elif status == 'progress':
+            return f"Actualizando... {progress:.1f}%"
+        elif status == 'ready':
+            return f"Dispositivo listo para actualización. Versión actual: {version}"
+        else:
+            return data.get('otaMessage', 'Estado de actualización desconocido')
+
+    def _get_ota_message(self, status: str, message: str, progress: float) -> str:
+        """Genera mensaje de notificación OTA según el estado"""
+        if status == 'success':
+            return "Actualización completada exitosamente"
+        elif status == 'error':
+            return f"Error en actualización: {message}"
+        elif status == 'progress':
+            return f"Actualizando... {progress:.1f}%"
+        elif status == 'init':
+            return "Iniciando actualización..."
+        else:
+            return message or "Estado de actualización desconocido"
+
+    def send_admin_notification(self, notification_data: Dict[str, Any]):
+        """Envía notificación solo a administradores"""
+        try:
+            # Obtener todos los administradores
+            admins_ref = self.db.collection('hdd-monitor/accounts/admins')
+            
+            # Preparar notificación
+            notification = messaging.Notification(
+                title=notification_data['title'],
+                body=notification_data['message']
+            )
+            
+            # Configuración Android
+            android_config = messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    channel_id='ota_status',
+                    priority='high',
+                    sound='default',
+                    visibility='public'
+                )
+            )
+            
+            # Datos para la notificación
+            message_data = {
+                'type': 'ota',
+                'esp32_id': notification_data['esp32_id'],
+                'status': str(notification_data['status']),
+                'progress': str(notification_data['progress']),
+                'timestamp': str(int(time.time() * 1000))  # Timestamp generado aquí
+            }
+            
+            # Enviar a cada admin
+            batch = self.db.batch()
+            for admin_doc in admins_ref.stream():
+                if token := admin_doc.to_dict().get('fcmToken'):
+                    try:
+                        message = messaging.Message(
+                            notification=notification,
+                            data=message_data,
+                            token=token,
+                            android=android_config
+                        )
+                        response = messaging.send(message)
+                        logging.info(f"Notificación OTA enviada a admin {admin_doc.id}")
+                    except messaging.UnregisteredError:
+                        batch.update(admin_doc.reference, {'fcmToken': None})
+                    except Exception as e:
+                        logging.error(f"Error enviando FCM a admin {admin_doc.id}: {e}")
+            
+            # Ejecutar actualizaciones pendientes
+            batch.commit()
+            
+        except Exception as e:
+            logging.error(f"Error enviando notificación admin: {e}", exc_info=True)
+
     def cleanup_notifications(self, client_id: str):
         """Limpia notificaciones antiguas manteniendo solo las últimas 20"""
         try:

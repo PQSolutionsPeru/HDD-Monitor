@@ -102,8 +102,40 @@ class MQTTClient:
                     self._setup_mqtt_client()
                     retry_count = 0
 
-    def _on_connect(self, client, userdata, flags, rc):
-        """Callback de conexión"""
+    def _handle_ota_response(self, topic: str, payload: Dict[str, Any]):
+        """Maneja las respuestas de actualización OTA de los ESP32"""
+        try:
+            # Extraer ESP32 ID del tópico
+            esp32_id = topic.split('/')[2]
+            
+            # Obtener referencia del ESP32
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+            
+            if not esp32_doc.exists:
+                logging.error(f"ESP32 {esp32_id} no encontrado en la base de datos")
+                return
+                
+            # Registrar estado de actualización
+            update_status = {
+                'lastOtaUpdate': firestore.SERVER_TIMESTAMP,
+                'otaStatus': payload.get('status', 'unknown'),
+                'otaMessage': payload.get('message', ''),
+                'otaProgress': payload.get('progress', 0)
+            }
+            
+            # Si la actualización fue exitosa, actualizar versión
+            if payload.get('status') == 'success':
+                update_status['currentVersion'] = payload.get('version')
+                
+            esp32_ref.update(update_status)
+            logging.info(f"Estado OTA actualizado para ESP32 {esp32_id}: {update_status}")
+            
+        except Exception as e:
+            logging.error(f"Error procesando respuesta OTA: {e}", exc_info=True)
+
+    def _on_connect(self, client, userdata, flags, rc, properties=None):
+        """Callback de conexión MQTT"""
         if rc == 0:
             self.connected = True
             logging.info("Conectado al broker MQTT!")
@@ -114,6 +146,7 @@ class MQTTClient:
                 "client_id": self.client_id,
                 "timestamp": int(time.time() * 1000)
             })
+            
             self.client.publish(
                 f"system/status/{self.client_id}",
                 payload=online_payload,
@@ -122,10 +155,24 @@ class MQTTClient:
             )
             
             # Suscribirse a tópicos
-            self._subscribe_to_topics()
+            topics = [
+                ("clients/+/panels/+/#", 2),
+                ("system/status/+", 2),
+                ("esp32/status/+", 2),
+                ("esp32/network_info", 2),
+                ("esp32/ota/+/status", 2)  # Tópico para mensajes OTA
+            ]
+            
+            for topic, qos in topics:
+                try:
+                    result, mid = self.client.subscribe(topic, qos)
+                    if result == mqtt.MQTT_ERR_SUCCESS:
+                        logging.info(f"Suscrito a: {topic}")
+                except Exception as e:
+                    logging.error(f"Error en suscripción a {topic}: {e}")
         else:
             self.connected = False
-            logging.error(f"Error de conexión MQTT, código: {rc}")
+            logging.error(f"Error de conexión MQTT: {rc}")
 
     def _subscribe_to_topics(self):
         """Suscribe a los tópicos necesarios"""
@@ -257,26 +304,134 @@ class MQTTClient:
 
             payload = json.loads(msg.payload.decode())
             logging.info(f"Mensaje recibido en tópico: {msg.topic}")
-            logging.info(f"Payload decodificado: {payload}")
             
-            # Procesar mensajes de estado del sistema o ESP32
-            if (msg.topic.startswith("system/status/") or 
-                msg.topic.startswith("esp32/status/") or 
-                msg.topic == "esp32/network_info"):
+            # Manejar diferentes tipos de mensajes
+            if msg.topic == "esp32/network_info":
+                self._handle_network_info(payload)
+            elif msg.topic.startswith("esp32/ota/") and "/status" in msg.topic:
+                self._handle_ota_message(msg.topic, payload)
+            elif msg.topic.startswith("system/status/"):
+                self._handle_system_status(msg.topic, payload)
+            elif msg.topic.startswith("clients/"):
+                self.message_handler(msg)
                 
-                logging.info("Procesando mensaje de estado...")
-                # Para network_info necesitamos asegurarnos que tiene esp32_id
-                if 'esp32_id' in payload:
-                    self._handle_state_change(msg.topic, payload)
+        except Exception as e:
+            logging.error(f"Error procesando mensaje MQTT: {e}", exc_info=True)
+
+    def _handle_system_status(self, topic: str, payload: Dict[str, Any]):
+        """Maneja mensajes de estado del sistema de los ESP32"""
+        try:
+            esp32_id = topic.split('/')[-1]
+            
+            if not esp32_id or 'status' not in payload:
+                logging.warning(f"Mensaje de estado incompleto: {payload}")
                 return
                     
-            # Procesar mensajes de relay después de reconexión
-            if msg.topic.startswith("clients/"):
-                if 'relay' in payload and 'state' in payload:
-                    self.message_handler(msg)
+            # Obtener referencia del ESP32
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+            
+            if not esp32_doc.exists:
+                return
+                
+            current_data = esp32_doc.to_dict()
+            
+            # Preparar actualizaciones básicas
+            updates = {
+                'lastUpdate': firestore.SERVER_TIMESTAMP,
+                'status': payload['status']
+            }
+            
+            # Si es un mensaje LWT, agregar timestamp de desconexión
+            if payload.get('type') == 'lwt':
+                updates['lastDisconnect'] = firestore.SERVER_TIMESTAMP
+                
+                # Solo notificar si el estado anterior no era OFFLINE y es un LWT
+                if current_data.get('status') != 'OFFLINE' and payload['status'] == 'OFFLINE':
+                    from notification_handler import NotificationHandler
+                    notification_handler = NotificationHandler(self.db)
+                    notification_handler.send_offline_notification(esp32_id)
+                    logging.info(f"LWT recibido y notificado para ESP32 {esp32_id}")
+            
+            # Actualizar información adicional si está presente
+            if 'version' in payload:
+                updates['firmwareVersion'] = payload['version']
+            if 'capabilities' in payload:
+                updates['capabilities'] = payload['capabilities']
                     
+            # Actualizar estado en Firestore
+            esp32_ref.set(updates, merge=True)
+            logging.info(f"Estado actualizado para ESP32 {esp32_id}: {payload['status']}")
+                
         except Exception as e:
-            logging.error(f"Error procesando mensaje: {e}", exc_info=True)
+            logging.error(f"Error procesando estado del sistema: {e}", exc_info=True)
+
+    def _handle_network_info(self, payload: Dict[str, Any]):
+        """Maneja mensajes de información de red de los ESP32"""
+        try:
+            esp32_id = payload.get('esp32_id')
+            if not esp32_id:
+                logging.error("Mensaje de red sin ESP32 ID")
+                return
+                
+            # Obtener referencia del ESP32
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            
+            # Preparar datos a actualizar
+            update_data = {
+                'MAC': payload.get('MAC'),
+                'IP': payload.get('IP'),
+                'lastNetworkUpdate': firestore.SERVER_TIMESTAMP,
+                'lastUpdate': firestore.SERVER_TIMESTAMP
+            }
+            
+            # Si hay información adicional de capacidades
+            if 'capabilities' in payload:
+                update_data['capabilities'] = payload['capabilities']
+                
+            # Si hay información de versión
+            if 'version' in payload:
+                update_data['firmwareVersion'] = payload['version']
+                
+            # Estado online/offline si está presente
+            if 'status' in payload:
+                update_data['status'] = payload['status']
+                
+            # Actualizar en Firestore
+            esp32_ref.set(update_data, merge=True)
+            logging.info(f"Información de red actualizada para ESP32 {esp32_id}")
+            
+        except Exception as e:
+            logging.error(f"Error procesando información de red: {e}", exc_info=True)
+
+    def _handle_ota_message(self, topic: str, payload: Dict[str, Any]):
+        """Maneja mensajes relacionados con actualizaciones OTA"""
+        try:
+            esp32_id = topic.split('/')[2]  # esp32/ota/<esp32_id>/status
+            
+            if not esp32_id:
+                logging.error("ID de ESP32 no encontrado en el tópico")
+                return
+                
+            # Actualizar estado en Firestore
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            
+            update_data = {
+                'lastUpdate': firestore.SERVER_TIMESTAMP,
+                'otaStatus': payload.get('status'),
+                'otaMessage': payload.get('message'),
+                'otaProgress': payload.get('progress', 0)
+            }
+            
+            # Si la actualización fue exitosa
+            if payload.get('status') == 'success':
+                update_data['firmwareVersion'] = payload.get('version')
+                
+            esp32_ref.update(update_data)
+            logging.info(f"Estado OTA actualizado para ESP32 {esp32_id}: {update_data}")
+            
+        except Exception as e:
+            logging.error(f"Error procesando mensaje OTA: {e}", exc_info=True)
 
     def _on_disconnect(self, client, userdata, rc):
         """Maneja desconexiones"""
@@ -289,3 +444,53 @@ class MQTTClient:
     def _on_subscribe(self, client, userdata, mid, granted_qos):
         """Confirma suscripciones"""
         logging.info(f"Suscripción confirmada con QoS: {granted_qos}")
+
+    def send_offline_status(self):
+        """Envía estado OFFLINE antes de desconectarse"""
+        try:
+            if self.connected and self.client:
+                offline_msg = {
+                    'client_id': self.client_id,
+                    'status': 'OFFLINE',
+                    'type': 'shutdown',  # Para diferenciar de LWT
+                    'timestamp': int(time.time() * 1000)
+                }
+                
+                # Publicar estado offline
+                try:
+                    self.client.publish(
+                        f"system/status/{self.client_id}",
+                        json.dumps(offline_msg),
+                        qos=2,
+                        retain=True
+                    )
+                    # Dar tiempo para envío
+                    time.sleep(0.5)
+                except Exception as e:
+                    logging.error(f"Error enviando estado offline: {e}")
+                    
+        except Exception as e:
+            logging.error(f"Error en send_offline_status: {e}")
+
+    def cleanup(self):
+        """Limpia recursos del cliente MQTT"""
+        try:
+            # Primero enviar estado offline
+            self.send_offline_status()
+            
+            # Luego desconectar
+            if self.client:
+                try:
+                    self.client.disconnect()
+                    time.sleep(0.1)
+                    self.client.loop_stop()
+                    logging.info("Desconexión MQTT exitosa")
+                    
+                except Exception as e:
+                    logging.error(f"Error en desconexión MQTT: {e}")
+                    
+            self.client = None
+            self.connected = False
+            
+        except Exception as e:
+            logging.error(f"Error en cleanup: {e}")

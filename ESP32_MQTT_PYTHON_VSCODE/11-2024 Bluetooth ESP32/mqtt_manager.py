@@ -59,6 +59,9 @@ class MQTTManager:
         self.MSG_BUFFER_SIZE = self.mqtt_config.get_buffer_size()
         self.MAX_QUEUE_SIZE = self.mqtt_config.get_queue_size()
         self.MAX_PROCESSED_IDS = self.mqtt_config.get_max_processed_ids()
+
+        self.status_changed = False
+        self.last_network_info = 0
         
         print("[MQTT] Manager iniciado con configuración optimizada")
 
@@ -82,53 +85,131 @@ class MQTTManager:
             return False
 
     def send_heartbeat(self):
-        """Envía heartbeat al broker MQTT"""
+        """Envía heartbeat al broker MQTT cada 5 minutos"""
         try:
             if not self.esp32_id:
                 return False
-                
-            heartbeat_msg = {
-                'esp32_id': self.esp32_id,
-                'status': 'ONLINE',
-                'timestamp': utime.ticks_ms(),
-                'type': 'heartbeat',
-                'message_id': f"hb-{utime.ticks_ms()}-{random.randint(1000,9999)}"
-            }
+
+            current_time = utime.ticks_ms()
             
-            if self.client_id and self.panel_id:
-                heartbeat_msg.update({
-                    'client_id': self.client_id,
-                    'panel_id': self.panel_id
-                })
-            
-            print("[MQTT] Enviando heartbeat...")
-            
+            # Solo enviar cada 5 minutos (300000 ms)
+            if utime.ticks_diff(current_time, self.last_heartbeat_time) < 300000:
+                return True
+
             # Verificar socket antes de enviar
             if not self.check_socket():
                 print("[MQTT] Socket cerrado antes de heartbeat - Reconectando")
                 return False
-                
-            # Reducir QoS a 1 para evitar problemas con confirmaciones
-            result = self.publish_event(
+
+            # Mensaje base minimalista para system/status
+            status_msg = {
+                'esp32_id': self.esp32_id,
+                'status': 'ONLINE',
+                'timestamp': current_time,
+                'message_id': f"hb-{current_time}-{random.randint(1000,9999)}",
+                'version': self.get_firmware_version(),
+                'capabilities': ['ota']
+            }
+
+            # Agregar client_id/panel_id si están disponibles
+            if self.client_id and self.panel_id:
+                status_msg.update({
+                    'client_id': self.client_id,
+                    'panel_id': self.panel_id
+                })
+
+            # Enviar heartbeat regular
+            result1 = self.publish_event(
                 f"system/status/{self.esp32_id}",
-                heartbeat_msg,
+                status_msg,
                 qos=1,
                 retain=False
             )
-            
-            if result:
-                self.last_heartbeat_time = utime.ticks_ms()
+
+            # Enviar información OTA solo si el panel está asignado
+            if self.client_id and self.panel_id:
+                ota_msg = {
+                    'esp32_id': self.esp32_id,
+                    'status': 'ONLINE',
+                    'type': 'status',
+                    'timestamp': current_time,
+                    'version': self.get_firmware_version(),
+                    'client_id': self.client_id,
+                    'panel_id': self.panel_id,
+                    'update_status': {
+                        'ready_for_update': True,
+                        'current_version': self.get_firmware_version()
+                    }
+                }
+                result2 = self.publish_event(
+                    f"esp32/ota/{self.esp32_id}/status",
+                    ota_msg,
+                    qos=1,
+                    retain=False
+                )
+            else:
+                result2 = True
+
+            if result1 and result2:
+                self.last_heartbeat_time = current_time
                 print("[MQTT] Heartbeat enviado exitosamente")
                 return True
             else:
                 print("[MQTT] Error enviando heartbeat")
                 return False
-                
+
         except Exception as e:
             print(f"[MQTT] Error en heartbeat: {e}")
             import sys
             sys.print_exception(e)
             return False
+
+    def send_network_info(self):
+        """Envía información de red (solo al iniciar o después de actualización)"""
+        try:
+            if not self.esp32_id:
+                return False
+
+            network_msg = {
+                'esp32_id': self.esp32_id,
+                'MAC': self.mac_address,
+                'IP': self.wifi_manager.current_ip,
+                'status': 'ONLINE',
+                'version': self.get_firmware_version(),
+                'capabilities': ['ota'],
+                'timestamp': {
+                    'value': utime.ticks_ms(),
+                    'type': 'realtime'
+                },
+                'message_id': f"init-{utime.ticks_ms()}-{random.randint(1000,9999)}"
+            }
+
+            result = self.publish_event(
+                "esp32/network_info",
+                network_msg,
+                qos=1,
+                retain=False
+            )
+
+            if result:
+                print("[MQTT] Información de red enviada exitosamente")
+            return result
+
+        except Exception as e:
+            print(f"[MQTT] Error enviando información de red: {e}")
+            return False
+
+    def get_firmware_version(self):
+        """Obtiene la versión actual del firmware"""
+        try:
+            import os
+            if 'version.json' in os.listdir():
+                with open('version.json', 'r') as f:
+                    version_info = json.loads(f.read())
+                    return version_info.get('version', '1.0.0')
+        except:
+            pass
+        return '1.0.0'  # Versión por defecto
 
     def check_connection(self):
         """Verifica si hay conexión MQTT usando check_msg periódico"""
@@ -253,9 +334,8 @@ class MQTTManager:
                 ssl=ssl_context
             )
 
-            # Configurar LWT antes de conectar
-            if self.esp32_id:
-                self._setup_lwt()
+            # Configurar LWT
+            self._setup_lwt()
 
             # Intentar conexión con retry
             retry_count = 0
@@ -265,7 +345,20 @@ class MQTTManager:
                     print(f"[MQTT] Intento de conexión {retry_count + 1}/{max_retries}")
                     self.client.connect()
                     print("[MQTT] Conectado exitosamente!")
-                    break
+                    
+                    # Enviar estado inicial
+                    if not self.was_previously_connected:
+                        self._send_initial_status()
+                    
+                    # Configurar suscripciones necesarias
+                    self._setup_subscriptions()
+                    
+                    # Marcar como conectado
+                    self.connection_healthy = True
+                    self.last_activity_time = utime.ticks_ms()
+                    self.was_previously_connected = True
+                    return True
+                    
                 except Exception as e:
                     print(f"[MQTT] Error en intento {retry_count + 1}: {e}")
                     retry_count += 1
@@ -273,58 +366,106 @@ class MQTTManager:
                         utime.sleep_ms(1000 * retry_count)
                         continue
                     return False
-
-            # Resetear estados de conexión
-            self.connection_healthy = True
-            self.last_activity_time = utime.ticks_ms()
-
-            # Configurar callback y suscripción si tenemos ID
-            if self.esp32_id:
-                config_topic = f"esp32/config/{self.esp32_id}"
-                print(f"[MQTT] Suscribiendo a: {config_topic}")
-                self.client.set_callback(self._handle_config_message)
-                try:
-                    self.client.subscribe(config_topic.encode())
-                    print("[MQTT] Suscripción exitosa")
-                except Exception as e:
-                    print(f"[MQTT] Error en suscripción: {e}")
-                    return False
-
-                # Publicar estado inicial solo si no estábamos conectados previamente
-                if not self.was_previously_connected:
-                    info = {
-                        'esp32_id': self.esp32_id,
-                        'MAC': self.mac_address,
-                        'IP': self.wifi_manager.current_ip,
-                        'status': 'ONLINE',
-                        'timestamp': {
-                            'value': utime.ticks_ms(),
-                            'type': 'realtime'
-                        },
-                        'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
-                    }
                     
-                    print("[MQTT] Enviando info inicial...")
-                    result = self.publish_event(
-                        "esp32/network_info",
-                        info,
-                        qos=1,
-                        retain=False
-                    )
-                    print(f"[MQTT] Resultado envío info inicial: {'Exitoso' if result else 'Fallido'}")
-
-                # Marcar como conectado previamente
-                self.was_previously_connected = True
-
-            print("[MQTT] Setup completed successfully")
-            return True
-
         except Exception as e:
             print(f"[MQTT] Error en conexión: {str(e)}")
             import sys
             sys.print_exception(e)
             self.client = None
             return False
+
+    def _send_initial_status(self):
+        """Envía el estado inicial del dispositivo"""
+        try:
+            if not self.esp32_id:
+                return False
+                
+            initial_status = {
+                'esp32_id': self.esp32_id,
+                'MAC': self.mac_address,
+                'IP': self.wifi_manager.current_ip,
+                'status': 'ONLINE',
+                'version': self.get_firmware_version(),
+                'capabilities': ['ota'],
+                'timestamp': {
+                    'value': utime.ticks_ms(),
+                    'type': 'realtime'
+                },
+                'message_id': f"init-{utime.ticks_ms()}-{random.randint(1000,9999)}"
+            }
+            
+            # Solo publicar en network_info para registro inicial
+            return self.publish_event(
+                "esp32/network_info",
+                initial_status,
+                qos=1,
+                retain=False
+            )
+            
+        except Exception as e:
+            print(f"[MQTT] Error enviando estado inicial: {e}")
+            return False
+
+    def _setup_subscriptions(self):
+        """Configura las suscripciones MQTT necesarias"""
+        if not self.esp32_id:
+            return False
+            
+        try:
+            # Suscribirse al tópico de configuración y comando
+            config_topic = f"esp32/config/{self.esp32_id}"
+            command_topic = f"esp32/ota/{self.esp32_id}/command"  # Agregado tópico de comandos
+            
+            print(f"[MQTT] Suscribiendo a: {config_topic}")
+            print(f"[MQTT] Suscribiendo a: {command_topic}")
+            
+            # Callbacks específicos por tópico
+            if not hasattr(self, 'topic_callbacks'):
+                self.topic_callbacks = {}
+                
+            # Configurar callback general para procesar todos los mensajes
+            self.client.set_callback(self._on_message)
+            
+            # Suscribirse a tópicos
+            self.client.subscribe(config_topic.encode(), qos=1)
+            self.client.subscribe(command_topic.encode(), qos=1)
+            
+            return True
+            
+        except Exception as e:
+            print(f"[MQTT] Error en suscripciones: {e}")
+            return False
+
+    def _on_message(self, topic, msg):
+        """Procesa todos los mensajes MQTT recibidos"""
+        try:
+            topic_str = topic.decode()
+            print(f"[MQTT] Mensaje recibido en: {topic_str}")
+            
+            # Si es un mensaje de configuración
+            if 'config' in topic_str:
+                self._handle_config_message(topic, msg)
+                return
+                
+            # Si es un mensaje de comando OTA
+            if 'ota' in topic_str and 'command' in topic_str:
+                # Reenviar al OTA manager si existe
+                if hasattr(self, 'ota_manager'):
+                    self.ota_manager._handle_update_message(topic_str, msg)
+                    return
+                
+            # Si hay un callback específico para este tópico
+            if hasattr(self, 'topic_callbacks') and topic_str in self.topic_callbacks:
+                self.topic_callbacks[topic_str](topic, msg)
+                
+        except Exception as e:
+            print(f"[MQTT] Error procesando mensaje: {e}")
+            import sys
+            sys.print_exception(e)
+
+    def get_capabilities(self):
+        """Retorna las capacidades del dispositivo"""
+        return ['ota']  # Por ahora solo OTA, expandir según necesidad
 
     def set_relay_manager(self, relay_manager):
         """Establece la referencia al gestor de relays"""
@@ -557,26 +698,28 @@ class MQTTManager:
             return False
 
     def _setup_lwt(self):
-        """Configura Last Will Testament con mejor manejo"""
+        """Configura Last Will Testament"""
         if not self.esp32_id:
             return
 
         try:
-            # Configurar mensaje OFFLINE con el timestamp en 0 para que se asigne al momento de la desconexión
+            # Mensaje OFFLINE con timestamp 0 para asignar al momento de desconexión
             offline_msg = {
                 'esp32_id': self.esp32_id,
                 'status': 'OFFLINE',
                 'type': 'lwt',
-                'client_id': self.client_id,
-                'panel_id': self.panel_id,
+                'timestamp': utime.ticks_ms(),
                 'message_id': f"lwt-{self.esp32_id}-{random.randint(1000,9999)}"
             }
             
-            # Guardar mensaje LWT para uso posterior
-            self.lwt_message = offline_msg
+            if self.client_id and self.panel_id:
+                offline_msg.update({
+                    'client_id': self.client_id,
+                    'panel_id': self.panel_id
+                })
+            
             self.lwt_topic = f"system/status/{self.esp32_id}"
             
-            # Configurar LWT con QoS 2 para garantizar entrega
             self.client.set_last_will(
                 self.lwt_topic,
                 json.dumps(offline_msg),
