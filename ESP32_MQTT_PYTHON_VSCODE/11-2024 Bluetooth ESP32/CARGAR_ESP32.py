@@ -28,7 +28,6 @@ class ESP32Uploader:
                 ("put", "config/relay_config.py", "config/relay_config.py"),
             ],
             "configs_additional_2": [
-                ("put", "config/ota_config.py", "config/ota_config.py"),
                 ("put", "config/system_config.py", "config/system_config.py"),
             ],
             "wifi_esp32": [
@@ -50,7 +49,6 @@ class ESP32Uploader:
             "managers_2": [
                 ("put", "watchdog_manager.py"),
                 ("put", "bluetooth_manager.py"),
-                ("put", "ota_manager.py"),
             ],
             "ble_files": [
                 ("put", "ble_advertising.py"),
@@ -60,7 +58,6 @@ class ESP32Uploader:
                 ("put", "combined_ca.crt"),
             ],
             "final_files": [
-                ("put", "version.json"),
                 ("put", "main.py"),
             ]
         }

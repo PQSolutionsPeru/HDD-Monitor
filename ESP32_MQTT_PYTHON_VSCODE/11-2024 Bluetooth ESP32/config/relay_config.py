@@ -9,7 +9,7 @@ class RelayConfig(BaseConfig):
                 "25": "Supervision" # NO
             },
             "debounce_time": 100,       # 100ms
-            "min_report_interval": 1000  # 1 segundo
+            "min_report_interval": 2000  # 2 segundo
         }
         super().__init__('relay_config.json')
         self._init_default_config()

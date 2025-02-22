@@ -102,45 +102,19 @@ class NotificationHandler:
                 # Usar los datos apropiados según el tipo de actualización
                 notification_data = new_data if new_data else old_data
                 
-                # Mensaje para la notificación
-                message = self.get_event_message(update_type, notification_data)
-                
-                # Crear payload para notificación - CORREGIDO: ahora incluye 'event_type' en lugar de sobreescribir 'type'
+                # Crear payload para notificación
                 notification_payload = {
                     'event_id': event_id,
-                    'event_type': notification_data.get('type', ''),  # CAMBIO: Ahora 'event_type' contiene GARANTIA, CAPACITACION, etc.
-                    'type': 'event',  # AÑADIDO: Campo 'type' explícitamente como 'event'
-                    'title': notification_data.get('title', ''),
-                    'status': notification_data.get('status', ''),
-                    'panel_id': notification_data.get('panelDocName', ''),
-                    'panel_name': notification_data.get('panelName', ''),
+                    'type': notification_data.get('type'),
+                    'title': notification_data.get('title'),
+                    'status': notification_data.get('status'),
+                    'panel_id': notification_data.get('panelDocName'),
+                    'panel_name': notification_data.get('panelName'),
                     'action': update_type,
                     'client_name': client_name,
-                    'message': message
+                    'message': self.get_event_message(update_type, notification_data)
                 }
-                
-                # AÑADIDO: Crear documento de notificación ANTES de enviar FCM
-                try:
-                    notification_id = f"notification_{client_id}_{int(time.time() * 1000)}"
-                    notification_doc = notification_payload.copy()
-                    notification_doc.update({
-                        'date_time': datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M'),
-                        'lastUpdate': firestore.SERVER_TIMESTAMP,
-                        'documentName': notification_id,
-                        'isRead': False,
-                        'readByAdmin': False,
-                        'timestamp': int(time.time() * 1000)
-                    })
-                    
-                    # Guardar en Firestore ANTES de enviar FCM
-                    notifications_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
-                    notifications_ref.document(notification_id).set(notification_doc)
-                    logging.info(f"Documento de notificación creado con ID: {notification_id}")
-                    
-                except Exception as e:
-                    logging.error(f"Error guardando notificación en Firestore: {e}")
-                
-                # Después de guardar, enviar FCM
+
                 self.send_fcm_notifications(client_id, notification_payload, 'event')
 
         except Exception as e:
@@ -181,7 +155,7 @@ class NotificationHandler:
         
         return messages.get(update_type, '')
 
-    def process_relay_update(self, relay_ref: firestore.DocumentReference, old_data: Dict[str, Any], new_data: Dict[str, Any], update_id=None):
+    def process_relay_update(self, relay_ref: firestore.DocumentReference, old_data: Dict[str, Any], new_data: Dict[str, Any]):
         """Procesa actualizaciones de estado de relays y envía notificaciones"""
         try:
             # Solo procesar si hay un cambio real de estado
@@ -190,54 +164,6 @@ class NotificationHandler:
                 client_id = path_parts[3]
                 panel_id = path_parts[5]
                 relay_id = path_parts[7]
-
-                # Crear clave única para esta combinación específica de cambio
-                # Usar relay_id, estados viejo y nuevo, y un timestamp redondeado a ventanas de 5 segundos
-                window_time = int(time.time() * 1000 / 5000)
-                cache_key = f"{client_id}_{panel_id}_{relay_id}_{old_data.get('status')}_{new_data.get('status')}_{window_time}"
-                
-                # Si se proporcionó update_id, añadir información pero no como parte de la clave
-                # para mantener la compatibilidad con eventos de distintas fuentes
-                logging_extra = f" (update_id: {update_id})" if update_id else ""
-                
-                current_time = time.time() * 1000
-                
-                # Inicializar caché de notificaciones si no existe
-                if not hasattr(self, '_notification_cache'):
-                    self._notification_cache = {}
-                    
-                # Verificar si esta combinación específica fue notificada recientemente (8 segundos)
-                debounce_window = 8000  # 8 segundos en milisegundos
-                if cache_key in self._notification_cache:
-                    last_time = self._notification_cache[cache_key]
-                    if current_time - last_time < debounce_window:
-                        logging.info(f"PREVENCIÓN DUPLICADO: Ignorando notificación para relay {relay_id}: {old_data.get('status')} → {new_data.get('status')}{logging_extra}")
-                        logging.info(f"Tiempo desde última notificación: {current_time - last_time}ms (ventana: {debounce_window}ms)")
-                        return
-                        
-                # Registrar esta notificación en el caché
-                self._notification_cache[cache_key] = current_time
-                logging.info(f"Registrando nueva notificación en caché: {cache_key}{logging_extra}")
-
-                # Verificar notificaciones recientes similares en Firestore
-                try:
-                    notifications_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
-                    recent_query = notifications_ref.where('type', '==', 'relay') \
-                                                .where('relay', '==', relay_id) \
-                                                .order_by('timestamp', direction=firestore.Query.DESCENDING) \
-                                                .limit(1)
-                    
-                    recent_docs = list(recent_query.stream())
-                    
-                    # Si hay notificación reciente (menos de 8 segundos) para este relay, ignorar
-                    if recent_docs and len(recent_docs) > 0:
-                        recent_doc = recent_docs[0]
-                        recent_time = recent_doc.to_dict().get('timestamp', 0)
-                        if current_time - recent_time < debounce_window:
-                            logging.info(f"PREVENCIÓN DUPLICADO DB: Notificación reciente para {relay_id} hace {(current_time - recent_time)/1000:.1f}s")
-                            return
-                except Exception as e:
-                    logging.error(f"Error verificando notificaciones recientes: {e}")
 
                 # Obtener información del panel
                 panel_doc = self.db.document(f'hdd-monitor/accounts/clients/{client_id}/panels/{panel_id}').get()
@@ -252,14 +178,26 @@ class NotificationHandler:
                 # Preparar notificación
                 notification_id = f"relay_{client_id}_{panel_id}_{relay_id}_{int(time.time() * 1000)}"
                 
-                # Crear el mensaje para la notificación
-                message_text = f"El relay {relay_id} del panel \"{panel_name}\" ha cambiado de {old_data.get('status')} a {new_data.get('status')}"
-                logging.info(f"Enviando notificación: {message_text}")
+                # Verificar notificaciones recientes similares
+                notifications_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
+                recent_query = notifications_ref.where('type', '==', 'relay') \
+                                            .where('relay', '==', relay_id) \
+                                            .where('panel_id', '==', panel_id) \
+                                            .order_by('timestamp', direction=firestore.Query.DESCENDING) \
+                                            .limit(1)
                 
+                recent_docs = recent_query.get()
+                
+                # Verificar si hay una notificación reciente (menos de 5 segundos)
+                for doc in recent_docs:
+                    if doc.exists and (time.time() * 1000 - doc.to_dict().get('timestamp', 0)) < 5000:
+                        logging.info(f"Notificación similar reciente encontrada para {relay_id}, omitiendo")
+                        return
+
                 # Preparar mensaje de notificación
                 notification = messaging.Notification(
                     title=f"{client_name} - Cambio de Estado",
-                    body=message_text
+                    body=f"El relay {relay_id} del panel \"{panel_name}\" ha cambiado de {old_data.get('status')} a {new_data.get('status')}"
                 )
 
                 # Configuración Android
@@ -284,7 +222,46 @@ class NotificationHandler:
                     'timestamp': str(int(time.time() * 1000))
                 }
 
-                # Primero crear el documento de notificación para evitar duplicados
+                # Batch para operaciones de Firestore
+                batch = self.db.batch()
+                
+                # Enviar a usuarios del cliente
+                users_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/users')
+                for user_doc in users_ref.stream():
+                    if token := user_doc.to_dict().get('fcmToken'):
+                        try:
+                            message = messaging.Message(
+                                notification=notification,
+                                data=message_data,
+                                token=token,
+                                android=android_config
+                            )
+                            response = messaging.send(message)
+                            logging.info(f"Notificación enviada a usuario {user_doc.id}. Response: {response}")
+                        except messaging.UnregisteredError:
+                            batch.update(user_doc.reference, {'fcmToken': None})
+                        except Exception as e:
+                            logging.error(f"Error enviando FCM a usuario {user_doc.id}: {e}")
+
+                # Enviar a administradores
+                admins_ref = self.db.collection('hdd-monitor/accounts/admins')
+                for admin_doc in admins_ref.stream():
+                    if token := admin_doc.to_dict().get('fcmToken'):
+                        try:
+                            message = messaging.Message(
+                                notification=notification,
+                                data=message_data,
+                                token=token,
+                                android=android_config
+                            )
+                            response = messaging.send(message)
+                            logging.info(f"Notificación enviada a admin {admin_doc.id}. Response: {response}")
+                        except messaging.UnregisteredError:
+                            batch.update(admin_doc.reference, {'fcmToken': None})
+                        except Exception as e:
+                            logging.error(f"Error enviando FCM a admin {admin_doc.id}: {e}")
+
+                # Guardar la notificación en Firestore
                 notification_doc = {
                     'type': 'relay',
                     'relay': relay_id,
@@ -292,8 +269,8 @@ class NotificationHandler:
                     'panel_name': panel_name,
                     'client_id': client_id,
                     'state': new_data.get('status'),
-                    'old_status': old_data.get('status'),
-                    'message': message_text,
+                    'old_state': old_data.get('status'),
+                    'message': f'El relay {relay_id} del panel "{panel_name}" ha cambiado de {old_data.get("status")} a {new_data.get("status")}',
                     'date_time': datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M'),
                     'lastUpdate': firestore.SERVER_TIMESTAMP,
                     'documentName': notification_id,
@@ -302,66 +279,14 @@ class NotificationHandler:
                     'timestamp': int(time.time() * 1000)
                 }
                 
-                # *** IMPORTANTE: Guardar la notificación ANTES de enviar FCM ***
-                notifications_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
-                notifications_ref.document(notification_id).set(notification_doc)
-                logging.info(f"Documento de notificación creado con ID: {notification_id}")
+                batch.set(notifications_ref.document(notification_id), notification_doc)
                 
-                # Enviar a usuarios del cliente
-                users_sent = 0
-                users_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/users')
-                for user_doc in users_ref.stream():
-                    if token := user_doc.to_dict().get('fcmToken'):
-                        try:
-                            fcm_message = messaging.Message(
-                                notification=notification,
-                                data=message_data,
-                                token=token,
-                                android=android_config
-                            )
-                            response = messaging.send(fcm_message)
-                            users_sent += 1
-                            logging.info(f"Notificación enviada a usuario {user_doc.id}. Response: {response}")
-                        except messaging.UnregisteredError:
-                            # Actualizar token inválido
-                            users_ref.document(user_doc.id).update({'fcmToken': None})
-                        except Exception as e:
-                            logging.error(f"Error enviando FCM a usuario {user_doc.id}: {e}")
-
-                # Enviar a administradores
-                admins_sent = 0
-                admins_ref = self.db.collection('hdd-monitor/accounts/admins')
-                for admin_doc in admins_ref.stream():
-                    if token := admin_doc.to_dict().get('fcmToken'):
-                        try:
-                            fcm_message = messaging.Message(
-                                notification=notification,
-                                data=message_data,
-                                token=token,
-                                android=android_config
-                            )
-                            response = messaging.send(fcm_message)
-                            admins_sent += 1
-                            logging.info(f"Notificación enviada a admin {admin_doc.id}. Response: {response}")
-                        except messaging.UnregisteredError:
-                            # Actualizar token inválido
-                            admins_ref.document(admin_doc.id).update({'fcmToken': None})
-                        except Exception as e:
-                            logging.error(f"Error enviando FCM a admin {admin_doc.id}: {e}")
-                
-                logging.info(f"Notificación procesada: enviada a {users_sent} usuarios y {admins_sent} administradores")
+                # Ejecutar todas las operaciones
+                batch.commit()
                 
                 # Limpiar notificaciones antiguas
                 self.cleanup_notifications(client_id)
                 
-                # Limpiar caché periódicamente (solo cada 100 llamadas para evitar sobrecarga)
-                if not hasattr(self, '_cleanup_counter'):
-                    self._cleanup_counter = 0
-                self._cleanup_counter += 1
-                if self._cleanup_counter > 100:
-                    self._cleanup_counter = 0
-                    self._cleanup_notification_cache()
-                    
         except Exception as e:
             logging.error(f"Error en process_relay_update: {e}", exc_info=True)
 
@@ -613,19 +538,17 @@ class NotificationHandler:
                     'timestamp': str(int(time.time() * 1000))
                 }
             else:
-                # CORREGIDO: Usar event_type correctamente
-                event_type = notification_data.get('event_type', '') 
                 notification = messaging.Notification(
-                    title=f"Evento {event_type}",
+                    title=f"Evento {notification_data.get('type', '')}",
                     body=notification_data.get('message', '')
                 )
                 base_data = {
                     'clientDocName': str(client_id),
                     'eventId': str(notification_data.get('event_id', '')),
-                    'eventType': str(event_type),  # CORREGIDO: Ahora usa event_type
+                    'eventType': str(notification_data.get('type', '')),
                     'status': str(notification_data.get('status', '')),
                     'action': str(notification_data.get('action', '')),
-                    'type': 'event',  # Siempre es 'event' para distinguir en la app
+                    'type': 'event',
                     'panelDocName': str(notification_data.get('panel_id', '')),
                     'timestamp': str(int(time.time() * 1000))
                 }
@@ -648,7 +571,6 @@ class NotificationHandler:
             batch = self.db.batch()
             
             # Enviar a usuarios del cliente
-            users_sent = 0
             for user_doc in users_snap:
                 user_data = user_doc.to_dict()
                 if token := user_data.get('fcmToken'):
@@ -660,16 +582,22 @@ class NotificationHandler:
                             android=android_config
                         )
                         response = messaging.send(message)
-                        users_sent += 1
                         logging.info(f"Notificación enviada a usuario {user_doc.id}. Response: {response}")
                     except messaging.UnregisteredError as e:
                         logging.warning(f"Token FCM no registrado para usuario {user_doc.id}: {e}")
                         batch.update(user_doc.reference, {'fcmToken': None})
+                    except messaging.QuotaExceededError as e:
+                        logging.error(f"Cuota excedida para usuario {user_doc.id}: {e}")
+                    except messaging.ThirdPartyAuthError as e:
+                        logging.error(f"Error de autenticación para usuario {user_doc.id}: {e}")
+                    except messaging.SenderIdMismatchError as e:
+                        logging.error(f"Error de Sender ID para usuario {user_doc.id}: {e}")
+                    except messaging.ApiCallError as e:
+                        logging.error(f"Error de API para usuario {user_doc.id}: {e}")
                     except Exception as e:
                         logging.error(f"Error enviando FCM a usuario {user_doc.id}: {str(e)}")
 
             # Enviar a administradores
-            admins_sent = 0
             for admin_doc in admins_snap:
                 admin_data = admin_doc.to_dict()
                 if token := admin_data.get('fcmToken'):
@@ -681,20 +609,36 @@ class NotificationHandler:
                             android=android_config
                         )
                         response = messaging.send(message)
-                        admins_sent += 1
                         logging.info(f"Notificación enviada a admin {admin_doc.id}. Response: {response}")
                     except messaging.UnregisteredError as e:
                         logging.warning(f"Token FCM no registrado para admin {admin_doc.id}: {e}")
                         batch.update(admin_doc.reference, {'fcmToken': None})
+                    except messaging.QuotaExceededError as e:
+                        logging.error(f"Cuota excedida para admin {admin_doc.id}: {e}")
+                    except messaging.ThirdPartyAuthError as e:
+                        logging.error(f"Error de autenticación para admin {admin_doc.id}: {e}")
+                    except messaging.SenderIdMismatchError as e:
+                        logging.error(f"Error de Sender ID para admin {admin_doc.id}: {e}")
+                    except messaging.ApiCallError as e:
+                        logging.error(f"Error de API para admin {admin_doc.id}: {e}")
                     except Exception as e:
                         logging.error(f"Error enviando FCM a admin {admin_doc.id}: {str(e)}")
 
             # Confirmar actualizaciones de tokens inválidos
             batch.commit()
-            
-            logging.info(f"Notificación procesada: enviada a {users_sent} usuarios y {admins_sent} administradores")
 
-            # Ya no es necesario crear documento aquí, pues se hace ANTES en process_event_update
+            # Crear documento de notificación
+            try:
+                notifications_ref = self.db.collection(f'hdd-monitor/accounts/clients/{client_id}/notifications')
+                notification_data['date_time'] = datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M')
+                notification_data['lastUpdate'] = datetime.now(pytz.UTC)
+                notification_data['documentName'] = f"notification_{client_id}_{int(time.time() * 1000)}"
+                notification_data['isRead'] = False
+                
+                notifications_ref.document(notification_data['documentName']).set(notification_data)
+                
+            except Exception as e:
+                logging.error(f"Error guardando notificación en Firestore: {e}")
 
             # Limpiar notificaciones antiguas
             self.cleanup_notifications(client_id)
@@ -717,13 +661,3 @@ class NotificationHandler:
                 logging.info(f"Limpiadas {len(docs_to_delete)} notificaciones antiguas del cliente {client_id}")
         except Exception as e:
             logging.error(f"Error en cleanup_notifications: {e}", exc_info=True)
-
-    def _cleanup_notification_cache(self):
-        """Limpia el caché de notificaciones antiguas"""
-        if hasattr(self, '_notification_cache'):
-            current_time = time.time() * 1000
-            # Mantener solo entradas de los últimos 60 segundos
-            self._notification_cache = {
-                key: timestamp for key, timestamp in self._notification_cache.items()
-                if current_time - timestamp < 60000
-            }

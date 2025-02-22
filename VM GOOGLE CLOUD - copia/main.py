@@ -15,7 +15,6 @@ def signal_handler(signum, frame):
         logging.error(f"Error durante la limpieza: {e}")
     sys.exit(0)
 
-# En main.py, modificar:
 if __name__ == '__main__':
     try:
         logging.info("Iniciando servicio...")
@@ -27,16 +26,21 @@ if __name__ == '__main__':
         # Inicializar componentes
         firestore_handler = FirestoreHandler()
         
-        # NO iniciar estos observadores otra vez, ya se inician en el constructor
-        # firestore_thread = threading.Thread(...)
-        # relay_watch_thread = threading.Thread(...)
+        # Iniciar observadores de Firestore en hilos separados
+        firestore_thread = threading.Thread(
+            target=firestore_handler.watch_events,
+            daemon=True
+        )
+        firestore_thread.start()
+
+        relay_watch_thread = threading.Thread(
+            target=firestore_handler.watch_relay_states,
+            daemon=True
+        )
+        relay_watch_thread.start()
         
         # Usar el cliente MQTT que ya está en FirestoreHandler
         firestore_handler.mqtt_client.connect_and_loop()
-        
-    except Exception as e:
-        logging.error(f"Error fatal: {e}", exc_info=True)
-        sys.exit(1)
         
     except Exception as e:
         logging.error(f"Error fatal: {e}", exc_info=True)

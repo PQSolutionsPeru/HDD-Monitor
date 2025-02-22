@@ -65,16 +65,12 @@ class LoginViewModel @Inject constructor(
                     }
                     .onFailure { e ->
                         Log.e(TAG, "Error actualizando token FCM: ${e.message}")
-                        // No cambiamos el estado de login ya que el login fue exitoso
-                        // Solo registramos el error de actualización del token
                     }
             } else {
                 Log.e(TAG, "No se encontró información del usuario actual")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error obteniendo token FCM: ${e.message}")
-            // Similar al caso anterior, no cambiamos el estado de login
-            // ya que el login fue exitoso
         }
     }
 

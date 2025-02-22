@@ -56,16 +56,16 @@ class MessagingService : FirebaseMessagingService() {
         Log.d(TAG, "Priority: ${remoteMessage.priority}")
         Log.d(TAG, "Original Priority: ${remoteMessage.originalPriority}")
         Log.d(TAG, "=================== FIN MENSAJE ===================")
-        Log.d(TAG, "Tipo de notificación: ${
-            when {
-                remoteMessage.data.containsKey("relayName") -> "Relay"
-                remoteMessage.data.containsKey("eventId") -> "Event"
-                else -> "Unknown"
-            }
-        }")
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Verificar si hay usuario logueado antes de procesar la notificación
+                val currentUser = userRepository.getCurrentUser()
+                if (currentUser == null) {
+                    Log.d(TAG, "No hay usuario logueado, ignorando notificación")
+                    return@launch
+                }
+
                 when {
                     // Si contiene relayName, es una notificación de relay
                     remoteMessage.data.containsKey("relayName") -> {
@@ -82,7 +82,6 @@ class MessagingService : FirebaseMessagingService() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error procesando notificación", e)
-                showGenericNotification(remoteMessage)
             }
         }
     }

@@ -13,6 +13,7 @@ class RelayManager:
         self.relay_callbacks = {}  # Callbacks por pin
         self.last_trigger_time = {}  # Control de debounce
         self.pending_updates = {}  # Actualizaciones pendientes
+        self.processing_updates = False  # Flag para evitar procesamiento concurrente
         self.update_timer = None
         
         print("[RELAY] Gestor iniciado con configuración cargada")
@@ -33,8 +34,14 @@ class RelayManager:
         return "OK" if pin_value == 0 else "DISC"
 
     def _process_updates(self, _):
-        """Procesa actualizaciones pendientes con manejo de relays críticos"""
+        """Procesa actualizaciones pendientes usando un único flujo para todos los relés"""
         try:
+            # Evitar procesamiento concurrente
+            if self.processing_updates:
+                return
+                
+            self.processing_updates = True
+            
             updates_to_process = self.pending_updates.copy()
             self.pending_updates.clear()
             
@@ -45,30 +52,46 @@ class RelayManager:
                         relay_name = self.relay_names.get(pin_num)
                         logical_state = self._get_logical_state(pin_value, relay_name)
                         
-                        # Procesar inmediatamente cambios en relays críticos
-                        if relay_name in ['Alarma', 'Problema', 'Supervision']:
+                        # Verificar si el estado ha cambiado realmente
+                        current_state = self.relay_states.get(pin_num)
+                        
+                        # Verificar tiempo desde la última actualización
+                        time_diff = time.ticks_diff(current_time, self.last_trigger_time.get(pin_num, 0))
+                        min_interval = self.config.get_min_report_interval()
+                        
+                        # Solo procesamos si:
+                        # 1. El estado ha cambiado 
+                        # 2. Ha pasado suficiente tiempo desde la última actualización
+                        if current_state != logical_state and time_diff > min_interval:
+                            # Actualizar timestamp y estado antes del callback
                             self.last_trigger_time[pin_num] = current_time
                             self.relay_states[pin_num] = logical_state
+                            
+                            # Registrar la actualización
+                            print(f"[RELAY] Procesando cambio - Pin {pin_num} ({relay_name}): {current_state} -> {logical_state}")
+                            
+                            # Ejecutar callback una sola vez
                             self.relay_callbacks[pin_num](self.relays[pin_num], pin_num)
-                        else:
-                            # Para otros relays, mantener el debounce normal
-                            if time.ticks_diff(current_time, self.last_trigger_time.get(pin_num, 0)) > self.config.get_min_report_interval():
-                                if self.relay_states.get(pin_num) != logical_state:
-                                    self.last_trigger_time[pin_num] = current_time
-                                    self.relay_states[pin_num] = logical_state
-                                    self.relay_callbacks[pin_num](self.relays[pin_num], pin_num)
+                        elif current_state != logical_state:
+                            # Si el estado cambió pero no ha pasado suficiente tiempo, reencolar
+                            print(f"[RELAY] Debounce activo para {relay_name}, esperando {min_interval-time_diff}ms más")
+                            self.pending_updates[pin_num] = pin_value
                                     
                     except Exception as e:
                         print(f"[RELAY] Error procesando callback para pin {pin_num}: {e}")
                         import sys
                         sys.print_exception(e)
+            
+            self.processing_updates = False
+                
         except Exception as e:
+            self.processing_updates = False
             print(f"[RELAY] Error en process_updates: {e}")
             import sys
             sys.print_exception(e)
 
     def setup_relay(self, pin_num, callback):
-        """Configura un relay con manejo de prioridad para relays críticos"""
+        """Configura un relay con manejo de debounce mejorado"""
         try:
             # Configurar pin con Pull-Up
             pin = Pin(pin_num, Pin.IN, Pin.PULL_UP)
@@ -90,8 +113,9 @@ class RelayManager:
                     # Solo encolar si el estado cambió
                     current_state = self.relay_states.get(pin_num)
                     if current_state != logical_state:
-                        print(f"[RELAY] Estado cambiado - Pin {pin_num} ({relay_name}): {current_state} -> {logical_state}")
+                        # Encolar para procesamiento centralizado
                         self.pending_updates[pin_num] = pin_value
+                        print(f"[RELAY] Estado detectado - Pin {pin_num} ({relay_name}): {current_state} -> {logical_state}")
                 except Exception as e:
                     print(f"[RELAY] Error en IRQ del pin {pin_num}: {e}")
             
@@ -102,6 +126,7 @@ class RelayManager:
             initial_value = pin.value()
             initial_state = self._get_logical_state(initial_value, relay_name)
             self.relay_states[pin_num] = initial_state
+            self.last_trigger_time[pin_num] = time.ticks_ms()
             
             print(f"[RELAY] Pin {pin_num} ({relay_name}) configurado exitosamente")
             print(f"[RELAY] Estado inicial de {relay_name}: {initial_state}")
@@ -151,7 +176,6 @@ class RelayManager:
                     print(f"[RELAY] Error obteniendo estado del pin {pin_num}: {e}")
                     continue
                     
-            print(f"[RELAY] Estados actuales: {states}")
             return states
         except Exception as e:
             print(f"[RELAY] Error en get_all_states: {e}")

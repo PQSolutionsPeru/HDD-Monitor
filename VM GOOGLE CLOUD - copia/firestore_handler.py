@@ -8,7 +8,6 @@ import pytz
 from notification_handler import NotificationHandler
 from mqtt_client import MQTTClient
 import json
-import time
 
 class FirestoreHandler:
     def __init__(self):
@@ -33,10 +32,11 @@ class FirestoreHandler:
         self._initial_load_complete = False
         self._events_initial_snapshots = set()
 
-        # Iniciar observadores (removido OTA)
+        # Iniciar todos los observadores
         try:
             self.watch_events()
             self.watch_relay_states()
+            self.watch_esp32_updates()  # Nuevo observador para OTA
         except Exception as e:
             logging.error(f"Error iniciando observadores: {e}", exc_info=True)
             raise
@@ -52,12 +52,41 @@ class FirestoreHandler:
             if not payload:
                 return
 
-            # Manejar diferentes tipos de mensajes (removido OTA)
+            # Manejar diferentes tipos de mensajes
             if msg.topic.startswith("clients/") and "panels" in msg.topic:
                 self.handle_panel_message(msg.topic, payload)
+            elif msg.topic.startswith("esp32/ota/"):
+                self.handle_ota_message(msg.topic, payload)
             
         except Exception as e:
             logging.error(f"Error procesando mensaje: {e}", exc_info=True)
+
+    def handle_ota_message(self, topic: str, payload: Dict[str, Any]):
+        """Maneja mensajes relacionados con actualizaciones OTA"""
+        try:
+            parts = topic.split('/')
+            if len(parts) < 3:
+                return
+                
+            esp32_id = parts[2]
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            
+            update_data = {
+                'lastUpdate': firestore.SERVER_TIMESTAMP,
+                'otaStatus': payload.get('status'),
+                'otaMessage': payload.get('message'),
+                'otaProgress': payload.get('progress', 0)
+            }
+            
+            # Si la actualización fue exitosa
+            if payload.get('status') == 'success':
+                update_data['firmwareVersion'] = payload.get('version')
+                
+            esp32_ref.update(update_data)
+            logging.info(f"Estado OTA actualizado para ESP32 {esp32_id}: {update_data}")
+            
+        except Exception as e:
+            logging.error(f"Error procesando mensaje OTA: {e}", exc_info=True)
 
     def _cache_relay_state(self, relay_path: str, state: Dict[str, Any]):
         """Almacena el estado de un relay en el caché local"""
@@ -181,8 +210,43 @@ class FirestoreHandler:
         except Exception as e:
             logging.error(f"Error iniciando observadores de relays: {e}", exc_info=True)
 
+    def watch_esp32_updates(self):
+        """Observa actualizaciones de estado de ESP32s"""
+        try:
+            # Obtener referencia a la colección de ESP32s
+            esp32s_ref = self.db.collection('hdd-monitor/esp32/registered')
+            
+            def on_snapshot(doc_snapshot, changes, read_time):
+                for change in changes:
+                    try:
+                        if change.type.name == 'MODIFIED':
+                            doc = change.document
+                            new_data = doc.to_dict()
+                            old_data = change.old_snapshot.to_dict() if hasattr(change, 'old_snapshot') else {}
+                            
+                            # Verificar si hay cambios en estado OTA
+                            if (new_data.get('otaStatus') != old_data.get('otaStatus') or 
+                                new_data.get('otaProgress') != old_data.get('otaProgress')):
+                                
+                                self.notification_handler.process_ota_update(
+                                    doc.reference,
+                                    old_data,
+                                    new_data
+                                )
+                                
+                    except Exception as e:
+                        logging.error(f"Error procesando cambio en ESP32: {e}", exc_info=True)
+            
+            # Iniciar observador
+            watch = esp32s_ref.on_snapshot(on_snapshot)
+            self._watch_references.append(watch)
+            logging.info("Observador de ESP32s iniciado")
+            
+        except Exception as e:
+            logging.error(f"Error iniciando observador de ESP32s: {e}", exc_info=True)
+
     def _on_relay_snapshot(self, doc_snapshot, changes, read_time):
-        """Maneja cambios en los relays con prevención de duplicados"""
+        """Maneja cambios en los relays"""
         for change in changes:
             try:
                 if change.type.name == 'MODIFIED':
@@ -197,23 +261,17 @@ class FirestoreHandler:
                         logging.error(f"Error crítico: Estado no encontrado en caché para relay {doc.id}")
                         return
                     
-                    # Verificar si el estado realmente cambió
-                    if old_data.get('status') != new_data.get('status'):
-                        # Verificar si este cambio se originó desde MQTT
-                        # Si la fuente es 'mqtt', ya se notificó en _update_relay_state
-                        if new_data.get('source') == 'mqtt':
-                            logging.info(f"Cambio en BD originado por MQTT - Omitiendo notificación duplicada para {doc.id}")
-                        else:
-                            logging.info(f"Cambio detectado en relay: {doc.id}")
-                            logging.info(f"Estado anterior: {old_data.get('status')}")
-                            logging.info(f"Nuevo estado: {new_data.get('status')}")
-                            
-                            # Notificar solo si el cambio NO vino del MQTT
-                            self.notification_handler.process_relay_update(doc.reference, old_data, new_data)
-                        
-                    # Actualizar caché con el nuevo estado independientemente del origen
+                    logging.info(f"Cambio detectado en relay: {doc.id}")
+                    logging.info(f"Estado anterior: {old_data.get('status')}")
+                    logging.info(f"Nuevo estado: {new_data.get('status')}")
+                    
+                    # Solo procesar si el cambio viene de MQTT (source == 'mqtt')
+                    if new_data.get('source') == 'mqtt' and old_data.get('status') != new_data.get('status'):
+                        self.notification_handler.process_relay_update(doc.reference, old_data, new_data)
+                    
+                    # Actualizar caché con el nuevo estado
                     self._relay_states[doc_path] = new_data
-                        
+                    
             except Exception as e:
                 logging.error(f"Error procesando cambio de relay: {e}", exc_info=True)
 
@@ -235,7 +293,7 @@ class FirestoreHandler:
             logging.error(f"Error en handle_panel_message: {e}", exc_info=True)
 
     def _update_relay_state(self, client_id: str, panel_id: str, payload: Dict[str, Any]):
-        """Actualiza el estado de un relay y envía notificaciones"""
+        """Actualiza el estado de un relay"""
         try:
             relay_name = payload['relay']
             new_state = payload['state']
@@ -255,16 +313,12 @@ class FirestoreHandler:
             
             # Solo actualizar si el estado es diferente
             if old_data.get('status') != new_state:
-                # Crear identificador único para esta actualización
-                update_id = f"mqtt_{client_id}_{panel_id}_{relay_name}_{int(time.time() * 1000)}"
-                
                 # Actualizar estado
                 new_data = {
                     'status': new_state,
                     'date_time': datetime.now(pytz.timezone('America/Bogota')).strftime('%d/%m/%Y, %H:%M'),
                     'lastUpdate': firestore.SERVER_TIMESTAMP,
-                    'source': 'mqtt',  # Marcar fuente como MQTT para que _on_relay_snapshot lo ignore
-                    'updateId': update_id  # Identificador único de actualización
+                    'source': 'mqtt'
                 }
                 
                 # Logear el cambio para debugging
@@ -272,24 +326,9 @@ class FirestoreHandler:
                 logging.info(f"Estado anterior en BD: {old_data.get('status')}")
                 logging.info(f"Nuevo estado del ESP32: {new_state}")
                 
-                # *** IMPORTANTE: Primero enviar notificación, luego actualizar BD ***
-                try:
-                    logging.info(f"Enviando notificación directa para cambio de relay {relay_name}")
-                    self.notification_handler.process_relay_update(
-                        relay_ref, 
-                        old_data, 
-                        new_data, 
-                        update_id=update_id
-                    )
-                except Exception as e:
-                    logging.error(f"Error enviando notificación directa: {e}", exc_info=True)
-                
                 # Actualizar en BD
-                try:
-                    relay_ref.set(new_data, merge=True)
-                    logging.info(f"Estado actualizado para relay {relay_name}")
-                except Exception as e:
-                    logging.error(f"Error actualizando BD: {e}", exc_info=True)
+                relay_ref.set(new_data, merge=True)
+                logging.info(f"Estado actualizado para relay {relay_name}")
                     
         except Exception as e:
             logging.error(f"Error en _update_relay_state: {e}", exc_info=True)

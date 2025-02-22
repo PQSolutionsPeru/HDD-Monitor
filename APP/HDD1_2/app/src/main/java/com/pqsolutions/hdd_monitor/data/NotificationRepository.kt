@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor.data
 
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.pqsolutions.hdd_monitor.data.util.IdManager
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
@@ -33,6 +34,22 @@ class NotificationRepository @Inject constructor(
     }
 
     // Flow principal de notificaciones para un cliente específico (usuarios)
+    private val activeListeners = mutableListOf<ListenerRegistration>()
+
+    fun clearListeners() {
+        Log.d(TAG, "Clearing notification listeners")
+        synchronized(activeListeners) {
+            activeListeners.forEach { listener ->
+                try {
+                    listener.remove()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error removing listener", e)
+                }
+            }
+            activeListeners.clear()
+        }
+    }
+
     fun getNotificationsFlow(clientDocName: String): Flow<List<Notification>> = callbackFlow {
         if (clientDocName.isBlank()) {
             Log.w(TAG, "Intento de obtener notificaciones con clientDocName vacío")
@@ -50,67 +67,40 @@ class NotificationRepository @Inject constructor(
 
         val listenerRegistration = notificationsRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
+                if (error.message?.contains("PERMISSION_DENIED") == true) {
+                    Log.w(TAG, "Permission denied for notifications, cleaning up")
+                    clearListeners()
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
                 Log.e(TAG, "Error getting notifications", error)
-                close(error)
                 return@addSnapshotListener
             }
 
             snapshot?.let { querySnapshot ->
                 try {
                     Log.d(TAG, "Documentos encontrados: ${querySnapshot.documents.size}")
-                    querySnapshot.documents.forEach { doc ->
-                        Log.d(TAG, "Documento: ${doc.id}")
-                        Log.d(TAG, "Fecha: ${doc.data?.get("date_time")}")
-                    }
-
                     val notifications = querySnapshot.documents.mapNotNull { doc ->
                         try {
                             val data = doc.data ?: emptyMap()
-                            Log.d(TAG, "Procesando documento: ${doc.id} con datos: $data")
-
                             val notificationMap = data.toMutableMap().apply {
                                 this["documentName"] = doc.id
                                 this["clientDocName"] = clientDocName
-
-                                // Generar timestamp si no existe
                                 if (!containsKey("timestamp")) {
-                                    val dateStr = this["date_time"] as? String ?: ""
-                                    val lastUpdate = (this["lastUpdate"] as? com.google.firebase.Timestamp)?.toDate()?.time
-                                    this["timestamp"] = lastUpdate ?: try {
-                                        LocalDateTime.parse(
-                                            dateStr,
-                                            DateTimeFormatter.ofPattern(DATE_FORMAT)
-                                        ).atZone(Constants.TimeZone.PERU_ZONE)
-                                            .toInstant()
-                                            .toEpochMilli()
-                                    } catch (e: Exception) {
-                                        System.currentTimeMillis()
-                                    }
+                                    this["timestamp"] = doc.getTimestamp("lastUpdate")?.toDate()?.time
+                                        ?: System.currentTimeMillis()
                                 }
                             }
-
-                            Notification.fromMap(notificationMap).also { notification ->
-                                Log.d(TAG, "Procesada notificación: ${notification.toLogString()}")
-                            }
+                            Notification.fromMap(notificationMap)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error procesando documento ${doc.id}", e)
                             null
                         }
                     }
-
-                    Log.d(TAG, "Total de notificaciones válidas procesadas: ${notifications.size}")
                     trySend(notifications)
-
-                    launch {
-                        try {
-                            cleanupOldNotifications(clientDocName)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error en cleanup de notificaciones", e)
-                        }
-                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error procesando snapshot", e)
-                    close(e)
+                    trySend(emptyList())
                 }
             } ?: run {
                 Log.w(TAG, "Snapshot nulo recibido")
@@ -118,9 +108,20 @@ class NotificationRepository @Inject constructor(
             }
         }
 
+        synchronized(activeListeners) {
+            activeListeners.add(listenerRegistration)
+        }
+
         awaitClose {
-            Log.d(TAG, "Cerrando listener de notificaciones")
-            listenerRegistration.remove()
+            Log.d(TAG, "Closing notification listener")
+            try {
+                listenerRegistration.remove()
+                synchronized(activeListeners) {
+                    activeListeners.remove(listenerRegistration)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error closing listener", e)
+            }
         }
     }
 
@@ -133,19 +134,20 @@ class NotificationRepository @Inject constructor(
             .limit(MAX_NOTIFICATIONS.toLong())
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    if (error.message?.contains("PERMISSION_DENIED") == true) {
+                        Log.d(TAG, "Permisos denegados, limpiando listeners")
+                        clearListeners()
+                        trySend(emptyList())
+                        return@addSnapshotListener
+                    }
                     Log.e(TAG, "Error getting all notifications", error)
-                    close(error)
+                    trySend(emptyList())
                     return@addSnapshotListener
                 }
 
                 snapshot?.let { querySnapshot ->
                     try {
                         Log.d(TAG, "Documentos encontrados: ${querySnapshot.documents.size}")
-                        querySnapshot.documents.forEach { doc ->
-                            Log.d(TAG, "Documento: ${doc.id}")
-                            Log.d(TAG, "Fecha: ${doc.data?.get("date_time")}")
-                        }
-
                         val notifications = querySnapshot.documents.mapNotNull { doc ->
                             try {
                                 val data = doc.data ?: emptyMap()
@@ -157,41 +159,17 @@ class NotificationRepository @Inject constructor(
                                             parts.getOrNull(parts.indexOf("clients") + 1) ?: ""
                                         }
                                     this["clientDocName"] = clientDocName
-
-                                    // Generar timestamp si no existe usando lastUpdate o date_time
-                                    if (!containsKey("timestamp")) {
-                                        val dateStr = this["date_time"] as? String ?: ""
-                                        val lastUpdate = (this["lastUpdate"] as? com.google.firebase.Timestamp)?.toDate()?.time
-                                        this["timestamp"] = lastUpdate ?: try {
-                                            LocalDateTime.parse(
-                                                dateStr,
-                                                DateTimeFormatter.ofPattern(DATE_FORMAT)
-                                            ).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                                        } catch (e: Exception) {
-                                            System.currentTimeMillis()
-                                        }
-                                    }
                                 }
-
                                 Notification.fromMap(notificationMap)
                             } catch (e: Exception) {
                                 Log.e(TAG, "Error procesando documento ${doc.id}", e)
                                 null
                             }
                         }
-
                         trySend(notifications)
-
-                        launch {
-                            try {
-                                cleanupAllClientsOldNotifications()
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error en cleanup de notificaciones", e)
-                            }
-                        }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error procesando snapshot", e)
-                        close(e)
+                        trySend(emptyList())
                     }
                 } ?: run {
                     Log.w(TAG, "Snapshot nulo recibido")
@@ -201,7 +179,11 @@ class NotificationRepository @Inject constructor(
 
         awaitClose {
             Log.d(TAG, "Cerrando listener de notificaciones globales")
-            listenerRegistration.remove()
+            try {
+                listenerRegistration.remove()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cerrando listener", e)
+            }
         }
     }
 

@@ -237,23 +237,43 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "Attempting logout")
             try {
-                // Primero limpiamos los listeners
+                // 1. Detener inmediatamente la UI y las consultas
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = false,
+                    userData = null,
+                    currentRoute = "login"
+                )
+
+                // 2. Esperar un momento para que se complete la navegación
+                kotlinx.coroutines.delay(100)
+
+                // 3. Cancelar el job de verificación de sesión
+                sessionCheckJob?.cancel()
+                sessionCheckJob = null
+
+                // 4. Limpiar notificaciones y datos en memoria
+                _hasPendingNotifications.value = false
+
+                // 5. Limpiar los listeners antes del logout
+                panelRepository.clearListeners()
+                notificationRepository.clearListeners()
                 eventRepository.clearListeners()
 
-                // Luego procedemos con el logout
+                // 6. Proceder con el logout
                 authRepository.logout().fold(
                     onSuccess = {
-                        handleLogout()
+                        // 7. Limpiar datos locales
+                        userPreferences.clearUserData()
                         Log.d(TAG, "Logout successful")
                     },
                     onFailure = { e ->
                         Log.e(TAG, "Logout failed: ${e.message}", e)
-                        _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
+                        // No intentar restaurar el estado - mantener el logout
                     }
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Logout failed: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(error = e.message ?: "Logout failed")
+                // No intentar restaurar el estado - mantener el logout
             }
         }
     }

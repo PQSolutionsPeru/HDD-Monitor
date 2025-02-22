@@ -22,11 +22,37 @@ class PanelRepository @Inject constructor(
         private const val BASE_PATH = "hdd-monitor/accounts/clients"
     }
 
+    private val activeListeners = mutableListOf<ListenerRegistration>()
+    private val relayListeners = mutableMapOf<String, ListenerRegistration>()
+
+    fun clearListeners() {
+        Log.d(TAG, "Clearing all panel and relay listeners")
+        synchronized(activeListeners) {
+            activeListeners.forEach { listener ->
+                try {
+                    listener.remove()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error removing panel listener", e)
+                }
+            }
+            activeListeners.clear()
+        }
+        synchronized(relayListeners) {
+            relayListeners.values.forEach { listener ->
+                try {
+                    listener.remove()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error removing relay listener", e)
+                }
+            }
+            relayListeners.clear()
+        }
+    }
+
     fun getPanels(clientDocName: String?): Flow<List<Panel>> = callbackFlow {
         Log.d(TAG, "getPanels called with clientDocName: $clientDocName")
-
-        val relayListeners = mutableMapOf<String, ListenerRegistration>()
         val currentPanels = mutableListOf<Panel>()
+        val relayListeners = mutableMapOf<String, ListenerRegistration>()
 
         val registration = if (clientDocName != null) {
             // Para un cliente específico
@@ -48,8 +74,10 @@ class PanelRepository @Inject constructor(
                                 )
 
                                 panel?.let {
-                                    // Actualizar listener de relays
+                                    // Verificar y eliminar listener anterior si existe
                                     relayListeners[panel.documentName]?.remove()
+
+                                    // Crear nuevo listener
                                     relayListeners[panel.documentName] = firestore
                                         .collection("$BASE_PATH/$clientDocName/panels/${panel.documentName}/relays")
                                         .addSnapshotListener { relaysSnapshot, relayError ->
@@ -92,70 +120,53 @@ class PanelRepository @Inject constructor(
                     }
 
                     clientSnapshot?.let { clients ->
-                        Log.d(TAG, "Found ${clients.size()} clients")
                         currentPanels.clear()
-                        val totalClients = clients.size()
-                        var processedClients = 0
-
                         clients.documents.forEach { clientDoc ->
                             val currentClientDocName = clientDoc.id
-
                             firestore.collection("$BASE_PATH/$currentClientDocName/panels")
-                                .addSnapshotListener { panelSnapshot, panelError ->
-                                    if (panelError != null) {
-                                        Log.e(TAG, "Error getting panels for client $currentClientDocName", panelError)
-                                        processedClients++
-                                        if (processedClients == totalClients) {
-                                            trySend(currentPanels.toList())
-                                        }
-                                        return@addSnapshotListener
-                                    }
+                                .get()
+                                .addOnSuccessListener { panelsSnapshot ->
+                                    panelsSnapshot.documents.forEach { doc ->
+                                        try {
+                                            val panel = doc.toObject(Panel::class.java)?.copy(
+                                                documentName = doc.id,
+                                                clientName = currentClientDocName,
+                                                lastUpdate = doc.getLong("lastUpdate") ?: System.currentTimeMillis()
+                                            )
 
-                                    panelSnapshot?.let { panels ->
-                                        panels.documents.mapNotNull { doc ->
-                                            try {
-                                                val panel = doc.toObject(Panel::class.java)?.copy(
-                                                    documentName = doc.id,
-                                                    clientName = currentClientDocName,
-                                                    lastUpdate = doc.getLong("lastUpdate") ?: System.currentTimeMillis()
-                                                )
+                                            panel?.let {
+                                                // Verificar y eliminar listener anterior si existe
+                                                relayListeners[panel.documentName]?.remove()
 
-                                                panel?.let {
-                                                    relayListeners[panel.documentName]?.remove()
-                                                    relayListeners[panel.documentName] = firestore
-                                                        .collection("$BASE_PATH/$currentClientDocName/panels/${panel.documentName}/relays")
-                                                        .addSnapshotListener { relaysSnapshot, relayError ->
-                                                            if (relayError != null) {
-                                                                Log.e(TAG, "Error fetching relays", relayError)
-                                                                return@addSnapshotListener
-                                                            }
-
-                                                            relaysSnapshot?.let { rs ->
-                                                                val updatedRelays = rs.documents.mapNotNull { relayDoc ->
-                                                                    try {
-                                                                        Relay.fromMap(relayDoc.data?.plus(mapOf("name" to relayDoc.id)) ?: emptyMap())
-                                                                    } catch (e: Exception) {
-                                                                        Log.e(TAG, "Error converting relay", e)
-                                                                        null
-                                                                    }
-                                                                }
-                                                                panel.relays = updatedRelays
-                                                                trySend(currentPanels.toList())
-                                                            }
+                                                // Crear nuevo listener
+                                                relayListeners[panel.documentName] = firestore
+                                                    .collection("$BASE_PATH/$currentClientDocName/panels/${panel.documentName}/relays")
+                                                    .addSnapshotListener { relaysSnapshot, relayError ->
+                                                        if (relayError != null) {
+                                                            Log.e(TAG, "Error fetching relays", relayError)
+                                                            return@addSnapshotListener
                                                         }
-                                                    currentPanels.add(panel)
-                                                }
-                                                panel
-                                            } catch (e: Exception) {
-                                                Log.e(TAG, "Error converting panel", e)
-                                                null
+
+                                                        relaysSnapshot?.let { rs ->
+                                                            val updatedRelays = rs.documents.mapNotNull { relayDoc ->
+                                                                try {
+                                                                    Relay.fromMap(relayDoc.data?.plus(mapOf("name" to relayDoc.id)) ?: emptyMap())
+                                                                } catch (e: Exception) {
+                                                                    Log.e(TAG, "Error converting relay", e)
+                                                                    null
+                                                                }
+                                                            }
+                                                            panel.relays = updatedRelays
+                                                            trySend(currentPanels.toList())
+                                                        }
+                                                    }
+                                                currentPanels.add(panel)
                                             }
-                                        }
-                                        processedClients++
-                                        if (processedClients == totalClients) {
-                                            trySend(currentPanels.toList())
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Error converting panel", e)
                                         }
                                     }
+                                    trySend(currentPanels.toList())
                                 }
                         }
                     }
@@ -164,10 +175,79 @@ class PanelRepository @Inject constructor(
 
         awaitClose {
             Log.d(TAG, "Closing panel and relay listeners")
-            registration.remove()
-            relayListeners.values.forEach { it.remove() }
+            try {
+                registration.remove()
+                relayListeners.values.forEach { it.remove() }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error closing listeners", e)
+            }
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun setupRelayListener(clientDocName: String, panel: Panel, currentPanels: MutableList<Panel>) {
+        synchronized(relayListeners) {
+            relayListeners[panel.documentName]?.remove()
+            relayListeners[panel.documentName] = firestore
+                .collection("$BASE_PATH/$clientDocName/panels/${panel.documentName}/relays")
+                .addSnapshotListener { relaysSnapshot, relayError ->
+                    if (relayError != null) {
+                        if (relayError.message?.contains("PERMISSION_DENIED") == true) {
+                            Log.w(TAG, "Permission denied for relays, removing listener")
+                            relayListeners[panel.documentName]?.remove()
+                            relayListeners.remove(panel.documentName)
+                            return@addSnapshotListener
+                        }
+                        Log.e(TAG, "Error fetching relays", relayError)
+                        return@addSnapshotListener
+                    }
+
+                    relaysSnapshot?.let { rs ->
+                        val updatedRelays = rs.documents.mapNotNull { relayDoc ->
+                            try {
+                                Relay.fromMap(relayDoc.data?.plus(mapOf("name" to relayDoc.id)) ?: emptyMap())
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error converting relay", e)
+                                null
+                            }
+                        }
+                        panel.relays = updatedRelays
+                    }
+                }
+        }
+    }
+
+    private fun setupClientPanelsListener(clientDocName: String, currentPanels: MutableList<Panel>) {
+        val listener = firestore.collection("$BASE_PATH/$clientDocName/panels")
+            .addSnapshotListener { panelSnapshot, error ->
+                if (error != null) {
+                    if (error.message?.contains("PERMISSION_DENIED") == true) {
+                        Log.w(TAG, "Permission denied for client panels, cleaning up")
+                        return@addSnapshotListener
+                    }
+                    Log.e(TAG, "Error getting panels for client", error)
+                    return@addSnapshotListener
+                }
+
+                panelSnapshot?.documents?.forEach { doc ->
+                    try {
+                        val panel = doc.toObject(Panel::class.java)?.copy(
+                            documentName = doc.id,
+                            clientName = clientDocName,
+                            lastUpdate = doc.getLong("lastUpdate") ?: System.currentTimeMillis()
+                        )
+                        panel?.let {
+                            setupRelayListener(clientDocName, it, currentPanels)
+                            currentPanels.add(it)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error converting panel", e)
+                    }
+                }
+            }
+        synchronized(activeListeners) {
+            activeListeners.add(listener)
+        }
+    }
 
     fun observePanelUpdates(clientDocName: String, panelDocName: String): Flow<Panel?> = callbackFlow {
         Log.d(TAG, "Starting panel updates observation for $clientDocName/$panelDocName")

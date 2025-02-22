@@ -8,20 +8,34 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.pqsolutions.hdd_monitor.service.MonitoringService
+import com.pqsolutions.hdd_monitor.data.UserRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 
-class ServiceCheckWorker(
-    private val context: Context,
-    params: WorkerParameters
+class ServiceCheckWorker @Inject constructor(
+    @ApplicationContext private val context: Context,
+    params: WorkerParameters,
+    private val userRepository: UserRepository
 ) : CoroutineWorker(context, params) {
 
     companion object {
         private const val TAG = "ServiceCheckWorker"
+        const val SERVICE_CHECK_WORK = "service_check_work"
     }
 
     override suspend fun doWork(): Result {
         try {
+            // Verificar si hay usuario logueado
+            val isLoggedIn = userRepository.getCurrentUser() != null
+
+            if (!isLoggedIn) {
+                Log.d(TAG, "No hay usuario logueado, deteniendo servicio si existe")
+                stopMonitoringService()
+                return Result.success()
+            }
+
             if (!isServiceRunning()) {
-                Log.d(TAG, "Servicio de monitoreo no encontrado, reiniciando...")
+                Log.d(TAG, "Servicio de monitoreo no encontrado y usuario logueado, reiniciando...")
                 startMonitoringService()
             }
             return Result.success()
@@ -48,5 +62,10 @@ class ServiceCheckWorker(
         } else {
             context.startService(serviceIntent)
         }
+    }
+
+    private fun stopMonitoringService() {
+        val serviceIntent = Intent(context, MonitoringService::class.java)
+        context.stopService(serviceIntent)
     }
 }

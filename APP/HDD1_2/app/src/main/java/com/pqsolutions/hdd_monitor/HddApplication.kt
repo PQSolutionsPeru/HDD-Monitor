@@ -10,10 +10,12 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import androidx.work.BackoffPolicy
 import androidx.work.Configuration
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.firebase.FirebaseApp
@@ -157,17 +159,26 @@ class HddApplication : Application(), Configuration.Provider {
     private fun scheduleServiceCheck() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresBatteryNotLow(true)
             .build()
 
         val serviceCheckWork = PeriodicWorkRequestBuilder<ServiceCheckWorker>(
-            15, TimeUnit.MINUTES)  // Verificar cada 15 minutos
+            15, TimeUnit.MINUTES)
             .setConstraints(constraints)
+            .setBackoffCriteria(
+                BackoffPolicy.LINEAR,
+                30000L, // 30 segundos como backoff mínimo recomendado
+                TimeUnit.MILLISECONDS
+            )
+            .addTag("service_check")
             .build()
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            SERVICE_CHECK_WORK,
+            ServiceCheckWorker.SERVICE_CHECK_WORK,
             ExistingPeriodicWorkPolicy.UPDATE,
             serviceCheckWork
         )
+
+        Log.d(TAG, "Service check work programado")
     }
 }

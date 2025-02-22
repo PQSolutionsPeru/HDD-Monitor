@@ -61,17 +61,11 @@ class DashboardViewModel @Inject constructor(
                     }
 
                     panelRepository.getPanels(clientDocName).collect { panels ->
-                        Log.d(TAG, "Received ${panels.size} panels for client: $clientDocName")
-
+                        Log.d(TAG, "Received ${panels.size} panels")
                         val validPanels = panels.filter { panel ->
-                            val isValid = panel.documentName.startsWith(DocumentPrefixes.PANEL) &&
+                            panel.documentName.startsWith(DocumentPrefixes.PANEL) &&
                                     panel.clientName.startsWith(DocumentPrefixes.CLIENT)
-                            if (!isValid) {
-                                Log.w(TAG, "Invalid panel document found: ${panel.documentName}")
-                            }
-                            isValid
                         }
-                        Log.d(TAG, "Valid panels count: ${validPanels.size}")
 
                         val clientsMap = mutableMapOf<String, String>()
                         validPanels.map { it.clientName }.distinct().forEach { docName ->
@@ -80,15 +74,33 @@ class DashboardViewModel @Inject constructor(
                             }
                         }
 
-                        updatePanels(validPanels, clientsMap)
+                        _uiState.update { currentState ->
+                            val uniquePanels = validPanels.distinctBy { it.documentName }
+                            val groupedPanels = uniquePanels.groupBy { clientsMap[it.clientName] ?: it.clientName }
+
+                            currentState.copy(
+                                isLoading = false,
+                                panels = uniquePanels,
+                                groupedPanels = groupedPanels,
+                                clientNames = clientsMap,
+                                error = null,
+                                lastUpdate = System.currentTimeMillis()
+                            )
+                        }
                     }
                 } else {
                     Log.e(TAG, "No authenticated user found")
-                    handleNoAuthenticatedUser()
+                    _uiState.update { it.copy(
+                        isLoading = false,
+                        error = "Error cargando paneles"
+                    ) }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading panels", e)
-                handleUnexpectedError(e)
+                _uiState.update { it.copy(
+                    isLoading = false,
+                    error = e.message ?: "Error desconocido"
+                ) }
             }
         }
     }

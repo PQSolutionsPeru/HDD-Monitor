@@ -9,6 +9,7 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.pqsolutions.hdd_monitor.R
+import com.pqsolutions.hdd_monitor.data.UserRepository
 import com.pqsolutions.hdd_monitor.presentation.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -16,6 +17,9 @@ import javax.inject.Inject
 
 @AndroidEntryPoint
 class MonitoringService : Service() {
+    @Inject
+    lateinit var userRepository: UserRepository
+
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
@@ -35,55 +39,57 @@ class MonitoringService : Service() {
         createNotificationChannel()
         acquireWakeLock()
         isServiceRunning = true
-        startMonitoringLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Servicio iniciado/reiniciado")
 
-        // Envolver en un try-catch más específico
+        // Inmediatamente mostrar la notificación para cumplir con el requisito de Android
         try {
-            val notification = createNotification()
-            startForeground(NOTIFICATION_ID, notification)
-        } catch (e: SecurityException) {
-            Log.e(TAG, "Error de permisos al iniciar servicio", e)
-            // Intenta iniciar con un tipo diferente de notificación si falla
-            try {
-                val fallbackNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setContentTitle("HDD Monitor")
-                    .setSmallIcon(R.drawable.ic_notification)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .build()
-
-                startForeground(NOTIFICATION_ID, fallbackNotification)
-            } catch (e2: Exception) {
-                Log.e(TAG, "Error crítico al iniciar servicio", e2)
-            }
+            startForeground(NOTIFICATION_ID, createNotification())
         } catch (e: Exception) {
-            Log.e(TAG, "Error general al iniciar servicio", e)
+            Log.e(TAG, "Error creando notificación inicial", e)
+            startForeground(NOTIFICATION_ID, createFallbackNotification())
         }
 
-        return START_STICKY
+        // Después de mostrar la notificación, verificar el estado de login
+        serviceScope.launch {
+            try {
+                val isLoggedIn = userRepository.getCurrentUser() != null
+                if (!isLoggedIn) {
+                    Log.d(TAG, "Usuario no logueado, deteniendo servicio")
+                    stopSelf()
+                    return@launch
+                }
+
+                // Iniciar el monitoreo solo si el usuario está logueado
+                startMonitoringLoop()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error verificando estado de login", e)
+                stopSelf()
+            }
+        }
+
+        return START_NOT_STICKY
     }
 
     private fun startMonitoringLoop() {
         serviceScope.launch {
             while (isActive) {
                 try {
-                    ensureServiceIsRunning()
+                    val isLoggedIn = userRepository.getCurrentUser() != null
+                    if (!isLoggedIn) {
+                        Log.d(TAG, "Usuario no logueado, deteniendo servicio")
+                        stopSelf()
+                        break
+                    }
+
                     delay(30_000) // 30 segundos
                 } catch (e: Exception) {
                     Log.e(TAG, "Error en el loop de monitoreo", e)
                     delay(5_000) // Esperar 5 segundos antes de reintentar
                 }
             }
-        }
-    }
-
-    private fun ensureServiceIsRunning() {
-        if (!isServiceRunning) {
-            Log.d(TAG, "Detectada parada del servicio, intentando reiniciar")
-            restartService()
         }
     }
 
@@ -115,33 +121,23 @@ class MonitoringService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HDD Monitor")
-            .setContentText("Monitoreando estado del panel")  // Agregado para más claridad
+            .setContentText("Monitoreando estado del panel")
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)  // Cambiado de MIN a LOW
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)  // Agregado categoría
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setShowWhen(false)
             .build()
     }
 
-    private fun createNotificationPreO(): Notification {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
+    private fun createFallbackNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HDD Monitor")
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .build()
     }
@@ -174,38 +170,39 @@ class MonitoringService : Service() {
         }
     }
 
-    private fun restartService() {
-        val intent = Intent(applicationContext, MonitoringService::class.java)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error reiniciando servicio", e)
-        }
-    }
-
     override fun onDestroy() {
         Log.d(TAG, "Servicio siendo destruido")
         isServiceRunning = false
         serviceJob.cancel()
         releaseWakeLock()
         super.onDestroy()
-        restartService()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         Log.d(TAG, "Tarea removida")
         super.onTaskRemoved(rootIntent)
-        restartService()
+
+        // Verificar estado de login antes de reiniciar
+        serviceScope.launch {
+            try {
+                val isLoggedIn = userRepository.getCurrentUser() != null
+                if (isLoggedIn) {
+                    Log.d(TAG, "Usuario logueado, reiniciando servicio")
+                    startService(Intent(applicationContext, MonitoringService::class.java))
+                } else {
+                    Log.d(TAG, "Usuario no logueado, no se reinicia el servicio")
+                    stopSelf()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error verificando estado de login", e)
+                stopSelf()
+            }
+        }
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
         Log.d(TAG, "Memoria baja detectada")
-        // Intentar liberar recursos no esenciales pero mantener el servicio
         System.gc()
     }
 

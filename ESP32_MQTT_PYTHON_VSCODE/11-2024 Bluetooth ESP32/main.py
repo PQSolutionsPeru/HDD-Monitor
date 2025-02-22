@@ -9,7 +9,6 @@ from watchdog_manager import WatchdogManager
 from esp32_id_manager import ESP32IdManager
 from bluetooth_manager import BluetoothManager
 from time_manager import TimeManager
-from ota_manager import OTAManager
 
 _last_state_check = 0
 
@@ -43,42 +42,71 @@ def check_memory():
     return True
 
 def setup_relay_monitoring(managers, esp32_id):
-    """Configures relay monitoring"""
     try:
         print("\n[RELAY] Configuring relays...")
         managers["relay"] = RelayManager()
         managers["mqtt"].set_relay_manager(managers["relay"])
         relay_config = managers["relay"].config
         
+        # Controladores de estado para evitar duplicados
+        last_relay_states = {}  # Almacena el último estado enviado
+        last_send_times = {}    # Almacena el último tiempo de envío por relé
+        MIN_SEND_INTERVAL = 2000  # Intervalo mínimo entre envíos (2 segundos)
+        
         def relay_callback(pin, pin_num):
             try:
                 pin_names = relay_config.get_relay_pins()
                 pin_name = pin_names.get(pin_num, str(pin_num))
+                current_time = utime.ticks_ms()
                 
-                # Leer estado directamente del pin - LOW = OK (contacto cerrado), HIGH = DISC (contacto abierto)
-                state = "OK" if pin.value() == 0 else "DISC"
+                # Leer estado directamente del pin
+                current_state = "OK" if pin.value() == 0 else "DISC"
                 
-                print(f"[RELAY] Change in relay {pin_num} ({pin_name}): {state}")
+                # Solo enviar si:
+                # 1. Es el primer mensaje para este relé, o
+                # 2. El estado ha cambiado desde el último envío, y
+                # 3. Ha pasado suficiente tiempo desde el último envío
                 
-                if managers["mqtt"].client_id and managers["mqtt"].panel_id:
-                    message = {
-                        "esp32_id": esp32_id,
-                        "relay": pin_name,
-                        "state": state,
-                        "timestamp": {
-                            "value": utime.ticks_ms(),
-                            "type": "realtime"
-                        }
-                    }
+                if (
+                    pin_name not in last_relay_states or 
+                    (current_state != last_relay_states[pin_name] and 
+                     utime.ticks_diff(current_time, last_send_times.get(pin_name, 0)) > MIN_SEND_INTERVAL)
+                ):
+                    print(f"[RELAY] Sending change notification for {pin_name}: {current_state}")
+                    # Actualizar registros
+                    last_relay_states[pin_name] = current_state
+                    last_send_times[pin_name] = current_time
                     
-                    managers["mqtt"].publish_event(
-                        f"clients/{managers['mqtt'].client_id}/panels/{managers['mqtt'].panel_id}",
-                        message,
-                        retain=False,
-                        qos=1
-                    )
+                    if managers["mqtt"].client_id and managers["mqtt"].panel_id:
+                        message = {
+                            "esp32_id": esp32_id,
+                            "relay": pin_name,
+                            "state": current_state,
+                            "timestamp": {
+                                "value": current_time,
+                                "type": "realtime"
+                            }
+                        }
+                        
+                        managers["mqtt"].publish_event(
+                            f"clients/{managers['mqtt'].client_id}/panels/{managers['mqtt'].panel_id}",
+                            message,
+                            retain=False,
+                            qos=1
+                        )
+                else:
+                    # Registrar que se evitó un duplicado
+                    if pin_name in last_relay_states and current_state == last_relay_states[pin_name]:
+                        time_since_last = utime.ticks_diff(current_time, last_send_times.get(pin_name, 0))
+                        print(f"[RELAY] Skipping duplicate notification for {pin_name} (same state: {current_state}, {time_since_last}ms since last)")
+                    else:
+                        time_since_last = utime.ticks_diff(current_time, last_send_times.get(pin_name, 0)) 
+                        print(f"[RELAY] Debounce active for {pin_name}, waiting more time (elapsed: {time_since_last}ms)")
+                        
             except Exception as e:
                 print(f"[RELAY] Callback error: {e}")
+                import sys
+                sys.print_exception(e)
         
         # Configure each relay using config
         pin_config = relay_config.get_relay_pins()
@@ -86,15 +114,22 @@ def setup_relay_monitoring(managers, esp32_id):
             relay_pin = managers["relay"].setup_relay(pin_num, relay_callback)
             print(f"[RELAY] Configured relay on pin {pin_num} ({pin_name})")
             
-            # Get initial state - LOW = OK (contacto cerrado), HIGH = DISC (contacto abierto)
+            # Get initial state
             pin_value = relay_pin.value()
             initial_state = "OK" if pin_value == 0 else "DISC"
+            
+            # Inicializar estados
+            last_relay_states[pin_name] = initial_state
+            last_send_times[pin_name] = utime.ticks_ms()
+            
             print(f"[RELAY] Initial state of relay {pin_num} ({pin_name}): {initial_state}")
             
         return True
         
     except Exception as e:
         print(f"[RELAY] Setup error: {e}")
+        import sys
+        sys.print_exception(e)
         return False
 
 def pre_init_cleanup():
@@ -190,13 +225,6 @@ def initialize_system():
         # Configuración final de MQTT
         if managers.get("esp32_id"):
             managers["mqtt"].esp32_id = managers["esp32_id"].get_id()
-            
-        # Inicializar OTA Manager
-        print("[INIT] Iniciando OTAManager...")
-        managers["ota"] = OTAManager(managers["mqtt"])
-        managers["mqtt"].ota_manager = managers["ota"]  # Referencia cruzada
-        utime.sleep_ms(500)
-        gc.collect()
             
         print("[INIT] Inicialización completada")
         return managers
