@@ -78,24 +78,21 @@ class ESP32IdManager:
         return False
 
     def _generate_unique_id(self):
-        """Genera ID único basado en MAC y timestamp"""
+        """Genera ID único basado únicamente en MAC - 8 caracteres"""
         try:
             print("[ESP32_ID] Generando ID único...")
             
-            # Validar que tenemos MAC
             if not self.mac_address:
                 print("[ESP32_ID] Error: MAC no disponible")
                 return None
-                
-            # Generar ID con formato específico
-            mac_part = self.mac_address[-4:]  # Últimos 4 caracteres del MAC
-            time_hex = hex(int(utime.time()) % 0x10000)[2:].upper()
-            # Padding manual para time_hex en lugar de usar zfill
-            while len(time_hex) < 4:
-                time_hex = '0' + time_hex
             
-            # Combinar para ID de 8 caracteres
-            self.esp32_id = f"{mac_part}AC{time_hex}"
+            # Usar los últimos 4 caracteres del MAC
+            mac_end = self.mac_address[-4:].upper()
+            # Usar los primeros 2 caracteres del MAC
+            mac_start = self.mac_address[:2].upper()
+            
+            # Generar ID de 8 caracteres
+            self.esp32_id = f"{mac_end}AC{mac_start}"
             print(f"[ESP32_ID] ID generado: {self.esp32_id}")
             
             # Añadir al historial

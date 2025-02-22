@@ -11,6 +11,7 @@ from config.device_pool_config import DevicePoolConfig
 class MQTTManager:
     def __init__(self, wifi_manager):
         """Inicializa el gestor MQTT con configuración"""
+        print("[MQTT] Iniciando gestor MQTT...")
         self.wifi_manager = wifi_manager
         self.mqtt_config = MQTTConfig()
         self.device_pool = DevicePoolConfig()
@@ -19,20 +20,14 @@ class MQTTManager:
         self.mac_address = ubinascii.hexlify(machine.unique_id()).decode()
         
         # Control de conexión previa
-        self.was_previously_connected = False  # Añadido para controlar reconexiones
+        self.was_previously_connected = False
         
-        # Obtener dispositivo del pool
-        device = self.device_pool.get_device_by_mac(self.mac_address) or self.device_pool.assign_device(self.mac_address)
-        if device:
-            print(f"[MQTT] Usando device del pool: {device['client_id']}")
-            self.MQTT_BROKER = self.mqtt_config.get_broker_config()['broker']
-            self.MQTT_PORT = self.mqtt_config.get_broker_config()['port']
-            self.MQTT_CLIENT_ID = device['client_id']
-            self.MQTT_USER = device['user']
-            self.MQTT_PASSWORD = device['password']
-        else:
-            print("[MQTT] Error: No hay dispositivos disponibles en el pool")
-            raise Exception("No MQTT devices available")
+        # Inicialmente sin credenciales - se configuran con set_esp32_id
+        self.MQTT_BROKER = self.device_pool.get_broker_config()['host']
+        self.MQTT_PORT = self.device_pool.get_broker_config()['port']
+        self.MQTT_CLIENT_ID = None
+        self.MQTT_USER = None
+        self.MQTT_PASSWORD = None
         
         # Información de operación
         self.client_id = None
@@ -60,7 +55,7 @@ class MQTTManager:
         self.MAX_QUEUE_SIZE = self.mqtt_config.get_queue_size()
         self.MAX_PROCESSED_IDS = self.mqtt_config.get_max_processed_ids()
         
-        print("[MQTT] Manager iniciado con configuración optimizada")
+        print("[MQTT] Gestor iniciado - esperando ESP32_ID")
 
     def check_socket(self):
         """Verifica el estado del socket MQTT"""
@@ -208,15 +203,50 @@ class MQTTManager:
             print(f"[MQTT] Error en ensure_connection: {e}")
             return False
 
+    def set_esp32_id(self, esp32_id):
+        """Configura las credenciales MQTT basadas en el ESP32_ID"""
+        try:
+            print(f"[MQTT] Configurando credenciales para {esp32_id}")
+            
+            if not esp32_id:
+                print("[MQTT] Error: ESP32_ID inválido")
+                return False
+                
+            # Asignar ESP32_ID
+            self.esp32_id = esp32_id
+            
+            # Obtener credenciales del pool
+            credentials = self.device_pool.assign_device(self.mac_address, esp32_id)
+            if not credentials:
+                print("[MQTT] Error: No se pudieron obtener credenciales")
+                return False
+                
+            # Configurar credenciales
+            self.MQTT_CLIENT_ID = credentials['client_id']
+            self.MQTT_USER = credentials['user']
+            self.MQTT_PASSWORD = credentials['password']
+            
+            print(f"[MQTT] Credenciales configuradas exitosamente para {esp32_id}")
+            print(f"[MQTT] Client ID: {self.MQTT_CLIENT_ID}")
+            print(f"[MQTT] Usuario: {self.MQTT_USER}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"[MQTT] Error configurando credenciales: {e}")
+            return False
+
     def connect(self):
-        """Conecta al broker MQTT con manejo de errores mejorado"""
+        """Conecta al broker MQTT con las nuevas credenciales"""
         try:
             print("[MQTT] Iniciando conexión...")
-            print(f"[MQTT] - Broker: {self.MQTT_BROKER}")
-            print(f"[MQTT] - Puerto: {self.MQTT_PORT}")
-            print(f"[MQTT] - Cliente ID: {self.MQTT_CLIENT_ID}")
-            gc.collect()
             
+            # Verificar que tengamos credenciales
+            if not all([self.MQTT_CLIENT_ID, self.MQTT_USER, self.MQTT_PASSWORD]):
+                print("[MQTT] Error: Credenciales no configuradas")
+                return False
+                
+            # Verificar WiFi
             if not self.wifi_manager.check_connection():
                 print("[MQTT] Error: Sin conexión WiFi")
                 return False
@@ -225,7 +255,7 @@ class MQTTManager:
                 print("[MQTT] Error: No se pudo obtener IP")
                 return False
 
-            # Limpiar cliente anterior si existe
+            # Limpiar cliente anterior
             if self.client:
                 try:
                     self.client.disconnect()
@@ -235,7 +265,7 @@ class MQTTManager:
                 gc.collect()
                 utime.sleep_ms(1000)
 
-            # Obtener contexto SSL
+            # Obtener SSL
             from mqtt_ssl_setup import get_ssl_params
             ssl_context = get_ssl_params()
             if not ssl_context:
@@ -243,6 +273,10 @@ class MQTTManager:
                 return False
 
             print("[MQTT] Creando cliente...")
+            print(f"[MQTT] - Broker: {self.MQTT_BROKER}")
+            print(f"[MQTT] - Puerto: {self.MQTT_PORT}")
+            print(f"[MQTT] - Client ID: {self.MQTT_CLIENT_ID}")
+            
             self.client = MQTTClient(
                 client_id=self.MQTT_CLIENT_ID,
                 server=self.MQTT_BROKER,
@@ -253,7 +287,7 @@ class MQTTManager:
                 ssl=ssl_context
             )
 
-            # Configurar LWT antes de conectar
+            # Configurar LWT
             if self.esp32_id:
                 self._setup_lwt()
 
@@ -274,11 +308,11 @@ class MQTTManager:
                         continue
                     return False
 
-            # Resetear estados de conexión
+            # Resetear estados
             self.connection_healthy = True
             self.last_activity_time = utime.ticks_ms()
 
-            # Configurar callback y suscripción si tenemos ID
+            # Configurar subscripción si tenemos ID
             if self.esp32_id:
                 config_topic = f"esp32/config/{self.esp32_id}"
                 print(f"[MQTT] Suscribiendo a: {config_topic}")
@@ -290,7 +324,7 @@ class MQTTManager:
                     print(f"[MQTT] Error en suscripción: {e}")
                     return False
 
-                # Publicar estado inicial solo si no estábamos conectados previamente
+                # Publicar estado inicial
                 if not self.was_previously_connected:
                     info = {
                         'esp32_id': self.esp32_id,
@@ -313,10 +347,9 @@ class MQTTManager:
                     )
                     print(f"[MQTT] Resultado envío info inicial: {'Exitoso' if result else 'Fallido'}")
 
-                # Marcar como conectado previamente
-                self.was_previously_connected = True
-
-            print("[MQTT] Setup completed successfully")
+            # Marcar como conectado previamente
+            self.was_previously_connected = True
+            print("[MQTT] Setup completado exitosamente")
             return True
 
         except Exception as e:
@@ -647,31 +680,40 @@ class MQTTManager:
 
     def close(self):
         """Cierra conexión MQTT y limpia recursos"""
-        if self.client:
-            try:
-                # Publicar desconexión limpia
-                self.publish_event(
-                    f"system/status/{self.esp32_id}",
-                    {
-                        "esp32_id": self.esp32_id,
-                        "status": "OFFLINE",
-                        "message_id": f"{utime.ticks_ms()}-{random.randint(1000,9999)}",
-                        "timestamp": utime.ticks_ms()
-                    },
-                    qos=1
-                )
-                utime.sleep_ms(500)  # Esperar envío
-                self.client.disconnect()
-            except:
-                pass
-            self.client = None
+        try:
+            if self.client:
+                try:
+                    # Publicar desconexión limpia
+                    self.publish_event(
+                        f"system/status/{self.esp32_id}",
+                        {
+                            "esp32_id": self.esp32_id,
+                            "status": "OFFLINE",
+                            "message_id": f"{utime.ticks_ms()}-{random.randint(1000,9999)}",
+                            "timestamp": utime.ticks_ms()
+                        },
+                        qos=1
+                    )
+                    utime.sleep_ms(500)
+                    self.client.disconnect()
+                except:
+                    pass
+                self.client = None
             
-        # Liberar dispositivo del pool
-        self.device_pool.release_device(self.mac_address)
-        
-        self._processed_ids.clear()
-        self.message_queue.clear()
-        gc.collect()
+            # Liberar del pool
+            if self.esp32_id:
+                self.device_pool.release_device(self.mac_address)
+            
+            self._processed_ids.clear()
+            self.message_queue.clear()
+            gc.collect()
+            
+            print("[MQTT] Recursos liberados correctamente")
+            return True
+            
+        except Exception as e:
+            print(f"[MQTT] Error en close: {e}")
+            return False
 
     def get_mac(self):
         """Obtiene MAC address"""
