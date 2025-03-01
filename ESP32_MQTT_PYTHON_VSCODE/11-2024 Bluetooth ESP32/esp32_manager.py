@@ -45,34 +45,81 @@ class ESP32Manager:
         try:
             ser = self._open_serial()
             if not ser:
+                logging.error("No se pudo abrir la conexión serial")
                 return False
 
-            # Enviar múltiples CTRL+C para interrumpir cualquier programa corriendo
-            ser.write(self.repl_enter_cmd)
-            time.sleep(1)
+            # Limpiar cualquier buffer pendiente
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
             
-            # Leer la respuesta para verificar que entramos al REPL
-            response = ser.read_all().decode('utf-8', errors='ignore')
-            logging.debug(f"Respuesta: {response}")
-            
-            if ">>>" in response or "MicroPython" in response:
-                logging.info("Scripts detenidos exitosamente")
-                ser.close()
-                return True
-            else:
-                # Intentar nuevamente
-                ser.write(self.repl_enter_cmd)
-                time.sleep(1)
-                response = ser.read_all().decode('utf-8', errors='ignore')
+            # Intentar varias veces con diferentes enfoques
+            for attempt in range(3):
+                # Enviar CTRL+C varias veces con diferentes patrones
+                if attempt == 0:
+                    # Primer intento: simple CTRL+C repetido
+                    ser.write(b'\x03\x03\x03\r\n')
+                elif attempt == 1:
+                    # Segundo intento: ENTER seguido de CTRL+C
+                    ser.write(b'\r\n\x03\x03\r\n')
+                else:
+                    # Tercer intento: varios ENTER y CTRL+C con tiempos
+                    ser.write(b'\r\n')
+                    time.sleep(0.2)
+                    ser.write(b'\x03')
+                    time.sleep(0.2)
+                    ser.write(b'\x03')
+                    time.sleep(0.2)
+                    ser.write(b'\r\n')
                 
+                # Dar tiempo para procesar los comandos
+                time.sleep(1)
+                
+                # Leer la respuesta para verificar que entramos al REPL
+                response = ser.read_all().decode('utf-8', errors='ignore')
+                logging.info(f"Intento {attempt+1}, respuesta: {response[:100]}...")
+                
+                # Verificar si entramos al REPL
                 if ">>>" in response or "MicroPython" in response:
-                    logging.info("Scripts detenidos exitosamente (segundo intento)")
+                    logging.info(f"Scripts detenidos exitosamente (intento {attempt+1})")
+                    ser.close()
+                    return True
+            
+            # Si llegamos aquí, intentar un último enfoque usando ampy reset
+            logging.info("Intentando detener scripts mediante reset...")
+            ser.close()  # Cerrar el puerto antes
+            
+            try:
+                # Usar ampy para reiniciar y luego conectar de nuevo para enviar CTRL+C
+                subprocess.run(
+                    ["ampy", "-p", self.port, "reset"],
+                    capture_output=True,
+                    timeout=5
+                )
+                time.sleep(2)  # Esperar a que reinicie
+                
+                # Volver a conectar
+                ser = self._open_serial()
+                if not ser:
+                    return False
+                    
+                # Enviar CTRL+C justo después del reinicio
+                time.sleep(0.5)
+                ser.write(b'\x03\x03\r\n')
+                time.sleep(1)
+                
+                response = ser.read_all().decode('utf-8', errors='ignore')
+                if ">>>" in response or "MicroPython" in response:
+                    logging.info("Scripts detenidos exitosamente mediante reset")
                     ser.close()
                     return True
                 else:
                     logging.error("No se pudo detener los scripts")
                     ser.close()
                     return False
+                    
+            except Exception as e:
+                logging.error(f"Error en el intento con reset: {e}")
+                return False
                 
         except Exception as e:
             logging.error(f"Error al detener scripts: {e}")
@@ -85,33 +132,67 @@ class ESP32Manager:
             try:
                 ser = self._open_serial()
                 if not ser:
-                    return False
+                    logging.warning("No se pudo abrir el puerto serial para soft reset, intentando hard reset")
+                    return self.restart_device(soft_reset=False)
                 
                 # Enviar CTRL+D para soft reboot
                 ser.write(self.repl_exit_cmd)
                 time.sleep(2)
+                
+                # Verificar si el reinicio fue exitoso
+                response = ser.read_all().decode('utf-8', errors='ignore')
+                if "boot.py" in response or "main.py" in response:
+                    logging.info("ESP32 reiniciado correctamente (soft reset)")
+                else:
+                    logging.info("No se detectó mensaje de reinicio, pero se envió la señal")
+                
                 ser.close()
-                logging.info("ESP32 reiniciado (soft reset)")
                 return True
             except Exception as e:
                 logging.error(f"Error al realizar soft reset: {e}")
-                return False
+                logging.info("Intentando hard reset como alternativa...")
+                return self.restart_device(soft_reset=False)
         else:
             # Hard reset usando ampy
             logging.info("Realizando hard reset del ESP32...")
             try:
-                result = subprocess.run(
-                    ["ampy", "-p", self.port, "reset"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0:
-                    logging.info("ESP32 reiniciado (hard reset)")
-                    return True
-                else:
-                    logging.error(f"Error al reiniciar ESP32: {result.stderr}")
-                    return False
+                # Intentar múltiples veces
+                for attempt in range(2):
+                    try:
+                        result = subprocess.run(
+                            ["ampy", "-p", self.port, "reset"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            logging.info("ESP32 reiniciado (hard reset)")
+                            return True
+                        else:
+                            logging.warning(f"Intento {attempt+1}: Error al reiniciar ESP32: {result.stderr}")
+                    except subprocess.TimeoutExpired:
+                        logging.warning(f"Intento {attempt+1}: Timeout durante reset")
+                    
+                    # Si fallamos, intentar con un pequeño retraso
+                    time.sleep(2)
+                
+                # Último recurso: cerrar y volver a abrir el puerto
+                logging.info("Intentando reset mediante cierre y reapertura del puerto...")
+                try:
+                    ser = self._open_serial()
+                    if ser:
+                        ser.close()
+                    time.sleep(1)
+                    ser = self._open_serial()
+                    if ser:
+                        ser.close()
+                        logging.info("Puerto reabierto y cerrado para forzar reset")
+                        return True
+                except:
+                    pass
+                
+                logging.error("No se pudo reiniciar el ESP32 después de múltiples intentos")
+                return False
             except Exception as e:
                 logging.error(f"Error al realizar hard reset: {e}")
                 return False
@@ -251,14 +332,28 @@ class ESP32Manager:
         
         # 2. Detener scripts en ejecución
         if not self.stop_running_scripts():
-            logging.error("No se pudo detener los scripts en ejecución")
-            return False
+            logging.warning("No se pudo detener los scripts usando el método normal")
+            logging.info("Intentando descargar el archivo de todos modos...")
             
         # 3. Descargar el archivo a editar
         temp_file = f"temp_{os.path.basename(file_to_edit)}"
-        if not self.get_file(file_to_edit, temp_file):
+        success, _ = self.execute_ampy_command(["get", file_to_edit, temp_file])
+        if not success:
             logging.error(f"No se pudo descargar {file_to_edit}")
-            return False
+            logging.info("Verificando si el archivo existe en el ESP32...")
+            
+            # Listar archivos para ver si el archivo existe
+            files = self.list_files()
+            if file_to_edit not in files:
+                response = input(f"El archivo {file_to_edit} no existe. ¿Desea crearlo? (s/n): ")
+                if response.lower() != 's':
+                    return False
+                # Crear archivo vacío
+                with open(temp_file, 'w') as f:
+                    f.write("")
+                logging.info(f"Archivo temporal {temp_file} creado para edición")
+            else:
+                return False
             
         # 4. Abrir el archivo en el editor predeterminado
         try:
@@ -382,6 +477,7 @@ class ESP32Manager:
 def main():
     parser = argparse.ArgumentParser(description="ESP32 Manager - Herramienta para gestionar ESP32 con MicroPython")
     parser.add_argument("--port", "-p", type=str, default="COM3", help="Puerto serie (default: COM3)")
+    parser.add_argument("--debug", "-d", action="store_true", help="Activar modo de depuración")
     
     # Subparsers para diferentes comandos
     subparsers = parser.add_subparsers(dest="command", help="Comando a ejecutar")
@@ -390,6 +486,7 @@ def main():
     edit_parser = subparsers.add_parser("edit", help="Detener, editar archivo y reanudar")
     edit_parser.add_argument("file_to_edit", help="Archivo a editar")
     edit_parser.add_argument("--main", "-m", default="main.py", help="Script principal a reanudar (default: main.py)")
+    edit_parser.add_argument("--force", "-f", action="store_true", help="Continuar incluso si no se puede detener el script")
     
     # Comando stop
     stop_parser = subparsers.add_parser("stop", help="Detener scripts en ejecución")
@@ -442,6 +539,11 @@ def main():
     if args.command is None:
         parser.print_help()
         return
+    
+    # Configurar nivel de logging si se activa el debug
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.debug("Modo debug activado")
     
     manager = ESP32Manager(args.port)
     

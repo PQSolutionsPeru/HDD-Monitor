@@ -18,13 +18,15 @@ class LEDManager:
         self.current_mode = None
         
         # Control de la secuencia de inicio
-        self.running_startup_sequence = True
+        self.running_startup_sequence = False
         self.sequence_timer = None
         self.transition_step = 0
         self.color_index = 0  # 0: rojo->verde, 1: verde->azul, 2: azul->rojo
         
-        # Inicialmente apagar todos los LEDs
-        self.all_off()
+        # Inicialmente apagar todos los LEDs de forma explícita
+        self.led_green.value(0)
+        self.led_blue.value(0)
+        self.led_red.value(0)
         
         # Iniciar la secuencia de inicio mediante Timer (no bloqueante)
         print("[LED] Iniciando secuencia de inicio")
@@ -33,19 +35,23 @@ class LEDManager:
         print("[LED] Gestor de LEDs iniciado correctamente")
     
     def all_off(self):
-        """Apaga todos los LEDs"""
+        """Apaga todos los LEDs de forma segura"""
+        # Apagado explícito de cada LED
         self.led_green.value(0)
         self.led_blue.value(0)
         self.led_red.value(0)
+        
+        # Pequeña pausa para asegurar que los cambios surtan efecto
+        utime.sleep_ms(5)
     
     def set_config_mode(self):
         """Configura LEDs para modo de configuración (solo azul encendido)"""
         # Detener la secuencia de inicio si está corriendo
-        self.stop_sequence_timer()
+        if self.running_startup_sequence:
+            self.stop_sequence_timer()
         
-        if self.current_mode == "config":
-            return  # Evitar operaciones redundantes
-            
+        # Incluso si el modo es el mismo, forzamos la actualización
+        # para garantizar el estado correcto de los LEDs
         self.all_off()
         self.led_blue.value(1)
         self.current_mode = "config"
@@ -54,11 +60,10 @@ class LEDManager:
     def set_running_mode(self):
         """Configura LEDs para modo de operación normal (solo verde encendido)"""
         # Detener la secuencia de inicio si está corriendo
-        self.stop_sequence_timer()
+        if self.running_startup_sequence:
+            self.stop_sequence_timer()
         
-        if self.current_mode == "running":
-            return  # Evitar operaciones redundantes
-            
+        # Forzar estado correcto de LEDs
         self.all_off()
         self.led_green.value(1)
         self.current_mode = "running"
@@ -67,11 +72,10 @@ class LEDManager:
     def set_error_mode(self):
         """Configura LEDs para modo de error (solo rojo encendido)"""
         # Detener la secuencia de inicio si está corriendo
-        self.stop_sequence_timer()
+        if self.running_startup_sequence:
+            self.stop_sequence_timer()
         
-        if self.current_mode == "error":
-            return  # Evitar operaciones redundantes
-            
+        # Forzar estado correcto de LEDs
         self.all_off()
         self.led_red.value(1)
         self.current_mode = "error"
@@ -83,6 +87,9 @@ class LEDManager:
     
     def start_sequence_timer(self):
         """Inicia el timer para la secuencia de inicio"""
+        # Asegurar que los LEDs estén apagados al inicio
+        self.all_off()
+        
         # Usar un timer para ejecutar la secuencia sin bloquear
         self.sequence_timer = Timer(-1)
         self.sequence_timer.init(period=10, mode=Timer.PERIODIC, callback=self.sequence_step)
@@ -93,8 +100,11 @@ class LEDManager:
         if self.sequence_timer:
             self.sequence_timer.deinit()
             self.sequence_timer = None
+        
         self.running_startup_sequence = False
-        self.all_off()  # Asegurar que ningún LED quede encendido
+        
+        # Asegurar que ningún LED quede encendido
+        self.all_off()
         
     def sequence_step(self, timer):
         """Ejecuta un paso de la secuencia de transición de colores"""
@@ -118,7 +128,7 @@ class LEDManager:
             led_from = self.led_blue
             led_to = self.led_red
             
-        # Apagar todos los LEDs primero
+        # Primero apagar TODOS los LEDs de forma explícita
         self.all_off()
         
         # Calculamos si debe encenderse el LED origen o destino
