@@ -10,6 +10,7 @@ from watchdog_manager import WatchdogManager
 from esp32_id_manager import ESP32IdManager
 from bluetooth_manager import BluetoothManager
 from time_manager import TimeManager
+from led_manager import LEDManager  # Añadido: importación del LEDManager
 
 # System Constants
 MAX_LOOP_TIME = 1000           # 1000ms maximum per cycle
@@ -287,8 +288,12 @@ def initialize_system():
         # Limpieza previa
         if not pre_init_cleanup():
             raise Exception("Fallo en limpieza inicial")
+
+        # Inicializar LEDManager primero para indicar estado desde el inicio
+        print("[INIT] Iniciando LEDManager...")
+        managers["led"] = LEDManager()
             
-        # 1. Iniciar WatchdogManager primero
+        # 1. Iniciar WatchdogManager 
         print("[INIT] Iniciando WatchdogManager...")
         managers["watchdog"] = WatchdogManager()
         managers["watchdog"].feed()
@@ -308,6 +313,7 @@ def initialize_system():
                 utime.sleep_ms(2000)
                 
         if "wifi" not in managers:
+            managers["led"].set_error_mode()  # Indicar error con LED
             raise Exception("No se pudo iniciar WiFiManager")
         
         # 3. Iniciar ESP32IdManager y obtener ID
@@ -315,6 +321,7 @@ def initialize_system():
         managers["esp32_id"] = ESP32IdManager()
         esp32_id = managers["esp32_id"].get_id()
         if not esp32_id:
+            managers["led"].set_error_mode()  # Indicar error con LED
             raise Exception("No se pudo obtener ESP32_ID")
         print(f"[INIT] ESP32_ID obtenido: {esp32_id}")
         
@@ -322,6 +329,7 @@ def initialize_system():
         print("[INIT] Iniciando MQTTManager...")
         managers["mqtt"] = MQTTManager(managers["wifi"])
         if not managers["mqtt"].set_esp32_id(esp32_id):
+            managers["led"].set_error_mode()  # Indicar error con LED
             raise Exception("No se pudieron configurar credenciales MQTT")
         print("[INIT] Credenciales MQTT configuradas")
         
@@ -333,6 +341,8 @@ def initialize_system():
         
     except Exception as e:
         print(f"[INIT] Error fatal en inicialización: {e}")
+        if "led" in managers:
+            managers["led"].set_error_mode()  # Indicar error con LED
         if "watchdog" in managers:
             try:
                 managers["watchdog"].force_reset("init_error")
@@ -344,6 +354,7 @@ def setup_wifi_mode(managers, bluetooth_manager):
     """Sets up WiFi configuration mode using BLE"""
     try:
         print("[CONFIG] Starting BLE configuration mode")
+        # Mantenemos la secuencia de transición, NO encender LED azul todavía
 
         ble_timeout = BLE_CONFIG_TIMEOUT
         start_time = utime.ticks_ms()
@@ -385,6 +396,7 @@ def setup_wifi_mode(managers, bluetooth_manager):
     except Exception as e:
         print(f"[CONFIG] Error in BLE configuration: {e}")
         sys.print_exception(e)
+        managers["led"].set_error_mode()  # Indicar error con LED
         return False
 
 def setup_mqtt_connection(managers):
@@ -395,6 +407,7 @@ def setup_mqtt_connection(managers):
         
         if not esp32_id:
             print("[MQTT] Error: No ESP32 ID available")
+            managers["led"].set_error_mode()  # Indicar error con LED
             return False
             
         print(f"[MQTT] Configurando conexión para ESP32 ID: {esp32_id}")
@@ -409,12 +422,14 @@ def setup_mqtt_connection(managers):
         # Intentar conexión MQTT con las nuevas credenciales
         if not managers["mqtt"].connect():
             print("[MQTT] Error: No se pudo establecer conexión MQTT")
+            managers["led"].set_error_mode()  # Indicar error con LED
             return False
             
         # Suscripción al tópico de configuración
         config_topic = f"esp32/config/{esp32_id}"
         if not managers["mqtt"].subscribe(config_topic):
             print("[MQTT] Error: Falló la suscripción")
+            managers["led"].set_error_mode()  # Indicar error con LED
             return False
         
         print("[MQTT] Setup completado. Esperando configuración de la VM...")
@@ -433,6 +448,7 @@ def setup_mqtt_connection(managers):
             
             if not managers["wifi"].check_connection():
                 print("[MQTT] Se perdió conexión WiFi")
+                managers["led"].set_error_mode()  # Indicar error con LED
                 return False
                 
             # Verificar si recibimos configuración
@@ -450,12 +466,14 @@ def setup_mqtt_connection(managers):
             utime.sleep_ms(100)
             
         print("[MQTT] Timeout esperando configuración")
+        managers["led"].set_error_mode()  # Indicar error con LED
         return False
             
     except Exception as e:
         print(f"[MQTT] Error en setup_mqtt_connection: {e}")
         import sys
         sys.print_exception(e)
+        managers["led"].set_error_mode()  # Indicar error con LED
         return False
 
 # Variables globales para tracking de estados
@@ -467,6 +485,9 @@ def handle_running_mode(managers):
     global _running_mode_error_count, _running_mode_last_mqtt_check
     
     try:
+        # Asegurar que esté en modo running para LED
+        managers["led"].set_running_mode()  # Indicar modo de operación con LED verde
+        
         # Parámetros de configuración
         mqtt_check_interval = 2000  # 2 segundos entre verificaciones MQTT
         max_errors = 3  # Permitir hasta 3 errores antes de cambiar estado
@@ -509,6 +530,7 @@ def handle_running_mode(managers):
         # Solo cambiar estado si alcanzamos el máximo de errores
         if _running_mode_error_count >= max_errors:
             print(f"[RUNNING] Error threshold reached ({max_errors}), changing state")
+            managers["led"].set_error_mode()  # Indicar error con LED rojo
             _running_mode_error_count = 0  # Resetear para el próximo ciclo
             managers["mqtt"].was_previously_connected = False
             return False
@@ -520,6 +542,7 @@ def handle_running_mode(managers):
         import sys
         sys.print_exception(e)
         _running_mode_error_count += 1
+        managers["led"].set_error_mode()  # Indicar error con LED
         return _running_mode_error_count < max_errors
 
 def main():
@@ -585,6 +608,7 @@ def main():
                             except Exception as e:
                                 print(f"[MAIN] Error iniciando BluetoothManager: {e}")
                                 bluetooth_manager = None
+                                managers["led"].set_error_mode()  # Indicar error
                                 
                         # Procesar BluetoothManager si existe
                         if bluetooth_manager is not None:
@@ -600,12 +624,16 @@ def main():
                                 has_wifi_config = True
                                 current_state = SystemState.CONFIG
                                 if bluetooth_manager:
-                                    bluetooth_manager.update_state('RUNNING')
+                                    # CORREGIDO: Enviar estado CONFIG en lugar de RUNNING
+                                    bluetooth_manager.update_state('CONFIG')
                         
                 elif current_state == SystemState.CONFIG:
                     # Verificar conexión WiFi antes de MQTT
                     if managers["wifi"].check_connection():
                         print("[MAIN] WiFi conectado, procediendo a MQTT...")
+                        
+                        # AQUÍ es donde debe encenderse el LED azul
+                        managers["led"].set_config_mode()  # LED azul SOLO cuando comienza configuración MQTT
                         
                         # Liberar BLE definitivamente antes de MQTT
                         if bluetooth_manager:
@@ -625,8 +653,11 @@ def main():
                             if setup_relay_monitoring(managers, managers["esp32_id"].get_id()):
                                 print("[MAIN] Relays configurados, pasando a RUNNING")
                                 current_state = SystemState.RUNNING
+                                managers["led"].set_running_mode()  # LED verde para modo running
                             else:
                                 print("[MAIN] Error configurando relays")
+                                current_state = SystemState.ERROR
+                                managers["led"].set_error_mode()  # LED rojo para error
                                 raise Exception("Relay setup failed")
                         else:
                             print("[MAIN] No se pudo establecer conexión MQTT")
@@ -642,6 +673,17 @@ def main():
                         print("[MAIN] Problema en modo RUNNING, volviendo a CONFIG")
                         current_state = SystemState.CONFIG
                 
+                elif current_state == SystemState.ERROR:
+                    # En modo error, intentar volver al modo config después de un tiempo
+                    # Mantener el LED rojo encendido mientras tanto
+                    managers["led"].set_error_mode()
+                    
+                    # Intentar recuperarse tras un tiempo
+                    if utime.ticks_diff(current_time, _last_state_check) > 10000:  # 10 segundos
+                        print("[MAIN] Intentando recuperarse del error...")
+                        _last_state_check = current_time
+                        current_state = SystemState.CONFIG
+                
                 # Memory check and cleanup
                 if not check_memory():
                     print("[MAIN] Advertencia: Memoria baja")
@@ -654,6 +696,11 @@ def main():
             except Exception as e:
                 print(f"[MAIN] Error en bucle principal: {str(e)}")
                 sys.print_exception(e)
+                
+                # Cambiar a estado de error y actualizar LED
+                current_state = SystemState.ERROR
+                if "led" in managers:
+                    managers["led"].set_error_mode()
                 
                 # Intentar mantener sistema funcionando
                 if bluetooth_manager:

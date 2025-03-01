@@ -45,6 +45,7 @@ class ESP32Uploader:
             "managers_1": [
                 ("put", "relay_manager.py"),
                 ("put", "time_manager.py"),
+                ("put", "led_manager.py"),
             ],
             "managers_2": [
                 ("put", "watchdog_manager.py"),
