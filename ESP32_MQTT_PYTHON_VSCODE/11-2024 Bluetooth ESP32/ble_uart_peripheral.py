@@ -57,9 +57,13 @@ class BLEUART:
         # Track connections so we can send notifications.
         if event == _IRQ_CENTRAL_CONNECT:
             conn_handle, _, _ = data
+            print(f"[UART] Central connected: {conn_handle}")
+            # Detener publicidad durante la conexión activa
+            self._ble.gap_advertise(None)
             self._connections.add(conn_handle)
         elif event == _IRQ_CENTRAL_DISCONNECT:
             conn_handle, _, _ = data
+            print(f"[UART] Central disconnected: {conn_handle}")
             if conn_handle in self._connections:
                 self._connections.remove(conn_handle)
             # Start advertising again to allow a new connection.
@@ -68,6 +72,7 @@ class BLEUART:
             conn_handle, value_handle = data
             if conn_handle in self._connections and value_handle == self._rx_handle:
                 self._rx_buffer += self._ble.gatts_read(self._rx_handle)
+                print(f"[UART] Received data of size: {len(self._rx_buffer)}")
                 if self._handler:
                     self._handler()
 

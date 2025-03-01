@@ -318,6 +318,14 @@ class MQTTClient:
                     notification_handler.send_offline_notification(esp32_id)
                     logging.info(f"LWT recibido y notificado para ESP32 {esp32_id}")
             
+            # AÑADIR ESTAS LÍNEAS: Notificar cuando un dispositivo vuelve a estar online
+            elif payload['status'] == 'ONLINE' and current_data.get('status') == 'OFFLINE':
+                # Dispositivo volvió a estar online después de haber estado offline
+                from notification_handler import NotificationHandler
+                notification_handler = NotificationHandler(self.db)
+                notification_handler.send_online_notification(esp32_id)
+                logging.info(f"Dispositivo {esp32_id} volvió a estar ONLINE - Notificación enviada")
+            
             # Actualizar información adicional si está presente
             if 'version' in payload:
                 updates['firmwareVersion'] = payload['version']
@@ -341,6 +349,15 @@ class MQTTClient:
                 
             # Obtener referencia del ESP32
             esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
+            esp32_doc = esp32_ref.get()
+            
+            # Obtener datos actuales para comparar estados
+            current_data = {}
+            if esp32_doc.exists:
+                current_data = esp32_doc.to_dict()
+            
+            current_status = current_data.get('status')
+            new_status = payload.get('status')
             
             # Preparar datos a actualizar
             update_data = {
@@ -361,6 +378,13 @@ class MQTTClient:
             # Estado online/offline si está presente
             if 'status' in payload:
                 update_data['status'] = payload['status']
+                
+                # Añadir aquí la lógica de notificación
+                if new_status == 'ONLINE' and current_status == 'OFFLINE':
+                    logging.info(f"Dispositivo {esp32_id} volvió a estar ONLINE (desde network_info) - Enviando notificación")
+                    from notification_handler import NotificationHandler
+                    notification_handler = NotificationHandler(self.db)
+                    notification_handler.send_online_notification(esp32_id)
                 
             # Actualizar en Firestore
             esp32_ref.set(update_data, merge=True)

@@ -126,59 +126,104 @@ class MQTTManager:
             return False
 
     def check_connection(self):
-        """Verifica si hay conexión MQTT usando check_msg periódico"""
+        """Verifica si hay conexión MQTT usando check_msg periódico con más tolerancia"""
         try:
             if not self.client:
                 return False
-                
+                    
             current_time = utime.ticks_ms()
             health_timeout = self.mqtt_config.get_health_timeout()
             
-            # Primero verificar WiFi
+            # Primero verificar WiFi (esto es crucial)
             if not self.wifi_manager.check_connection():
                 print("[MQTT] Sin conexión WiFi")
                 return False
-                
-            # Verificar estado del socket
-            if not self.check_socket():
-                print("[MQTT] Socket MQTT no saludable")
-                self.connection_healthy = False
-                self.reconnect()
-                return False
-                
-            try:
-                # Intentar check_msg como prueba de conexión
-                self.client.check_msg()
-                
-                # Actualizar timestamp de última actividad exitosa
-                self.last_activity_time = current_time
-                self.connection_healthy = True
-                
-            except OSError as e:
-                print(f"[MQTT] Error de red: {e}")
-                if utime.ticks_diff(current_time, getattr(self, 'last_activity_time', 0)) > health_timeout:
-                    print("[MQTT] Conexión perdida - Iniciando reconexión")
-                    self.connection_healthy = False
-                    self.reconnect()
-                    return False
                     
+            # Inicializar contadores de error si no existen
+            if not hasattr(self, '_last_socket_check'):
+                self._last_socket_check = 0
+                self._socket_errors = 0
+                self._network_errors = 0
+                self._general_errors = 0
+                self._heartbeat_errors = 0
+                self._last_heartbeat_attempt = 0
+                
+            # Verificar estado del socket con menos frecuencia (más tolerancia)
+            if utime.ticks_diff(current_time, self._last_socket_check) > 5000:  # Cada 5 segundos
+                self._last_socket_check = current_time
+                
+                if not self.check_socket():
+                    # Solo registrar como error, pero no fallar inmediatamente
+                    print("[MQTT] Socket MQTT no saludable")
+                    self._socket_errors += 1
+                    
+                    # Solo reconectar después de varios errores consecutivos
+                    if self._socket_errors >= 3:
+                        print(f"[MQTT] Múltiples errores de socket ({self._socket_errors}), reconectando...")
+                        self.connection_healthy = False
+                        self.reconnect()
+                        return False
+                else:
+                    # Resetear contador si el socket está bien
+                    self._socket_errors = 0
+            
+            try:
+                # Verificar mensajes, pero manejar errores con más tolerancia
+                try:
+                    self.client.check_msg()
+                    
+                    # Actualizar timestamp de última actividad exitosa
+                    self.last_activity_time = current_time
+                    self.connection_healthy = True
+                    
+                except OSError as e:
+                    print(f"[MQTT] Error de red: {e}")
+                    self._network_errors += 1
+                    
+                    # Solo tomar acción si hemos superado el timeout y tenemos varios errores
+                    if (utime.ticks_diff(current_time, getattr(self, 'last_activity_time', 0)) > health_timeout and
+                        self._network_errors >= 3):
+                        print("[MQTT] Conexión perdida - Iniciando reconexión")
+                        self.connection_healthy = False
+                        self.reconnect()
+                        return False
+                except Exception as e:
+                    print(f"[MQTT] Error verificando mensajes: {e}")
+                    self._general_errors += 1
+                    
+                    # Solo fallar después de múltiples errores
+                    if self._general_errors >= 3:
+                        self.connection_healthy = False
+                        return False
+                    
+                # Verificar si toca enviar heartbeat (con intervalo mínimo entre envíos)
+                heartbeat_interval = self.mqtt_config.get_status_interval()
+                min_heartbeat_interval = 30000  # No enviar heartbeats más frecuentes que cada 30 segundos
+                
+                if not hasattr(self, '_last_heartbeat_attempt'):
+                    self._last_heartbeat_attempt = 0
+                
+                if (utime.ticks_diff(current_time, getattr(self, 'last_heartbeat_time', 0)) >= heartbeat_interval and
+                    utime.ticks_diff(current_time, self._last_heartbeat_attempt) >= min_heartbeat_interval):
+                    
+                    self._last_heartbeat_attempt = current_time
+                    if not self.send_heartbeat():
+                        self._heartbeat_errors += 1
+                        if self._heartbeat_errors >= 3:
+                            self.reconnect()
+                            return False
+                    else:
+                        self._heartbeat_errors = 0
+                
+                return self.connection_healthy
+                            
             except Exception as e:
-                print(f"[MQTT] Error verificando mensajes: {e}")
+                print(f"[MQTT] Error verificando conexión: {e}")
                 self.connection_healthy = False
                 return False
-                
-            # Verificar si toca enviar heartbeat
-            heartbeat_interval = self.mqtt_config.get_status_interval()
-            if utime.ticks_diff(current_time, getattr(self, 'last_heartbeat_time', 0)) >= heartbeat_interval:
-                if not self.send_heartbeat():
-                    self.reconnect()
-                    return False
-            
-            return self.connection_healthy
-                        
+
         except Exception as e:
-            print(f"[MQTT] Error verificando conexión: {e}")
-            self.connection_healthy = False
+            print(f"[MQTT] Error general en check_connection: {e}")
             return False
 
     def ensure_connection(self):
@@ -237,11 +282,11 @@ class MQTTManager:
             return False
 
     def connect(self):
-        """Conecta al broker MQTT con las nuevas credenciales"""
+        """Conecta al broker MQTT con optimización de memoria"""
         try:
-            print("[MQTT] Iniciando conexión...")
+            print("[MQTT] Iniciando conexión optimizada...")
             
-            # Verificar que tengamos credenciales
+            # Verificar credenciales
             if not all([self.MQTT_CLIENT_ID, self.MQTT_USER, self.MQTT_PASSWORD]):
                 print("[MQTT] Error: Credenciales no configuradas")
                 return False
@@ -251,112 +296,149 @@ class MQTTManager:
                 print("[MQTT] Error: Sin conexión WiFi")
                 return False
             
-            if not self.wifi_manager.current_ip:
-                print("[MQTT] Error: No se pudo obtener IP")
-                return False
-
-            # Limpiar cliente anterior
+            # Limpiar cliente anterior completamente
             if self.client:
                 try:
                     self.client.disconnect()
                 except:
                     pass
                 self.client = None
-                gc.collect()
-                utime.sleep_ms(1000)
-
-            # Obtener SSL
-            from mqtt_ssl_setup import get_ssl_params
-            ssl_context = get_ssl_params()
-            if not ssl_context:
-                print("[MQTT] Error: No se pudo obtener configuración SSL")
-                return False
-
-            print("[MQTT] Creando cliente...")
-            print(f"[MQTT] - Broker: {self.MQTT_BROKER}")
-            print(f"[MQTT] - Puerto: {self.MQTT_PORT}")
-            print(f"[MQTT] - Client ID: {self.MQTT_CLIENT_ID}")
             
-            self.client = MQTTClient(
-                client_id=self.MQTT_CLIENT_ID,
-                server=self.MQTT_BROKER,
-                port=self.MQTT_PORT,
-                user=self.MQTT_USER,
-                password=self.MQTT_PASSWORD,
-                keepalive=self.mqtt_config.get_keepalive(),
-                ssl=ssl_context
-            )
-
-            # Configurar LWT
-            if self.esp32_id:
-                self._setup_lwt()
-
-            # Intentar conexión con retry
+            # Forzar liberación de memoria
+            import gc
+            import utime
+            
+            # Limpiar colas de mensajes
+            if hasattr(self, 'message_queue'):
+                self.message_queue.clear()
+            if hasattr(self, '_processed_ids'):
+                self._processed_ids.clear()
+            
+            # Limpieza intensiva
+            for _ in range(5):
+                gc.collect()
+                utime.sleep_ms(100)
+                
+            print(f"[MQTT] Memoria antes de SSL: {gc.mem_free()} bytes")
+            
+            # Obtener SSL simplificado directamente
+            from mqtt_ssl_setup import get_ssl_params
+            ssl_params = get_ssl_params()
+            
+            # Usar MQTTClient simple en lugar del robusto para ahorrar memoria
+            print("[MQTT] Importando cliente MQTT simple...")
+            from umqtt.simple import MQTTClient
+            
+            print(f"[MQTT] Memoria después de importar: {gc.mem_free()} bytes")
+            
+            # Retrying with backoff exponential
             retry_count = 0
             max_retries = 3
+            base_delay = 2000  # 2 segundos
+            
             while retry_count < max_retries:
                 try:
-                    print(f"[MQTT] Intento de conexión {retry_count + 1}/{max_retries}")
+                    # Limpiar memoria antes de cada intento
+                    gc.collect()
+                    utime.sleep_ms(200)
+                    
+                    print(f"[MQTT] Intento {retry_count + 1}/{max_retries}")
+                    
+                    # Crear cliente con configuración mínima
+                    print("[MQTT] Creando cliente simple...")
+                    self.client = MQTTClient(
+                        client_id=self.MQTT_CLIENT_ID,
+                        server=self.MQTT_BROKER,
+                        port=self.MQTT_PORT,
+                        user=self.MQTT_USER,
+                        password=self.MQTT_PASSWORD,
+                        keepalive=60,
+                        ssl=ssl_params
+                    )
+                    
+                    # IMPORTANTE: Configurar Last Will and Testament (LWT) ANTES de conectar
+                    if self.esp32_id:
+                        print("[MQTT] Configurando Last Will Testament...")
+                        lwt_topic = f"system/status/{self.esp32_id}"
+                        lwt_message = json.dumps({
+                            'esp32_id': self.esp32_id,
+                            'status': 'OFFLINE',
+                            'type': 'lwt',
+                            'client_id': self.client_id,
+                            'panel_id': self.panel_id,
+                            'message_id': f"lwt-{self.esp32_id}-{random.randint(1000,9999)}"
+                        })
+                        self.client.set_last_will(lwt_topic, lwt_message, False, 2)
+                        print(f"[MQTT] LWT configurado para tópico: {lwt_topic}")
+                    else:
+                        print("[MQTT] Advertencia: No hay ESP32_ID para configurar LWT")
+                    
+                    print(f"[MQTT] Memoria antes de conectar: {gc.mem_free()} bytes")
+                    
+                    # Intentar conectar
+                    print("[MQTT] Intentando conexión...")
                     self.client.connect()
                     print("[MQTT] Conectado exitosamente!")
-                    break
+                    
+                    # Configurar callback básico
+                    if self.esp32_id:
+                        config_topic = f"esp32/config/{self.esp32_id}"
+                        self.client.set_callback(self._handle_config_message)
+                        self.client.subscribe(config_topic)
+                        print(f"[MQTT] Suscrito a: {config_topic}")
+                    
+                    # Configurar estados
+                    self.connection_healthy = True
+                    self.last_activity_time = utime.ticks_ms()
+                    self.was_previously_connected = True
+                    
+                    # Enviar información de red y estado ONLINE después de conectar
+                    self.send_network_info()
+                    self.send_heartbeat()  # Añadir envío de heartbeat inmediato
+                    
+                    return True
+                    
+                except MemoryError as e:
+                    print(f"[MQTT] Error de memoria en intento {retry_count + 1}: {e}")
+                    if self.client:
+                        try:
+                            self.client.disconnect()
+                        except:
+                            pass
+                        self.client = None
+                    
+                    # Limpieza agresiva
+                    for _ in range(10):
+                        gc.collect()
+                        utime.sleep_ms(200)
+                    
+                    # Esperar con backoff exponencial
+                    delay = base_delay * (2 ** retry_count)
+                    print(f"[MQTT] Esperando {delay}ms antes del siguiente intento...")
+                    utime.sleep_ms(delay)
+                    retry_count += 1
+                    
                 except Exception as e:
                     print(f"[MQTT] Error en intento {retry_count + 1}: {e}")
-                    retry_count += 1
-                    if retry_count < max_retries:
-                        utime.sleep_ms(1000 * retry_count)
-                        continue
-                    return False
-
-            # Resetear estados
-            self.connection_healthy = True
-            self.last_activity_time = utime.ticks_ms()
-
-            # Configurar subscripción si tenemos ID
-            if self.esp32_id:
-                config_topic = f"esp32/config/{self.esp32_id}"
-                print(f"[MQTT] Suscribiendo a: {config_topic}")
-                self.client.set_callback(self._handle_config_message)
-                try:
-                    self.client.subscribe(config_topic.encode())
-                    print("[MQTT] Suscripción exitosa")
-                except Exception as e:
-                    print(f"[MQTT] Error en suscripción: {e}")
-                    return False
-
-                # Publicar estado inicial
-                if not self.was_previously_connected:
-                    info = {
-                        'esp32_id': self.esp32_id,
-                        'MAC': self.mac_address,
-                        'IP': self.wifi_manager.current_ip,
-                        'status': 'ONLINE',
-                        'timestamp': {
-                            'value': utime.ticks_ms(),
-                            'type': 'realtime'
-                        },
-                        'message_id': f"{utime.ticks_ms()}-{random.randint(1000,9999)}"
-                    }
+                    import sys
+                    sys.print_exception(e)
                     
-                    print("[MQTT] Enviando info inicial...")
-                    result = self.publish_event(
-                        "esp32/network_info",
-                        info,
-                        qos=1,
-                        retain=False
-                    )
-                    print(f"[MQTT] Resultado envío info inicial: {'Exitoso' if result else 'Fallido'}")
-
-            # Marcar como conectado previamente
-            self.was_previously_connected = True
-            print("[MQTT] Setup completado exitosamente")
-            return True
-
+                    if self.client:
+                        self.client = None
+                    gc.collect()
+                    
+                    # Esperar con backoff exponencial
+                    delay = base_delay * (2 ** retry_count)
+                    utime.sleep_ms(delay)
+                    retry_count += 1
+            
+            print("[MQTT] Fallaron todos los intentos de conexión")
+            return False
+                
         except Exception as e:
-            print(f"[MQTT] Error en conexión: {str(e)}")
+            print(f"[MQTT] Error general en connect: {e}")
             import sys
             sys.print_exception(e)
-            self.client = None
             return False
 
     def set_relay_manager(self, relay_manager):
@@ -446,6 +528,49 @@ class MQTTManager:
             import sys
             sys.print_exception(e)
 
+    def send_network_info(self):
+        """Envía información de red al broker para iniciar el proceso de configuración"""
+        try:
+            if not self.esp32_id:
+                print("[MQTT] Error: No hay ESP32_ID para enviar")
+                return False
+                    
+            # Obtener IP actualizada
+            ip = self.wifi_manager.get_current_ip()
+            
+            # Crear mensaje
+            message = {
+                "esp32_id": self.esp32_id,
+                "MAC": self.mac_address,
+                "IP": ip,
+                "status": "ONLINE",  # Cambiar status a ONLINE para que la VM registre el cambio de estado
+                "timestamp": utime.ticks_ms(),
+                "version": "1.0.0"  # Añadir versión para trazabilidad
+            }
+            
+            print(f"[MQTT] Enviando información de red: {json.dumps(message)}")
+            
+            # Enviar al tema de registro
+            result = self.publish_event(
+                "esp32/network_info",
+                message,
+                qos=1,
+                retain=False
+            )
+            
+            if result:
+                print("[MQTT] Información de red enviada correctamente")
+                return True
+            else:
+                print("[MQTT] Error al enviar información de red")
+                return False
+        
+        except Exception as e:
+            print(f"[MQTT] Error enviando información de red: {e}")
+            import sys
+            sys.print_exception(e)
+            return False
+
     def subscribe(self, topic, callback=None):
         """Suscribe a tópico con verificación de conexión"""
         try:
@@ -472,64 +597,90 @@ class MQTTManager:
         """Publica evento MQTT con mejor manejo de errores y logging"""
         try:
             print(f"[MQTT] Intentando publicar en tópico: {topic}")
-            print(f"[MQTT] Mensaje a enviar: {message}")
             
+            # Limpiar mensaje antes de publicar
+            if isinstance(message, dict):
+                # Eliminar campos no esenciales para reducir tamaño
+                for key in ['debug_info', 'metadata', 'trace']:
+                    message.pop(key, None)
+                
+                # Convertir timestamps a enteros si existen
+                if 'timestamp' in message and isinstance(message['timestamp'], dict):
+                    message['timestamp'] = message['timestamp'].get('value', 0)
+
+            # Convertir mensaje a JSON minificado
+            msg_str = json.dumps(message, separators=(',', ':'))
+
             # Verificar tamaño del mensaje
-            msg_str = json.dumps(message)
             if len(msg_str) > self.MSG_BUFFER_SIZE:
                 print(f"[MQTT] Error: Mensaje excede el tamaño máximo: {len(msg_str)} > {self.MSG_BUFFER_SIZE}")
                 return False
 
-            # Verificar socket antes de publicar
+            # Verificar memoria disponible
+            if gc.mem_free() < len(msg_str) + 1024:  # 1KB extra para operaciones
+                gc.collect()
+                utime.sleep_ms(100)
+                if gc.mem_free() < len(msg_str) + 1024:
+                    print("[MQTT] Memoria insuficiente para publicar mensaje")
+                    return False
+
+            # Verificar socket y conexión
             if not self.check_socket():
-                print("[MQTT] Socket no válido para publicar - Iniciando reconexión")
+                print("[MQTT] Socket no válido para publicar")
                 if not self.reconnect():
                     if len(self.message_queue) < self.MAX_QUEUE_SIZE:
-                        print("[MQTT] Mensaje agregado a la cola de reintentos")
                         self.message_queue.append((topic, message, qos, retain))
+                        print("[MQTT] Mensaje agregado a cola de reintentos")
                     else:
-                        print("[MQTT] Error: Cola de mensajes llena")
+                        print("[MQTT] Cola de mensajes llena")
                     return False
 
             try:
-                print("[MQTT] Publicando mensaje...")
-                # Asegurar que el mensaje sea codificado correctamente
-                msg_bytes = msg_str.encode() if isinstance(msg_str, str) else msg_str
+                # Codificar mensaje y topic
+                msg_bytes = msg_str.encode()
+                topic_bytes = topic.encode() if isinstance(topic, str) else topic
                 
-                self.client.publish(
-                    topic.encode() if isinstance(topic, str) else topic,
-                    msg_bytes,
-                    qos=qos,
-                    retain=retain
-                )
+                # Publicar con manejo de errores mejorado
+                gc.collect()  # GC antes de publicar
                 
-                print("[MQTT] Mensaje publicado exitosamente")
-                
-                # Actualizar último reporte si es mensaje de estado
-                if "status" in message or "relay_states" in message:
-                    self.last_status_report = utime.ticks_ms()
-                    print(f"[MQTT] Último reporte de estado actualizado: {self.last_status_report}")
-                
-                return True
+                try:
+                    # CAMBIO IMPORTANTE: El método publish no retorna un valor booleano
+                    # Solo lanzará una excepción si falla
+                    self.client.publish(topic_bytes, msg_bytes, qos=qos, retain=retain)
                     
+                    # Si llegamos aquí sin excepción, la publicación fue exitosa
+                    print("[MQTT] Mensaje publicado exitosamente")
+                    
+                    # Actualizar timestamp solo si es mensaje de estado
+                    if any(key in message for key in ['status', 'relay_states']):
+                        self.last_status_report = utime.ticks_ms()
+                    
+                    # Procesar cola de mensajes pendientes si hay conexión estable
+                    while self.message_queue and self.check_socket():
+                        queued_topic, queued_msg, queued_qos, queued_retain = self.message_queue.pop(0)
+                        self.publish_event(queued_topic, queued_msg, queued_qos, queued_retain)
+                    
+                    return True
+                    
+                except Exception as e:
+                    print(f"[MQTT] Error al publicar: {e}")
+                    return False
+
             except OSError as e:
-                print(f"[MQTT] Error de red en publicación: {str(e)}")
-                import sys
-                sys.print_exception(e)
+                print(f"[MQTT] Error de red: {e}")
                 if len(self.message_queue) < self.MAX_QUEUE_SIZE:
-                    print("[MQTT] Mensaje agregado a la cola de reintentos")
                     self.message_queue.append((topic, message, qos, retain))
                 self.reconnect()
                 return False
-                
+
         except Exception as e:
-            print(f"[MQTT] Error crítico en publish_event: {str(e)}")
-            import sys
-            sys.print_exception(e)
+            print(f"[MQTT] Error crítico: {e}")
             if len(self.message_queue) < self.MAX_QUEUE_SIZE:
-                print("[MQTT] Mensaje agregado a la cola de reintentos")
                 self.message_queue.append((topic, message, qos, retain))
             return False
+
+        finally:
+            gc.collect()  # Asegurar limpieza después de publicar
 
     def check_msg(self):
         """Verifica mensajes pendientes con mejor manejo de errores"""

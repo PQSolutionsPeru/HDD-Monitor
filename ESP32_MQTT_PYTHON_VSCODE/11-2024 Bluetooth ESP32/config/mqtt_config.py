@@ -6,9 +6,9 @@ class MQTTConfig(BaseConfig):
             # Configuración del broker
             "broker": "node02.myqtthub.com",
             "port": 8883,
-            "client_id": "ESP32-PQ1",
-            "user": "ESP32-1",
-            "password": "esp32",
+            "client_id": None,  # Se configurará desde ESP32_ID
+            "user": None,       # Se configurará desde ESP32_ID
+            "password": None,   # Se configurará desde ESP32_ID
             
             # Intervalos y tiempos optimizados para monitoreo pasivo
             "status_interval": 300000,     # 5 minutos para heartbeat
@@ -38,9 +38,9 @@ class MQTTConfig(BaseConfig):
         return {
             "broker": self.config.get('broker', self.DEFAULT_CONFIG['broker']),
             "port": self.config.get('port', self.DEFAULT_CONFIG['port']),
-            "client_id": self.config.get('client_id', self.DEFAULT_CONFIG['client_id']),
-            "user": self.config.get('user', self.DEFAULT_CONFIG['user']),
-            "password": self.config.get('password', self.DEFAULT_CONFIG['password'])
+            "client_id": self.config.get('client_id'),  # Puede ser None
+            "user": self.config.get('user'),           # Puede ser None
+            "password": self.config.get('password')    # Puede ser None
         }
 
     def get_status_interval(self):

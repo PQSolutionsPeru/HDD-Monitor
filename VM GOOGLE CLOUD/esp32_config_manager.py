@@ -439,7 +439,7 @@ class ESP32ConfigManager:
         """Asigna un ESP32 a un panel específico"""
         try:
             # Verificar que el ESP32 existe
-            esp32_ref = self.db.document(f'esp32/registered/{esp32_id}')
+            esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
             esp32_doc = esp32_ref.get()
 
             if not esp32_doc.exists:
@@ -548,8 +548,7 @@ class ESP32ConfigManager:
     def _check_pending_configurations(self):
         """Verifica ESP32s que necesitan configuración al inicio"""
         try:
-            # Corregir la ruta de acceso a la colección 'registered'
-            esp32s_ref = self.db.collection('esp32/registered/documents')
+            esp32s_ref = self.db.collection('hdd-monitor/esp32/registered')
             esp32s = esp32s_ref.stream()
 
             for esp32_doc in esp32s:

@@ -2,13 +2,16 @@ import ssl
 
 def get_ssl_params():
     """
-    Retorna el contexto SSL para la conexión MQTT.
+    Implementación mínima y optimizada de SSL para reducir consumo de memoria.
+    Devuelve un objeto con método wrap_socket que usa parámetros básicos.
     """
-    try:
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ssl_context.verify_mode = ssl.CERT_NONE
-        ssl_context.check_hostname = False
-        return ssl_context
-    except Exception as e:
-        print(f"[MQTT] Error en parámetros SSL: {e}")
-        return None
+    class MinimalSSL:
+        def wrap_socket(self, sock, server_hostname=None):
+            """Wrapper mínimo para el socket"""
+            return ssl.wrap_socket(
+                sock,
+                cert_reqs=ssl.CERT_NONE  # Sin verificación de certificados
+                # No usar el parámetro 'ciphers' que no es soportado
+            )
+    
+    return MinimalSSL()

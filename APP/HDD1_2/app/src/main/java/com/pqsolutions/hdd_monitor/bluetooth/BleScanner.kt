@@ -74,10 +74,10 @@ class BleScanner @Inject constructor(
             _isScanning.value = true
 
             val settings = ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setScanMode(ScanSettings.SCAN_MODE_BALANCED)  // Menos agresivo pero suficiente
                 .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-                .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
-                .setNumOfMatches(ScanSettings.MATCH_NUM_MAX_ADVERTISEMENT)
+                .setMatchMode(ScanSettings.MATCH_MODE_STICKY)  // Mejor para dispositivos estables
+                .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT)  // Uno es suficiente
                 .setReportDelay(0L)
                 .build()
 

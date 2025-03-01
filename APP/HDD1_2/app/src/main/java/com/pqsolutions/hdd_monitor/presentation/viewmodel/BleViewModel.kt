@@ -1,6 +1,8 @@
 package com.pqsolutions.hdd_monitor.presentation.viewmodel
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.os.Build.VERSION_CODES
 import com.pqsolutions.hdd_monitor.esp32.ESP32Device
 import android.bluetooth.BluetoothDevice
@@ -208,9 +210,26 @@ class BleViewModel @Inject constructor(
                             }
                         }
                     }
+                    is BleConnectionState.ESP32Configuring -> {
+                        Log.d(TAG, "ESP32 en configuración")
+                        _state.value = BleState.WifiConfiguring
+                    }
+                    is BleConnectionState.ESP32Ready -> {
+                        Log.d(TAG, "ESP32 configurado y listo")
+                        _state.value = BleState.WaitingForRunningMode
+                    }
                     is BleConnectionState.Error -> {
                         Log.e(TAG, "Error de conexión: ${connectionState.message}")
-                        _state.value = BleState.Error(connectionState.message)
+
+                        // Detectar errores específicos que requieren reinicio del Bluetooth
+                        val errorMessage = connectionState.message.lowercase()
+                        if (errorMessage.contains("timeout") || errorMessage.contains("62")) {
+                            Log.d(TAG, "Detectado error que requiere reinicio de Bluetooth")
+                            _state.value = BleState.Error("${connectionState.message}. Reiniciando Bluetooth...")
+                            resetBluetoothAdapter()
+                        } else {
+                            _state.value = BleState.Error(connectionState.message)
+                        }
                     }
                 }
             }
@@ -242,7 +261,15 @@ class BleViewModel @Inject constructor(
                 return@launch
             }
 
-            scanJob?.cancel()
+            // Cancelar cualquier escaneo anterior de manera controlada
+            try {
+                scanJob?.cancel()
+                bleScanner.stopScan()
+            } catch (e: Exception) {
+                // Ignorar excepciones de cancelación
+                Log.d(TAG, "Error deteniendo escaneo anterior, continuando: ${e.message}")
+            }
+
             bleScanner.clearDevices()
             _state.value = BleState.Scanning
 
@@ -261,8 +288,13 @@ class BleViewModel @Inject constructor(
                         )
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error durante el escaneo", e)
-                    _state.value = BleState.Error("Error durante el escaneo: ${e.message}")
+                    // Verificar si es una excepción de cancelación de job
+                    if (e.message?.contains("was cancelled") != true) {
+                        Log.e(TAG, "Error durante el escaneo", e)
+                        _state.value = BleState.Error("Error durante el escaneo: ${e.message}")
+                    } else {
+                        Log.d(TAG, "Escaneo cancelado intencionalmente")
+                    }
                 }
             }
         }
@@ -276,6 +308,7 @@ class BleViewModel @Inject constructor(
         }
     }
 
+
     fun connectToDevice(device: BluetoothDevice) {
         viewModelScope.launch {
             Log.d(TAG, "Intentando conectar a dispositivo: ${device.address}")
@@ -285,17 +318,88 @@ class BleViewModel @Inject constructor(
                 return@launch
             }
 
-            // Guardar MAC address al conectar
-            currentMac = device.address
-            _state.value = BleState.Connecting
-            startTimeoutTimer(CONNECTION_TIMEOUT)
-
             try {
+                // Cambiar primero al estado Connecting para evitar mostrar errores intermedios
+                _state.value = BleState.Connecting
+                currentMac = device.address
+
+                // Luego detener el escaneo de manera controlada
+                Log.d(TAG, "Deteniendo escáner BLE antes de conectar")
+                scanJob?.cancel()
+                bleScanner.stopScan()
+
+                // Añadir un retraso MAYOR antes de conectar
+                delay(2000)  // Aumentar a 2 segundos
+
+                // Iniciar el timeout después de intentar la conexión
                 bleConnector.connect(device)
+                startTimeoutTimer(CONNECTION_TIMEOUT)
             } catch (e: Exception) {
-                Log.e(TAG, "Error conectando al dispositivo", e)
-                _state.value = BleState.Error("Error conectando al dispositivo: ${e.message}")
-                currentMac = null  // Limpiar MAC en caso de error
+                // Verificar si es una excepción de cancelación de job
+                if (e.message?.contains("was cancelled") != true) {
+                    Log.e(TAG, "Error conectando al dispositivo", e)
+                    _state.value = BleState.Error("Error conectando al dispositivo: ${e.message}")
+                    currentMac = null
+                } else {
+                    Log.d(TAG, "Operación cancelada intencionalmente")
+                }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun resetBluetoothAdapter() {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Reiniciando adaptador Bluetooth...")
+
+                // Verificar permisos primero
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) !=
+                        PackageManager.PERMISSION_GRANTED) {
+                        _state.value = BleState.Error("Se requieren permisos para reiniciar Bluetooth")
+                        return@launch
+                    }
+                } else {
+                    if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_ADMIN) !=
+                        PackageManager.PERMISSION_GRANTED) {
+                        _state.value = BleState.Error("Se requieren permisos para reiniciar Bluetooth")
+                        return@launch
+                    }
+                }
+
+                // Detener cualquier operación en curso
+                bleScanner.stopScan()
+                scanJob?.cancel()
+                timeoutJob?.cancel()
+                bleConnector.disconnect()
+
+                // Apagar Bluetooth
+                val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+                if (bluetoothAdapter?.isEnabled == true) {
+                    try {
+                        bluetoothAdapter.disable()
+                        // Esperar a que se apague
+                        delay(3000)
+
+                        // Encender de nuevo
+                        bluetoothAdapter.enable()
+                        delay(5000) // Esperar a que se inicialice
+
+                        Log.d(TAG, "Adaptador Bluetooth reiniciado")
+                        _state.value = BleState.Initial
+
+                        // Reiniciar escaneo después
+                        delay(1000)
+                        startScan()
+                    } catch (e: SecurityException) {
+                        Log.e(TAG, "Error de permisos al manipular Bluetooth", e)
+                        _state.value = BleState.Error("Error de permisos: ${e.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al reiniciar Bluetooth", e)
+                _state.value = BleState.Error("No se pudo reiniciar Bluetooth: ${e.message}")
             }
         }
     }
