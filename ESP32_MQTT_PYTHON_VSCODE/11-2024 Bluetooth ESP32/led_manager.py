@@ -6,8 +6,8 @@ class LEDManager:
         """Inicializa el gestor de LEDs para los estados del sistema"""
         # Definir pines para LEDs
         self.LED_GREEN = 22  # Estado RUNNING (monitoreo normal)
-        self.LED_BLUE = 23   # Estado CONFIG (configuración)
-        self.LED_RED = 21    # Estado ERROR
+        self.LED_RED = 23   # Estado ERROR
+        self.LED_BLUE = 21    # Estado CONFIG (configuración)
         
         # Inicializar pines como salidas
         self.led_green = Pin(self.LED_GREEN, Pin.OUT)
@@ -41,19 +41,45 @@ class LEDManager:
         self.led_blue.value(0)
         self.led_red.value(0)
         
+        # Segunda pasada para confirmar que están apagados
+        self.led_green.value(0)
+        self.led_blue.value(0)
+        self.led_red.value(0)
+        
         # Pequeña pausa para asegurar que los cambios surtan efecto
-        utime.sleep_ms(5)
+        utime.sleep_ms(20)
     
     def set_config_mode(self):
         """Configura LEDs para modo de configuración (solo azul encendido)"""
         # Detener la secuencia de inicio si está corriendo
         if self.running_startup_sequence:
             self.stop_sequence_timer()
+            utime.sleep_ms(50)  # Asegurar que todos los callbacks pendientes terminen
         
         # Incluso si el modo es el mismo, forzamos la actualización
         # para garantizar el estado correcto de los LEDs
         self.all_off()
+        
+        # Pequeña pausa para asegurar que los cambios surtan efecto
+        utime.sleep_ms(50)
+        
+        # Encender solo el LED azul y confirmar que está encendido
         self.led_blue.value(1)
+        
+        # Verificar que realmente se encendió
+        if self.led_blue.value() != 1:
+            print("[LED] ADVERTENCIA: No se pudo encender LED azul, reintentando...")
+            self.led_blue.value(1)
+        
+        # Verificar que los otros LEDs están apagados
+        if self.led_red.value() == 1:
+            print("[LED] ADVERTENCIA: LED rojo sigue encendido, forzando apagado...")
+            self.led_red.value(0)
+        
+        if self.led_green.value() == 1:
+            print("[LED] ADVERTENCIA: LED verde sigue encendido, forzando apagado...")
+            self.led_green.value(0)
+        
         self.current_mode = "config"
         print("[LED] Modo configuración - LED azul encendido")
     
@@ -98,13 +124,21 @@ class LEDManager:
     def stop_sequence_timer(self):
         """Detiene el timer de la secuencia de inicio"""
         if self.sequence_timer:
-            self.sequence_timer.deinit()
-            self.sequence_timer = None
+            try:
+                self.sequence_timer.deinit()
+            except Exception as e:
+                print(f"[LED] Error al detener timer: {e}")
         
+        self.sequence_timer = None
         self.running_startup_sequence = False
+        self.transition_step = 0
+        self.color_index = 0
         
         # Asegurar que ningún LED quede encendido
         self.all_off()
+        
+        # Pequeña pausa para asegurar que los cambios surtan efecto
+        utime.sleep_ms(50)
         
     def sequence_step(self, timer):
         """Ejecuta un paso de la secuencia de transición de colores"""

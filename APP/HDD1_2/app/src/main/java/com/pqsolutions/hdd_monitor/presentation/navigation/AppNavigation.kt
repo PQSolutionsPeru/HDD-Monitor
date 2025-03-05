@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -201,6 +202,9 @@ fun AppNavigation(
 
         if (currentRoute != currentDestination && currentRoute.isNotBlank()) {
             try {
+                // Pequeña pausa para evitar colisiones de navegación
+                kotlinx.coroutines.delay(150)
+
                 when {
                     currentRoute == Screen.Login.route -> {
                         navController.navigate(currentRoute) {
@@ -261,49 +265,97 @@ private fun handleLogout(viewModel: MainViewModel) {
 
 private fun safeNavigate(navController: NavHostController, route: String) {
     try {
-        navController.navigate(route) {
-            launchSingleTop = true
-            restoreState = true
+        // Obtenemos la ruta actual
+        val currentRoute = navController.currentDestination?.route
+
+        // Evitamos navegaciones a la misma ruta
+        if (currentRoute == route) {
+            Log.d("Navigation", "Ya estamos en la ruta $route, no se hace nada")
+            return
+        }
+
+        Log.d("Navigation", "Navegando de '$currentRoute' a '$route'")
+
+        // Casos especiales por ruta
+        when (route) {
+            // Para Dashboard, siempre limpiamos el backstack
+            Screen.Dashboard.route -> {
+                navController.navigate(route) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+            // Para Login, también limpiamos el backstack
+            Screen.Login.route -> {
+                navController.navigate(route) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+            // Para las demás rutas, navegación normal pero robusta
+            else -> {
+                navController.navigate(route) {
+                    // Evita múltiples copias de la misma pantalla
+                    launchSingleTop = true
+                    // Intenta restaurar el estado si es posible
+                    restoreState = true
+                }
+            }
         }
     } catch (e: Exception) {
-        Log.e(TAG, "Navigation error to $route: ${e.message}")
+        Log.e("Navigation", "Error durante la navegación a $route: ${e.message}", e)
+        // Intentamos recuperar yendo al dashboard
+        try {
+            navController.navigate(Screen.Dashboard.route) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+        } catch (e: Exception) {
+            Log.e("Navigation", "Error en navegación de recuperación: ${e.message}", e)
+        }
     }
 }
 
 private fun safeNavigateToLogin(navController: NavHostController) {
     try {
+        Log.d("Navigation", "Navegando a Login con limpieza de backstack")
         navController.navigate(Screen.Login.route) {
+            // Siempre limpiamos el backstack al ir a Login
             popUpTo(0) { inclusive = true }
             launchSingleTop = true
         }
     } catch (e: Exception) {
-        Log.e(TAG, "Navigation error to Login: ${e.message}")
+        Log.e("Navigation", "Error durante la navegación a Login: ${e.message}", e)
     }
 }
 
 private fun safeNavigateBack(navController: NavHostController) {
     try {
-        val currentRoute = navController.currentBackStackEntry?.destination?.route
+        // Obtenemos la ruta actual
+        val currentRoute = navController.currentDestination?.route
+        Log.d("Navigation", "Navegando hacia atrás desde: $currentRoute")
 
-        // Si no hay ruta actual o es la ruta del dashboard, navegamos al dashboard
-        if (currentRoute == null || currentRoute == Screen.Dashboard.route) {
-            navController.navigate(Screen.Dashboard.route) {
-                popUpTo(0) { inclusive = true }
-                launchSingleTop = true
-            }
+        // Si estamos en el Dashboard, no hacemos nada
+        if (currentRoute == Screen.Dashboard.route) {
+            Log.d("Navigation", "Ya estamos en Dashboard, no hacemos nada")
             return
         }
 
-        // Intentamos hacer pop del back stack
-        if (!navController.popBackStack()) {
-            // Si el pop falla, navegamos al dashboard
+        // Intentamos hacer pop del backstack
+        val canPop = navController.previousBackStackEntry != null
+
+        if (canPop && navController.popBackStack()) {
+            Log.d("Navigation", "PopBackStack exitoso")
+        } else {
+            // Si no podemos hacer pop, o el pop falla, vamos al dashboard
+            Log.d("Navigation", "No se puede hacer pop, navegando a Dashboard")
             navController.navigate(Screen.Dashboard.route) {
                 popUpTo(0) { inclusive = true }
                 launchSingleTop = true
             }
         }
     } catch (e: Exception) {
-        Log.e("Navigation", "Error durante la navegación hacia atrás", e)
+        Log.e("Navigation", "Error durante la navegación hacia atrás: ${e.message}", e)
         // En caso de error, aseguramos que volvemos al dashboard
         try {
             navController.navigate(Screen.Dashboard.route) {
@@ -311,7 +363,7 @@ private fun safeNavigateBack(navController: NavHostController) {
                 launchSingleTop = true
             }
         } catch (e: Exception) {
-            Log.e("Navigation", "Error en navegación de recuperación", e)
+            Log.e("Navigation", "Error en navegación de recuperación: ${e.message}", e)
         }
     }
 }

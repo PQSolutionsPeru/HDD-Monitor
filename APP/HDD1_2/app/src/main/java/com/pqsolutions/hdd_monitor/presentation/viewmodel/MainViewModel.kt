@@ -237,60 +237,71 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "Attempting logout")
             try {
-                // 1. Detener inmediatamente la UI y las consultas
-                _uiState.value = _uiState.value.copy(
-                    isLoggedIn = false,
-                    userData = null,
-                    currentRoute = "login"
-                )
-
-                // 2. Esperar un momento para que se complete la navegación
-                kotlinx.coroutines.delay(100)
-
-                // 3. Cancelar el job de verificación de sesión
+                // 1. Primero: aseguramos que los listeners se limpien
                 sessionCheckJob?.cancel()
                 sessionCheckJob = null
-
-                // 4. Limpiar notificaciones y datos en memoria
-                _hasPendingNotifications.value = false
-
-                // 5. Limpiar los listeners antes del logout
                 panelRepository.clearListeners()
                 notificationRepository.clearListeners()
                 eventRepository.clearListeners()
 
-                // 6. Proceder con el logout
+                // 2. Luego cambiamos la ruta (esto desencadenará la navegación)
+                _uiState.value = _uiState.value.copy(currentRoute = "login")
+
+                // 3. Esperamos para que empiece la navegación
+                kotlinx.coroutines.delay(300)
+
+                // 4. Actualizamos el resto del estado
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = false,
+                    userData = null,
+                    error = null
+                )
+                _hasPendingNotifications.value = false
+
+                // 5. Procedemos con el logout en Firebase
                 authRepository.logout().fold(
                     onSuccess = {
-                        // 7. Limpiar datos locales
+                        // 6. Limpiamos datos locales al final
                         userPreferences.clearUserData()
                         Log.d(TAG, "Logout successful")
                     },
                     onFailure = { e ->
                         Log.e(TAG, "Logout failed: ${e.message}", e)
-                        // No intentar restaurar el estado - mantener el logout
+                        // Aseguramos que los datos locales se limpien incluso si falla Firebase
+                        userPreferences.clearUserData()
                     }
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Logout failed: ${e.message}", e)
-                // No intentar restaurar el estado - mantener el logout
+                // Intentamos limpiar datos aunque falle
+                try {
+                    userPreferences.clearUserData()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to clear user data during logout error recovery", e)
+                }
             }
         }
     }
 
     private fun handleLogout() {
         viewModelScope.launch {
-            // Primero actualizamos la ruta
-            _uiState.value = _uiState.value.copy(
-                currentRoute = "login"
-            )
+            Log.d(TAG, "Handling automatic logout")
 
-            // Esperamos un momento para que la navegación se complete
-            kotlinx.coroutines.delay(100)
-
-            // Luego limpiamos el resto del estado
-            userPreferences.clearUserData()
+            // 1. Cancelar trabajos y limpiar listeners primero
             sessionCheckJob?.cancel()
+            sessionCheckJob = null
+            panelRepository.clearListeners()
+            notificationRepository.clearListeners()
+            eventRepository.clearListeners()
+
+            // 2. Actualizar la ruta para iniciar navegación
+            _uiState.value = _uiState.value.copy(currentRoute = "login")
+
+            // 3. Pequeña pausa para que se inicie la navegación
+            kotlinx.coroutines.delay(300)
+
+            // 4. Limpiar el resto del estado
+            userPreferences.clearUserData()
             _uiState.value = _uiState.value.copy(
                 isLoggedIn = false,
                 userData = null,
