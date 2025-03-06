@@ -84,6 +84,11 @@ class NotificationViewModel @Inject constructor(
         initializeNotifications()
     }
 
+    fun clearListeners() {
+        Log.d(TAG, "Limpiando listeners de NotificationViewModel")
+        notificationRepository.clearListeners()
+    }
+
     private fun initializeNotifications() {
         viewModelScope.launch {
             try {
@@ -167,7 +172,10 @@ class NotificationViewModel @Inject constructor(
     }
 
     fun refresh() {
-        _uiState.update { it.copy(isLoading = true) }
+        Log.d(TAG, "Refrescando notificaciones")
+        // Primero limpiamos los listeners para evitar duplicaciones
+        clearListeners()
+        // Llamamos al método correcto que ya existe
         initializeNotifications()
     }
 
@@ -178,30 +186,24 @@ class NotificationViewModel @Inject constructor(
     fun markAllAsRead() {
         viewModelScope.launch {
             try {
-                val currentUser = userRepository.getCurrentUser()
-                if (currentUser != null) {
-                    notificationRepository.markAllNotificationsAsRead(
-                        currentUser.clientDocName,
-                        currentUser.role == UserRole.ADMIN
-                    ).onSuccess {
-                        _uiState.update { currentState ->
-                            val updatedNotifications = currentState.notifications.map { notification ->
-                                notification.copy(isRead = true)
+                val currentUser = userRepository.getCurrentUser() ?: return@launch
+                Log.d(TAG, "All notifications marked as read for user: ${currentUser.documentName}")
+
+                notificationRepository.markAllNotificationsAsRead(
+                    clientDocName = currentUser.clientDocName,
+                    isAdmin = currentUser.role == UserRole.ADMIN
+                ).onSuccess {
+                    // Actualizar el estado local para reflejar que todas están leídas
+                    _uiState.update { currentState ->
+                        currentState.copy(
+                            notifications = currentState.notifications.map { item ->
+                                item.copy(isRead = true)
                             }
-                            currentState.copy(
-                                notifications = updatedNotifications,
-                                hasNewNotifications = false,
-                                pendingCount = 0,
-                                lastUpdate = System.currentTimeMillis()
-                            )
-                        }
-                        Log.d(TAG, "All notifications marked as read for user: ${currentUser.documentName}")
-                    }.onFailure { e ->
-                        Log.e(TAG, "Error marking notifications as read", e)
+                        )
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error marking notifications as read", e)
+                Log.e(TAG, "Error marking all notifications as read", e)
             }
         }
     }
@@ -259,6 +261,7 @@ class NotificationViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        clearListeners()
         Log.d(TAG, "ViewModel cleared")
     }
 }

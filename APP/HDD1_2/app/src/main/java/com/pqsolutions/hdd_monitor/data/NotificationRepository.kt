@@ -37,7 +37,7 @@ class NotificationRepository @Inject constructor(
     private val activeListeners = mutableListOf<ListenerRegistration>()
 
     fun clearListeners() {
-        Log.d(TAG, "Clearing notification listeners")
+        Log.d(TAG, "Clearing notification listeners (active: ${activeListeners.size})")
         synchronized(activeListeners) {
             activeListeners.forEach { listener ->
                 try {

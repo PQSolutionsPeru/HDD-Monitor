@@ -57,16 +57,14 @@ fun NotificationHistoryScreen(
 ) {
     val uiState by notificationViewModel.uiState.collectAsState()
 
-    DisposableEffect(Unit) {
-        onDispose {
-            notificationViewModel.clearError()
-        }
-    }
-
     LaunchedEffect(Unit) {
         try {
-            notificationViewModel.refresh()
-            // Esperar un poco antes de marcar como leídas
+            // Solo refrescar si no hay notificaciones o si hay un error
+            if (uiState.notifications.isEmpty() || uiState.error != null) {
+                notificationViewModel.refresh()
+            }
+
+            // Esperar un poco antes de marcar como leídas para asegurar que estén cargadas
             kotlinx.coroutines.delay(500)
             notificationViewModel.markAllAsRead()
         } catch (e: Exception) {
@@ -74,7 +72,7 @@ fun NotificationHistoryScreen(
         }
     }
 
-    // Asegurar disposición adecuada de recursos
+    // Mantenemos este DisposableEffect para limpiar al salir
     DisposableEffect(Unit) {
         onDispose {
             notificationViewModel.clearError()

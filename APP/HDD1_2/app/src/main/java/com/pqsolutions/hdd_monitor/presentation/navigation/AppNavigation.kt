@@ -138,7 +138,6 @@ fun AppNavigation(
         }
 
         composable(Screen.NotificationHistory.route) {
-            val notificationViewModel: NotificationViewModel = hiltViewModel()
             NotificationHistoryScreen(
                 notificationViewModel = notificationViewModel,
                 onBackClick = {
