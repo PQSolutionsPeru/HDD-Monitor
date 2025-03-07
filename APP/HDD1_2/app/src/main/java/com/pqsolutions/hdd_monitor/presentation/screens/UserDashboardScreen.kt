@@ -41,6 +41,7 @@ import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationB
 import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
 import com.pqsolutions.hdd_monitor.presentation.navigation.Screen
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
+import com.pqsolutions.hdd_monitor.presentation.theme.PanelColors
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
@@ -215,31 +216,55 @@ private fun EmptyPanelsContent() {
 fun UserPanelItem(panel: Panel) {
     Log.d(TAG, "Rendering UserPanelItem: ${panel.name}, Status: ${panel.hasIssues}")
     var expanded by remember { mutableStateOf(false) }
-    val statusColor = if (panel.hasIssues) Color.Red else Color.Green
+
+    // Determinar color basado en estado del ESP32 primero, luego en relays
+    val containerColor = when {
+        panel.isESP32Offline() -> PanelColors.PanelBackgroundOffline
+        panel.hasIssues -> Color(0xFFFFEBEE) // Rojo claro
+        else -> Color(0xFFE8F5E9) // Verde claro
+    }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize()
             .clickable { expanded = !expanded },
-        colors = CardDefaults.cardColors(
-            containerColor = if (panel.hasIssues) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
-        )
+        colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
             Text(text = "Ubicación: ${panel.location}", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = "Estado: ${if (panel.hasIssues) panel.relaysInDisc else "OK"}",
-                color = statusColor,
-                style = MaterialTheme.typography.bodyMedium
-            )
+
+            // Estado especial para ESP32 OFFLINE
+            if (panel.isESP32Offline()) {
+                Text(
+                    text = "Estado: ESP32 OFFLINE",
+                    color = PanelColors.StatusDisc,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Text(
+                    text = "Estado: ${if (panel.hasIssues) panel.relaysInDisc else "OK"}",
+                    color = if (panel.hasIssues) Color.Red else Color.Green,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
 
             if (expanded) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("Detalles de relays:", style = MaterialTheme.typography.bodyMedium)
-                panel.relays.forEach { relay ->
-                    UserRelayStatus(relay)
+                if (panel.isESP32Offline()) {
+                    Text(
+                        "No hay datos disponibles - ESP32 OFFLINE",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        color = PanelColors.StatusDisc
+                    )
+                } else {
+                    Text("Detalles de relays:", style = MaterialTheme.typography.bodyMedium)
+                    panel.relays.forEach { relay ->
+                        UserRelayStatus(relay)
+                    }
                 }
             }
         }

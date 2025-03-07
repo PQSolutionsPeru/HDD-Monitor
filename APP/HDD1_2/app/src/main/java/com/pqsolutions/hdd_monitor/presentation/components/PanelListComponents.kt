@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -48,6 +49,7 @@ import com.pqsolutions.hdd_monitor.data.Relay
 import com.pqsolutions.hdd_monitor.presentation.theme.HddGreen
 import com.pqsolutions.hdd_monitor.presentation.theme.HddRed
 import com.pqsolutions.hdd_monitor.presentation.theme.HddYellow
+import com.pqsolutions.hdd_monitor.presentation.theme.PanelColors
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 
@@ -92,6 +94,13 @@ fun PanelCard(
     val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
 
+    // Determinar el color de fondo basado en el estado del ESP32 y relays
+    val backgroundColor = when {
+        panel.isESP32Offline() -> PanelColors.PanelBackgroundOffline
+        panel.hasIssues -> PanelColors.PanelBackgroundDisc
+        else -> PanelColors.PanelBackgroundOk
+    }
+
     Card(
         onClick = {
             performHapticFeedback(context)
@@ -99,7 +108,8 @@ fun PanelCard(
         },
         modifier = modifier
             .fillMaxWidth()
-            .animateContentSize()
+            .animateContentSize(),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
         Column(
             modifier = Modifier
@@ -152,7 +162,7 @@ fun PanelCard(
                 }
             }
 
-            // Estado del ESP32
+            // Estado del ESP32 - ACTUALIZADO para mostrar OFFLINE en rojo y negrita
             Row(
                 modifier = Modifier.padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -160,17 +170,27 @@ fun PanelCard(
                 Icon(
                     imageVector = Icons.Default.Wifi,
                     contentDescription = null,
-                    tint = if (panel.hasValidESP32()) HddGreen else HddRed,
+                    tint = if (panel.isESP32Offline()) PanelColors.StatusOffline
+                    else if (panel.hasValidESP32()) PanelColors.StatusOk
+                    else PanelColors.StatusDisc,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = if (panel.hasValidESP32())
+                    text = if (panel.isESP32Offline())
+                        "ESP32 OFFLINE"
+                    else if (panel.hasValidESP32())
                         stringResource(R.string.panel_esp32_connected)
                     else
                         stringResource(R.string.panel_esp32_disconnected),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = if (panel.isESP32Offline())
+                        MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    else
+                        MaterialTheme.typography.bodySmall,
+                    color = if (panel.isESP32Offline())
+                        PanelColors.StatusDisc  // Rojo para OFFLINE
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -179,14 +199,26 @@ fun PanelCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 Divider()
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.panel_relay_status),
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                panel.relays.forEach { relay ->
-                    RelayStatusRow(relay = relay)
-                    Spacer(modifier = Modifier.height(4.dp))
+
+                // Si el ESP32 está OFFLINE, mostrar mensaje especial
+                if (panel.isESP32Offline()) {
+                    Text(
+                        text = "No hay datos disponibles - ESP32 OFFLINE",
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        ),
+                        color = PanelColors.StatusDisc
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.panel_relay_status),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    panel.relays.forEach { relay ->
+                        RelayStatusRow(relay = relay)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
                 }
             }
         }

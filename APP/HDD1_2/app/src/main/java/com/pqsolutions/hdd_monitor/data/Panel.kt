@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor.data
 
+import com.pqsolutions.hdd_monitor.esp32.ESP32Device
 import java.io.Serializable
 
 data class Panel(
@@ -13,11 +14,14 @@ data class Panel(
         Relay(RELAY_ALARM, STATUS_DISC),
         Relay(RELAY_PROBLEM, STATUS_DISC),
         Relay(RELAY_SUPERVISION, STATUS_DISC)
-    )
+    ),
+    var esp32Status: String = ESP32Device.STATUS_OFFLINE
+
+
 ) : Serializable {
 
     val overallStatus: Boolean
-        get() = relays.none { it.status == STATUS_DISC }
+        get() = !isESP32Offline() && relays.none { it.status == STATUS_DISC }
 
     val relaysInDisc: String
         get() = relays.filter { it.status == STATUS_DISC }
@@ -34,6 +38,8 @@ data class Panel(
         "clientName" to clientName,
         "lastUpdate" to lastUpdate
     )
+
+    fun isESP32Offline(): Boolean = esp32Status == ESP32Device.STATUS_OFFLINE
 
     fun updateRelay(relayName: String, newStatus: String): Panel {
         val updatedRelays = relays.map { relay ->
