@@ -61,8 +61,9 @@ class NotificationRepository @Inject constructor(
         val collectionPath = "$BASE_PATH/$clientDocName/notifications"
         Log.d(TAG, "Consultando notificaciones en: $collectionPath")
 
+        // CORREGIDO: Ordenamos por timestamp en lugar de date_time para consistencia
         val notificationsRef = firestore.collection(collectionPath)
-            .orderBy("date_time", Query.Direction.DESCENDING)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(MAX_NOTIFICATIONS.toLong())
 
         val listenerRegistration = notificationsRef.addSnapshotListener { snapshot, error ->
@@ -80,23 +81,45 @@ class NotificationRepository @Inject constructor(
             snapshot?.let { querySnapshot ->
                 try {
                     Log.d(TAG, "Documentos encontrados: ${querySnapshot.documents.size}")
+
+                    // AÑADIR LOGS MÁS DETALLADOS PARA DEBUGGEAR
+                    if (querySnapshot.documents.isEmpty()) {
+                        Log.d(TAG, "No se encontraron documentos en la colección")
+                    } else {
+                        Log.d(TAG, "Primer documento: ${querySnapshot.documents[0].id}")
+                    }
+
                     val notifications = querySnapshot.documents.mapNotNull { doc ->
                         try {
                             val data = doc.data ?: emptyMap()
+                            // Log para ver qué datos llegan
+                            Log.d(TAG, "Datos de documento ${doc.id}: ${data.keys}")
+
                             val notificationMap = data.toMutableMap().apply {
                                 this["documentName"] = doc.id
                                 this["clientDocName"] = clientDocName
                                 if (!containsKey("timestamp")) {
-                                    this["timestamp"] = doc.getTimestamp("lastUpdate")?.toDate()?.time
+                                    val timestampValue = doc.getTimestamp("lastUpdate")?.toDate()?.time
                                         ?: System.currentTimeMillis()
+                                    this["timestamp"] = timestampValue
+                                    Log.d(TAG, "Generado timestamp para ${doc.id}: $timestampValue")
                                 }
                             }
-                            Notification.fromMap(notificationMap)
+
+                            val notification = Notification.fromMap(notificationMap)
+                            // Verificar validez de la notificación
+                            if (!notification.isValid()) {
+                                Log.w(TAG, "Notificación inválida: ${doc.id}")
+                            }
+                            notification
                         } catch (e: Exception) {
                             Log.e(TAG, "Error procesando documento ${doc.id}", e)
                             null
                         }
                     }
+
+                    // IMPORTANTE: Verificar que realmente estamos enviando notificaciones
+                    Log.d(TAG, "Enviando ${notifications.size} notificaciones al flow")
                     trySend(notifications)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error procesando snapshot", e)
@@ -192,23 +215,33 @@ class NotificationRepository @Inject constructor(
 
     private suspend fun cleanupOldNotifications(clientDocName: String) {
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastCleanupTime < CLEANUP_INTERVAL) {
-            return  // Evitar limpiezas frecuentes
+        // CORREGIDO: Ejecutar limpieza más agresivamente
+        if (currentTime - lastCleanupTime < CLEANUP_INTERVAL / 2) {
+            return  // Evitar limpiezas demasiado frecuentes
         }
 
         try {
+            Log.d(TAG, "Iniciando limpieza de notificaciones para cliente: $clientDocName")
             val cutoffTime = currentTime - (HOURS_TO_KEEP * 60 * 60 * 1000)
+
             coroutineScope {
-                launch {
-                    deleteNotificationsOlderThan(clientDocName, cutoffTime)
-                        .onFailure { e -> Log.e(TAG, "Error limpiando notificaciones antiguas", e) }
-                }
+                // Primero mantener solo las últimas MAX_NOTIFICATIONS
                 launch {
                     keepOnlyLastN(clientDocName, MAX_NOTIFICATIONS)
+                        .onSuccess { Log.d(TAG, "Mantenidas últimas $MAX_NOTIFICATIONS notificaciones") }
                         .onFailure { e -> Log.e(TAG, "Error manteniendo últimas notificaciones", e) }
                 }
+
+                // Luego eliminar notificaciones más antiguas que HOURS_TO_KEEP
+                launch {
+                    deleteNotificationsOlderThan(clientDocName, cutoffTime)
+                        .onSuccess { Log.d(TAG, "Eliminadas notificaciones más antiguas que $HOURS_TO_KEEP horas") }
+                        .onFailure { e -> Log.e(TAG, "Error limpiando notificaciones antiguas", e) }
+                }
             }
+
             lastCleanupTime = currentTime
+            Log.d(TAG, "Limpieza de notificaciones completada para: $clientDocName")
         } catch (e: Exception) {
             Log.e(TAG, "Error en cleanup de notificaciones", e)
         }
@@ -244,6 +277,8 @@ class NotificationRepository @Inject constructor(
     }
 
     suspend fun keepOnlyLastN(clientDocName: String, n: Int): Result<Unit> = runCatching {
+        Log.d(TAG, "Manteniendo solo últimas $n notificaciones para cliente: $clientDocName")
+
         val notifications = firestore.collection("$BASE_PATH/$clientDocName/notifications")
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .get()
@@ -251,13 +286,16 @@ class NotificationRepository @Inject constructor(
 
         if (notifications.size() > n) {
             val batch = firestore.batch()
-            notifications.documents
-                .drop(n)
-                .forEach { doc ->
-                    batch.delete(doc.reference)
-                }
+            val toDelete = notifications.documents.drop(n)
+
+            toDelete.forEach { doc ->
+                batch.delete(doc.reference)
+            }
+
             batch.commit().await()
-            Log.d(TAG, "Kept only last $n notifications for client: $clientDocName")
+            Log.d(TAG, "Eliminadas ${toDelete.size} notificaciones antiguas para mantener solo $n")
+        } else {
+            Log.d(TAG, "No hay notificaciones para eliminar, solo hay ${notifications.size()}")
         }
     }
 

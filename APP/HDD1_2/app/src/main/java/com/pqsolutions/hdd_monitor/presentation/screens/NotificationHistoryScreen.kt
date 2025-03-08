@@ -59,10 +59,8 @@ fun NotificationHistoryScreen(
 
     LaunchedEffect(Unit) {
         try {
-            // Solo refrescar si no hay notificaciones o si hay un error
-            if (uiState.notifications.isEmpty() || uiState.error != null) {
-                notificationViewModel.refresh()
-            }
+            // Refrescar notificaciones (incluye limpieza interna)
+            notificationViewModel.refresh()
 
             // Esperar un poco antes de marcar como leídas para asegurar que estén cargadas
             kotlinx.coroutines.delay(500)
@@ -149,12 +147,17 @@ private fun NotificationsList(
     notifications: List<NotificationItem>,
     onNotificationClick: (NotificationItem) -> Unit
 ) {
+    // IMPORTANTE: Asegurar que las notificaciones siempre estén ordenadas por timestamp
+    val sortedNotifications = remember(notifications) {
+        notifications.sortedByDescending { it.timestamp }
+    }
+
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(16.dp)
     ) {
         items(
-            items = notifications,
+            items = sortedNotifications,
             key = { notification -> "${notification.clientDocName}_${notification.documentName}" }
         ) { notification ->
             NotificationCard(

@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor.domain
 
+import android.util.Log
 import com.pqsolutions.hdd_monitor.data.Notification
 import com.pqsolutions.hdd_monitor.data.NotificationRepository
 import kotlinx.coroutines.flow.Flow
@@ -8,6 +9,9 @@ import javax.inject.Inject
 class NotificationUseCase @Inject constructor(
     private val notificationRepository: NotificationRepository
 ) {
+    private val TAG = "NotificationUseCase"
+    private val MAX_NOTIFICATIONS = 20
+
     // Obtener flujo de notificaciones para un cliente específico
     fun getNotificationsFlow(clientDocName: String): Flow<List<Notification>> =
         notificationRepository.getNotificationsFlow(clientDocName)
@@ -53,14 +57,23 @@ class NotificationUseCase @Inject constructor(
 
     // Marcar todas las notificaciones como leídas
     suspend fun markAllNotificationsAsRead(
-        clientDocName: String
+        clientDocName: String,
+        isAdmin: Boolean = false
     ): Result<Unit> =
-        notificationRepository.markAllNotificationsAsRead(clientDocName)
+        notificationRepository.markAllNotificationsAsRead(clientDocName, isAdmin)
 
     // Mantener solo las últimas N notificaciones
     suspend fun keepOnlyLastN(
         clientDocName: String,
-        n: Int
-    ): Result<Unit> =
-        notificationRepository.keepOnlyLastN(clientDocName, n)
+        n: Int = MAX_NOTIFICATIONS
+    ): Result<Unit> {
+        Log.d(TAG, "Manteniendo solo últimas $n notificaciones para cliente: $clientDocName")
+        return notificationRepository.keepOnlyLastN(clientDocName, n)
+    }
+
+    // Método para realizar limpieza inicial de notificaciones
+    suspend fun performInitialCleanup(clientDocName: String): Result<Unit> {
+        Log.d(TAG, "Realizando limpieza inicial para cliente: $clientDocName")
+        return keepOnlyLastN(clientDocName, MAX_NOTIFICATIONS)
+    }
 }

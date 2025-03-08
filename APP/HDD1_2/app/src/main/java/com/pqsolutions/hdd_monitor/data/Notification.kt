@@ -1,5 +1,6 @@
 package com.pqsolutions.hdd_monitor.data
 
+import android.util.Log
 import com.pqsolutions.hdd_monitor.util.Constants
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import java.time.LocalDateTime
@@ -68,19 +69,33 @@ data class Notification(
                 }
             }
 
+            // Mapear correctamente los campos con nombres alternativos
+            val eventId = map["eventId"] as? String ?: map["event_id"] as? String
+            val eventType = map["eventType"] as? String ?: map["event_type"] as? String
+            val status = map["status"] as? String
+            val relayName = map["relayName"] as? String ?: map["relay"] as? String
+            val panelDocName = map["panelDocName"] as? String ?: map["panel_id"] as? String
+            val panelName = map["panelName"] as? String ?: map["panel_name"] as? String
+            val clientDocName = map["clientDocName"] as? String ?: map["client_id"] as? String ?: ""
+
+            // Log para debug
+            if (map["documentName"] != null) {
+                Log.d("Notification", "Mapeando notificación: ${map["documentName"]}, event_id: $eventId, relay: $relayName")
+            }
+
             return Notification(
                 documentName = map["documentName"] as? String ?: "",
-                clientDocName = map["clientDocName"] as? String ?: "",
-                panelDocName = map["panelDocName"] as? String ?: "",
-                relayName = map["relayName"] as? String ?: "",
+                clientDocName = clientDocName,
+                panelDocName = panelDocName ?: "",
+                relayName = relayName ?: "",
                 message = map["message"] as? String ?: "",
                 date_time = dateTimeStr,
                 timestamp = timestamp,
                 isRead = map["isRead"] as? Boolean ?: false,
-                eventId = map["eventId"] as? String,
-                eventType = map["eventType"] as? String,
-                status = map["status"] as? String,
-                panelName = map["panelName"] as? String,
+                eventId = eventId,
+                eventType = eventType,
+                status = status,
+                panelName = panelName,
                 readByAdmin = map["readByAdmin"] as? Boolean ?: false,
                 readByUser = map["readByUser"] as? Boolean ?: false
             )
@@ -95,6 +110,22 @@ data class Notification(
         }
 
     fun isValid(): Boolean {
+        // Para notificaciones de sistema, ser más permisivo
+        if (documentName.startsWith("notif_")) {
+            return true
+        }
+
+        // Para notificaciones de tipo evento que empiezan con notification_
+        if (documentName.startsWith("notification_")) {
+            return true
+        }
+
+        // Para notificaciones de tipo relay que empiezan con relay_
+        if (documentName.startsWith("relay_")) {
+            return true
+        }
+
+        // Validación estándar para otros casos
         return validateDocumentNames() &&
                 message.isNotBlank() &&
                 date_time.isNotBlank() &&
@@ -102,17 +133,68 @@ data class Notification(
     }
 
     private fun validateDocumentNames(): Boolean {
-        return (documentName.isEmpty() || documentName.startsWith(DocumentPrefixes.NOTIFICATION)) &&
-                clientDocName.startsWith(DocumentPrefixes.CLIENT) &&
-                (panelDocName.isEmpty() || panelDocName.startsWith(DocumentPrefixes.PANEL))
+        // Ser más permisivo con los prefijos
+        if (documentName.isEmpty()) {
+            return false
+        }
+
+        if (clientDocName.isEmpty()) {
+            return false
+        }
+
+        // Si es una notificación de sistema, de evento o de relay, considerarla válida
+        if (documentName.startsWith("notif_") ||
+            documentName.startsWith("notification_") ||
+            documentName.startsWith("relay_")) {
+            return true
+        }
+
+        // Comprobar prefijos estándar de manera más permisiva
+        val validDocument = documentName.isEmpty() ||
+                documentName.startsWith(DocumentPrefixes.NOTIFICATION) ||
+                documentName.contains("notification")
+
+        val validClient = clientDocName.startsWith(DocumentPrefixes.CLIENT) ||
+                clientDocName.contains("client_")
+
+        val validPanel = panelDocName.isEmpty() ||
+                panelDocName.startsWith(DocumentPrefixes.PANEL) ||
+                panelDocName.contains("panel_")
+
+        return validDocument && validClient && validPanel
     }
 
     fun isEventNotification(): Boolean {
-        return eventId != null && eventType != null
+        // Considerar una notificación como de evento si:
+        // 1. Tiene eventId o eventType definido
+        // 2. Su nombre de documento contiene "notification_"
+        // 3. Tiene un campo type con valor "event"
+        return eventId != null ||
+                eventType != null ||
+                documentName.startsWith("notification_") ||
+                documentName.contains("event_")
     }
 
     fun isRelayNotification(): Boolean {
-        return relayName.isNotBlank() && panelDocName.isNotBlank()
+        // Considerar una notificación como de relay si:
+        // 1. Tiene relayName o panelDocName definido
+        // 2. Su nombre de documento contiene "relay_"
+        return relayName.isNotBlank() ||
+                panelDocName.isNotBlank() ||
+                documentName.startsWith("relay_") ||
+                documentName.contains("relay")
+    }
+
+    fun sortByMostRecent(notifications: List<Notification>): List<Notification> {
+        return notifications.sortedByDescending {
+            // Primero intentar por timestamp, si falla usar dateTime
+            try {
+                it.timestamp
+            } catch (e: Exception) {
+                it.dateTime?.atZone(Constants.TimeZone.PERU_ZONE)?.toInstant()?.toEpochMilli()
+                    ?: 0L
+            }
+        }
     }
 
     fun toMap(): Map<String, Any?> {
