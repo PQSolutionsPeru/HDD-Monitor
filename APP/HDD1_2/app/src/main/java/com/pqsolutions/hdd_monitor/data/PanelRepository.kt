@@ -13,7 +13,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
+import com.google.firebase.firestore.DocumentChange
 
 class PanelRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
@@ -66,7 +68,34 @@ class PanelRepository @Inject constructor(
                     }
 
                     snapshot?.let {
-                        currentPanels.clear()
+                        // Procesar cambios, incluyendo eliminaciones
+                        for (change in snapshot.documentChanges) {
+                            when (change.type) {
+                                com.google.firebase.firestore.DocumentChange.Type.REMOVED -> {
+                                    // Panel fue eliminado de Firestore
+                                    val docId = change.document.id
+                                    Log.d(TAG, "Panel eliminado detectado: $docId")
+
+                                    // Eliminar el panel de la lista actual
+                                    val panelIndex = currentPanels.indexOfFirst { it.documentName == docId }
+                                    if (panelIndex >= 0) {
+                                        // Eliminar listener de relays si existe
+                                        relayListeners[docId]?.remove()
+                                        relayListeners.remove(docId)
+
+                                        // Eliminar el panel
+                                        currentPanels.removeAt(panelIndex)
+
+                                        // Enviar la lista actualizada sin el panel eliminado
+                                        trySend(currentPanels.toList())
+                                        Log.d(TAG, "Panel ${docId} eliminado de la lista actual")
+                                    }
+                                }
+                                else -> {
+                                    // Continuar con el procesamiento normal para ADDED y MODIFIED
+                                }
+                            }
+                        }
 
                         // Procesar todos los paneles primero
                         val panelsList = snapshot.documents.mapNotNull { doc ->
@@ -83,7 +112,8 @@ class PanelRepository @Inject constructor(
                             }
                         }
 
-                        // Enviar una primera actualización con los paneles sin procesar el estado ESP32
+                        // Actualizar la lista actual con los paneles existentes
+                        currentPanels.clear()
                         currentPanels.addAll(panelsList)
                         trySend(currentPanels.toList())
 
@@ -117,8 +147,14 @@ class PanelRepository @Inject constructor(
                                                 }
                                                 panel.relays = updatedRelays
 
-                                                // Enviar actualización después de procesar los relays
-                                                trySend(currentPanels.toList())
+                                                // Encuentra el panel en la lista actual
+                                                val index = currentPanels.indexOfFirst { it.documentName == panel.documentName }
+                                                if (index >= 0) {
+                                                    // Actualiza los relays del panel existente
+                                                    currentPanels[index].relays = updatedRelays
+                                                    // Enviar actualización después de procesar los relays
+                                                    trySend(currentPanels.toList())
+                                                }
                                             }
                                         }
 
@@ -145,83 +181,157 @@ class PanelRepository @Inject constructor(
                         return@addSnapshotListener
                     }
 
+                    // Limpiar todos los paneles y obtener lista de clientes actualizada
+                    currentPanels.clear()
+
                     clientSnapshot?.let { clients ->
-                        currentPanels.clear()
+                        // Si no hay clientes, enviar lista vacía
+                        if (clients.isEmpty) {
+                            trySend(emptyList())
+                            return@addSnapshotListener
+                        }
+
+                        // Mantener conteo de clientes pendientes
+                        val pendingClients = clients.size()
+                        val clientsProcessed = AtomicInteger(0)
 
                         // Para cada cliente, obtener sus paneles
                         clients.documents.forEach { clientDoc ->
                             val currentClientDocName = clientDoc.id
                             firestore.collection("$BASE_PATH/$currentClientDocName/panels")
-                                .get()
-                                .addOnSuccessListener { panelsSnapshot ->
-                                    // Procesar todos los paneles de este cliente
-                                    val clientPanels = panelsSnapshot.documents.mapNotNull { doc ->
-                                        try {
-                                            val panel = doc.toObject(Panel::class.java)?.copy(
-                                                documentName = doc.id,
-                                                clientName = currentClientDocName,
-                                                lastUpdate = doc.getLong("lastUpdate") ?: System.currentTimeMillis()
-                                            )
-                                            panel
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Error converting panel", e)
-                                            null
+                                .addSnapshotListener { panelsSnapshot, panelsError ->
+                                    if (panelsError != null) {
+                                        Log.e(TAG, "Error getting panels for client $currentClientDocName", panelsError)
+
+                                        // Incrementar contador aún en caso de error
+                                        if (clientsProcessed.incrementAndGet() == pendingClients) {
+                                            // Todos los clientes procesados, enviar resultado aunque sea con error
+                                            trySend(currentPanels.toList())
                                         }
+
+                                        return@addSnapshotListener
                                     }
 
-                                    // Añadir los paneles a la lista actual
-                                    currentPanels.addAll(clientPanels)
-                                    trySend(currentPanels.toList())
+                                    panelsSnapshot?.let { panels ->
+                                        // Procesar cambios, incluyendo eliminaciones
+                                        for (change in panels.documentChanges) {
+                                            when (change.type) {
+                                                com.google.firebase.firestore.DocumentChange.Type.REMOVED -> {
+                                                    val docId = change.document.id
+                                                    Log.d(TAG, "Panel eliminado detectado: $docId")
 
-                                    // Procesar cada panel para actualizar su estado ESP32
-                                    clientPanels.forEach { panel ->
-                                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                            try {
-                                                // Actualizar el estado ESP32
-                                                val updatedPanel = updatePanelWithESP32Status(panel, currentClientDocName)
-
-                                                // Verificar y eliminar listener anterior si existe
-                                                relayListeners[panel.documentName]?.remove()
-
-                                                // Crear nuevo listener para relays
-                                                relayListeners[panel.documentName] = firestore
-                                                    .collection("$BASE_PATH/$currentClientDocName/panels/${panel.documentName}/relays")
-                                                    .addSnapshotListener { relaysSnapshot, relayError ->
-                                                        if (relayError != null) {
-                                                            Log.e(TAG, "Error fetching relays", relayError)
-                                                            return@addSnapshotListener
-                                                        }
-
-                                                        relaysSnapshot?.let { rs ->
-                                                            val updatedRelays = rs.documents.mapNotNull { relayDoc ->
-                                                                try {
-                                                                    Relay.fromMap(relayDoc.data?.plus(mapOf("name" to relayDoc.id)) ?: emptyMap())
-                                                                } catch (e: Exception) {
-                                                                    Log.e(TAG, "Error converting relay", e)
-                                                                    null
-                                                                }
-                                                            }
-                                                            panel.relays = updatedRelays
-
-                                                            // Enviar actualización después de procesar los relays
-                                                            trySend(currentPanels.toList())
-                                                        }
+                                                    // Eliminar el panel de la lista actual
+                                                    val panelIndex = currentPanels.indexOfFirst {
+                                                        it.documentName == docId && it.clientName == currentClientDocName
                                                     }
+                                                    if (panelIndex >= 0) {
+                                                        // Eliminar listener de relays si existe
+                                                        relayListeners["${currentClientDocName}_${docId}"]?.remove()
+                                                        relayListeners.remove("${currentClientDocName}_${docId}")
 
-                                                // Actualizar la lista y enviar cambios
-                                                val index = currentPanels.indexOfFirst { it.documentName == panel.documentName }
-                                                if (index >= 0) {
-                                                    currentPanels[index] = updatedPanel
-                                                    trySend(currentPanels.toList())
+                                                        // Eliminar el panel
+                                                        currentPanels.removeAt(panelIndex)
+
+                                                        // Enviar la lista actualizada
+                                                        trySend(currentPanels.toList())
+                                                        Log.d(TAG, "Panel ${docId} eliminado de la lista actual")
+                                                    }
                                                 }
-                                            } catch (e: Exception) {
-                                                Log.e(TAG, "Error updating panel ESP32 status", e)
+                                                else -> {
+                                                    // Continuar con el procesamiento normal para ADDED y MODIFIED
+                                                }
                                             }
                                         }
+
+                                        // Procesar paneles existentes
+                                        val clientPanels = panels.documents.mapNotNull { doc ->
+                                            try {
+                                                val panel = doc.toObject(Panel::class.java)?.copy(
+                                                    documentName = doc.id,
+                                                    clientName = currentClientDocName,
+                                                    lastUpdate = doc.getLong("lastUpdate") ?: System.currentTimeMillis()
+                                                )
+                                                panel
+                                            } catch (e: Exception) {
+                                                Log.e(TAG, "Error converting panel", e)
+                                                null
+                                            }
+                                        }
+
+                                        // Eliminar paneles antiguos de este cliente si existen
+                                        currentPanels.removeAll { it.clientName == currentClientDocName }
+
+                                        // Añadir los paneles actualizados a la lista
+                                        currentPanels.addAll(clientPanels)
+
+                                        // Enviar actualización
+                                        trySend(currentPanels.toList())
+                                        Log.d(TAG, "Cliente $currentClientDocName: ${clientPanels.size} paneles obtenidos")
+
+                                        // Procesar cada panel para actualizar su estado ESP32
+                                        clientPanels.forEach { panel ->
+                                            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                                try {
+                                                    // Actualizar el estado ESP32
+                                                    val updatedPanel = updatePanelWithESP32Status(panel, currentClientDocName)
+
+                                                    // Crear ID único para el listener
+                                                    val listenerId = "${currentClientDocName}_${panel.documentName}"
+
+                                                    // Verificar y eliminar listener anterior si existe
+                                                    relayListeners[listenerId]?.remove()
+
+                                                    // Crear nuevo listener para relays
+                                                    relayListeners[listenerId] = firestore
+                                                        .collection("$BASE_PATH/$currentClientDocName/panels/${panel.documentName}/relays")
+                                                        .addSnapshotListener { relaysSnapshot, relayError ->
+                                                            if (relayError != null) {
+                                                                Log.e(TAG, "Error fetching relays", relayError)
+                                                                return@addSnapshotListener
+                                                            }
+
+                                                            relaysSnapshot?.let { rs ->
+                                                                val updatedRelays = rs.documents.mapNotNull { relayDoc ->
+                                                                    try {
+                                                                        Relay.fromMap(relayDoc.data?.plus(mapOf("name" to relayDoc.id)) ?: emptyMap())
+                                                                    } catch (e: Exception) {
+                                                                        Log.e(TAG, "Error converting relay", e)
+                                                                        null
+                                                                    }
+                                                                }
+
+                                                                // Encuentra el panel en la lista actual
+                                                                val index = currentPanels.indexOfFirst {
+                                                                    it.documentName == panel.documentName &&
+                                                                            it.clientName == currentClientDocName
+                                                                }
+                                                                if (index >= 0) {
+                                                                    // Actualiza los relays del panel existente
+                                                                    currentPanels[index].relays = updatedRelays
+                                                                    // Enviar actualización
+                                                                    trySend(currentPanels.toList())
+                                                                }
+                                                            }
+                                                        }
+
+                                                    // Actualizar la lista y enviar cambios
+                                                    val index = currentPanels.indexOfFirst {
+                                                        it.documentName == panel.documentName &&
+                                                                it.clientName == currentClientDocName
+                                                    }
+                                                    if (index >= 0) {
+                                                        currentPanels[index] = updatedPanel
+                                                        trySend(currentPanels.toList())
+                                                    }
+                                                } catch (e: Exception) {
+                                                    Log.e(TAG, "Error updating panel ESP32 status", e)
+                                                }
+                                            }
+                                        }
+
+                                        // Incrementar contador de clientes procesados
+                                        clientsProcessed.incrementAndGet()
                                     }
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e(TAG, "Error fetching panels for client $currentClientDocName", e)
                                 }
                         }
                     }

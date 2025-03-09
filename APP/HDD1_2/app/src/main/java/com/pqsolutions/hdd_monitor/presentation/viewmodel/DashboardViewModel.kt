@@ -213,75 +213,8 @@ class DashboardViewModel @Inject constructor(
         panelsJob?.cancel()
         panelsJob = viewModelScope.launch {
             try {
-                // Actualizar solo el estado de los ESP32 si ya tenemos paneles cargados
-                // Esto es más eficiente que volver a cargar todo
-                if (_uiState.value.panels.isNotEmpty()) {
-                    Log.d(TAG, "Actualizando estado ESP32 de paneles existentes")
-                    val currentPanels = _uiState.value.panels.toMutableList()
-
-                    // Actualizar estado ESP32 para cada panel existente
-                    currentPanels.indices.forEach { index ->
-                        val panel = currentPanels[index]
-                        if (panel.esp32_id.isNotEmpty()) {
-                            try {
-                                // Consultar el estado actual del ESP32 en Firestore
-                                val esp32Doc = firestore
-                                    .collection("hdd-monitor/esp32/registered")
-                                    .document(panel.esp32_id)
-                                    .get()
-                                    .await()
-
-                                if (esp32Doc.exists()) {
-                                    // Obtener el estado actual
-                                    val currentStatus = esp32Doc.getString("status") ?: ESP32Device.STATUS_OFFLINE
-
-                                    // Verificar última actualización para determinar si está realmente OFFLINE
-                                    val lastUpdate = esp32Doc.getTimestamp("lastUpdate")
-                                    val currentTime = com.google.firebase.Timestamp.now()
-                                    val fiveMinutesAgo = com.google.firebase.Timestamp(
-                                        currentTime.seconds - (5 * 60), // 5 minutos en segundos
-                                        currentTime.nanoseconds
-                                    )
-
-                                    // Actualizar el estado del ESP32 en el panel
-                                    val oldStatus = panel.esp32Status
-                                    val newStatus = if (lastUpdate == null || lastUpdate.compareTo(fiveMinutesAgo) < 0) {
-                                        ESP32Device.STATUS_OFFLINE
-                                    } else if (currentStatus == ESP32Device.STATUS_RUNNING ||
-                                        currentStatus == ESP32Device.STATUS_ONLINE ||
-                                        currentStatus == ESP32Device.STATUS_CONFIGURED) {
-                                        ESP32Device.STATUS_ONLINE
-                                    } else {
-                                        currentStatus
-                                    }
-
-                                    // MODIFICADO: Siempre actualizar el estado, sin comparar con el anterior
-                                    Log.d(TAG, "ESP32 ${panel.esp32_id} estado actualizado: ${panel.esp32Status} -> $newStatus")
-                                    currentPanels[index] = panel.copy(esp32Status = newStatus)
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error actualizando estado ESP32", e)
-                            }
-                        }
-                    }
-
-                    // Actualizar el estado UI con los paneles actualizados
-                    val uniquePanels = currentPanels.distinctBy { it.documentName }
-                    val groupedPanels = uniquePanels.groupBy {
-                        _uiState.value.clientNames[it.clientName] ?: it.clientName
-                    }
-
-                    _uiState.update { currentState ->
-                        currentState.copy(
-                            panels = uniquePanels,
-                            groupedPanels = groupedPanels,
-                            lastUpdate = System.currentTimeMillis()
-                        )
-                    }
-                } else {
-                    // Si no hay paneles, cargar todo desde cero
-                    loadPanels()
-                }
+                // Forzar una recarga completa para asegurar que refleja el estado actual de Firestore
+                loadPanels()
             } catch (e: Exception) {
                 Log.e(TAG, "Error en refreshPanels", e)
             }
@@ -357,6 +290,7 @@ class DashboardViewModel @Inject constructor(
         super.onCleared()
         cancelCurrentJob()
         stopPeriodicRefresh()
+        panelRepository.clearListeners()
         Log.d(TAG, "ViewModel cleared")
     }
 

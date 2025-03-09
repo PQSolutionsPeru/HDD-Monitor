@@ -201,7 +201,10 @@ class BleViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Usar el clientId del usuario actual
+                // Cambiar estado a CreatingPanel para mostrar progreso
+                _state.value = BleState.CreatingPanel(currentESP32!!, clientId)
+
+                // Usar el clientId del usuario actual para crear el panel
                 createNewPanel(
                     clientId = clientId,
                     panelName = panelName,
@@ -536,8 +539,12 @@ class BleViewModel @Inject constructor(
                     return@launch
                 }
 
+                // Cancelar cualquier timeout activo antes de cambiar de estado
                 timeoutJob?.cancel()
+
+                // Actualizar estado a CreatingPanel para mostrar progreso
                 _state.value = BleState.CreatingPanel(currentESP32!!, clientId)
+                Log.d(TAG, "Iniciando creación de panel para ESP32 ${currentESP32!!.documentName}")
 
                 val panel = Panel.createNew(
                     name = panelName,
@@ -546,17 +553,21 @@ class BleViewModel @Inject constructor(
                     esp32Id = currentESP32!!.documentName
                 )
 
-                // Crear panel en Firestore
+                // Crear panel en Firestore con notificación de progreso
+                Log.d(TAG, "Creando panel en Firestore...")
                 val panelId = panelRepository.createNewPanel(
                     clientDocName = clientId,
                     panel = panel,
                     esp32Id = currentESP32!!.documentName
                 ).getOrThrow()
 
+                Log.d(TAG, "Panel creado con ID: $panelId. Esperando confirmación del ESP32...")
+
                 // Comenzar a observar el estado del ESP32 para confirmar configuración
                 observeESP32Status(currentESP32!!.documentName)
 
                 // Iniciar timeout para esperar la configuración
+                Log.d(TAG, "Iniciando timeout de espera para confirmación...")
                 startTimeoutTimer(RUNNING_MODE_TIMEOUT)
 
             } catch (e: IllegalStateException) {
@@ -572,13 +583,17 @@ class BleViewModel @Inject constructor(
     private fun observeESP32Status(esp32Id: String) {
         viewModelScope.launch {
             try {
+                Log.d(TAG, "Iniciando observación del estado del ESP32 $esp32Id")
                 esp32Repository.observeESP32Status(esp32Id).collect { status ->
-                    Log.d(TAG, "ESP32 $esp32Id estado: $status")
+                    Log.d(TAG, "ESP32 $esp32Id estado actualizado: $status")
                     when (status) {
                         ESP32Device.STATUS_ONLINE -> {
+                            Log.d(TAG, "ESP32 $esp32Id está en línea y configurado exitosamente")
                             // Configuración aceptada por el ESP32
                             currentESP32?.let { esp32Device ->
-                                _state.value = BleState.ConfigurationSuccess(esp32Device)
+                                // Actualizar el campo de estado en nuestro objeto ESP32Device
+                                val updatedDevice = esp32Device.copy(status = status)
+                                _state.value = BleState.ConfigurationSuccess(updatedDevice)
                             } ?: run {
                                 _state.value = BleState.ConfigurationSuccess(
                                     ESP32Device(
@@ -591,9 +606,12 @@ class BleViewModel @Inject constructor(
                             timeoutJob?.cancel()
                         }
                         ESP32Device.STATUS_RUNNING -> {
+                            Log.d(TAG, "ESP32 $esp32Id está en modo operación normal")
                             // El ESP32 está en modo operación normal
                             currentESP32?.let { esp32Device ->
-                                _state.value = BleState.ConfigurationSuccess(esp32Device)
+                                // Actualizar el campo de estado en nuestro objeto ESP32Device
+                                val updatedDevice = esp32Device.copy(status = status)
+                                _state.value = BleState.ConfigurationSuccess(updatedDevice)
                             } ?: run {
                                 _state.value = BleState.ConfigurationSuccess(
                                     ESP32Device(
@@ -618,6 +636,8 @@ class BleViewModel @Inject constructor(
                         }
                         ESP32Device.STATUS_AWAITING_CONFIG -> {
                             // El ESP32 aún está esperando configuración, seguimos esperando
+                            // Actualizamos el estado para mostrar el progreso
+                            _state.value = BleState.WaitingForRunningMode
                             Log.d(TAG, "ESP32 esperando configuración")
                         }
                         else -> {
@@ -691,15 +711,32 @@ class BleViewModel @Inject constructor(
                 val effectiveId = if (esp32Id.isBlank()) {
                     val device = devices.value.firstOrNull()
                     try {
-                        device?.name?.substringAfter("ESP32-") ?: ""
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error extrayendo ID del nombre del dispositivo", e)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            // Android 12+ requiere BLUETOOTH_CONNECT
+                            if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
+                                PackageManager.PERMISSION_GRANTED) {
+                                device?.name?.substringAfter("ESP32-") ?: ""
+                            } else {
+                                Log.d(TAG, "Falta permiso BLUETOOTH_CONNECT para acceder al nombre del dispositivo")
+                                ""
+                            }
+                        } else {
+                            // Versiones anteriores requieren BLUETOOTH
+                            if (context.checkSelfPermission(Manifest.permission.BLUETOOTH) ==
+                                PackageManager.PERMISSION_GRANTED) {
+                                device?.name?.substringAfter("ESP32-") ?: ""
+                            } else {
+                                Log.d(TAG, "Falta permiso BLUETOOTH para acceder al nombre del dispositivo")
+                                ""
+                            }
+                        }
+                    } catch (e: SecurityException) {
+                        Log.e(TAG, "Error de permisos al acceder al nombre del dispositivo", e)
                         ""
                     }
                 } else {
                     esp32Id
                 }
-
                 if (effectiveId.isBlank()) {
                     Log.e(TAG, "No se pudo determinar el ID del ESP32")
                     _state.value = BleState.Error("No se pudo identificar el ESP32")
@@ -707,6 +744,9 @@ class BleViewModel @Inject constructor(
                 }
 
                 Log.d(TAG, "Buscando ESP32 con ID: $effectiveId")
+
+                // Actualizar estado para mostrar progreso durante la búsqueda
+                _state.value = BleState.WaitingForRunningMode
 
                 // Ampliamos nuestro periodo de búsqueda para darle tiempo al ESP32 a registrarse en Firestore
                 var timeoutMillis = 30000L // 30 segundos
@@ -721,7 +761,7 @@ class BleViewModel @Inject constructor(
                     // Intentar observar directamente por ID
                     try {
                         Log.d(TAG, "Intento directo por ID: $effectiveId")
-                        val snapshot = withTimeout(3000) {
+                        withTimeout(3000) {
                             esp32Repository.observeESP32s().take(1).collect { devices ->
                                 val found = devices.find { it.documentName == effectiveId }
                                 if (found != null) {
@@ -739,7 +779,7 @@ class BleViewModel @Inject constructor(
                         try {
                             currentMac?.let { mac ->
                                 Log.d(TAG, "Intentando búsqueda por MAC: $mac")
-                                val unassignedDevices = withTimeoutOrNull(3000) {
+                                withTimeoutOrNull(3000) {
                                     esp32Repository.observeUnassignedESP32s().take(1)
                                         .collect { devices ->
                                             val found = devices.find {
@@ -776,6 +816,11 @@ class BleViewModel @Inject constructor(
                         } catch (e: Exception) {
                             Log.d(TAG, "Error buscando entre no asignados: ${e.message}")
                         }
+                    }
+
+                    // Actualizar estado para mostrar que seguimos buscando
+                    if (device == null) {
+                        _state.value = BleState.WaitingForRunningMode
                     }
                 }
 
@@ -830,7 +875,21 @@ class BleViewModel @Inject constructor(
     fun startTimeoutTimer(timeout: Long) {
         timeoutJob?.cancel()
         timeoutJob = viewModelScope.launch {
+            // Mostrar estado de espera inmediatamente
+            when (_state.value) {
+                is BleState.WifiConfiguring -> {
+                    Log.d(TAG, "Iniciando timeout para configuración WiFi: ${timeout}ms")
+                }
+                is BleState.WaitingForRunningMode -> {
+                    Log.d(TAG, "Iniciando timeout para modo operación: ${timeout}ms")
+                }
+                else -> {
+                    Log.d(TAG, "Iniciando timeout para: ${_state.value}: ${timeout}ms")
+                }
+            }
+
             delay(timeout)
+
             when (_state.value) {
                 is BleState.WifiConfiguring -> {
                     _state.value = BleState.Error(
@@ -942,6 +1001,7 @@ class BleViewModel @Inject constructor(
 
     fun startWifiConfigTimeout() {
         viewModelScope.launch {
+            _state.value = BleState.WifiConfiguring
             delay(WIFI_CONFIG_TIMEOUT)
 
             if (_state.value is BleState.WifiConfiguring) {

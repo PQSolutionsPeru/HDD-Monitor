@@ -1,6 +1,7 @@
 package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.Intent
@@ -35,6 +36,8 @@ import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
 import com.pqsolutions.hdd_monitor.presentation.state.BleState
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.BleViewModel
+import com.pqsolutions.hdd_monitor.presentation.components.ConfigSuccessDialog
+import com.pqsolutions.hdd_monitor.presentation.components.ConfigurationProgressSection
 
 private const val TAG = "BleConfigScreen"
 
@@ -54,6 +57,8 @@ fun BleConfigScreen(
     var panelName by remember { mutableStateOf("") }
     var panelLocation by remember { mutableStateOf("") }
     var showClientMenu by remember { mutableStateOf(false) }
+    var showSuccessDialog by remember { mutableStateOf(false) }
+    var configuredESP32 by remember { mutableStateOf<ESP32Device?>(null) }
 
     val isAdmin = remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -68,7 +73,7 @@ fun BleConfigScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    // LaunchedEffect corregido - solo para efectos secundarios, no UI
+    // LaunchedEffect solo para efectos secundarios, no UI
     LaunchedEffect(state) {
         Log.d(TAG, "Estado actual: $state")
         when (state) {
@@ -93,6 +98,9 @@ fun BleConfigScreen(
             }
             is BleState.ConfigurationSuccess -> {
                 Log.d(TAG, "Configuración completada exitosamente")
+                val esp32Device = (state as BleState.ConfigurationSuccess).esp32Device
+                configuredESP32 = esp32Device
+                showSuccessDialog = true
             }
             else -> { /* No hacer nada para otros estados */ }
         }
@@ -159,7 +167,14 @@ fun BleConfigScreen(
                     .verticalScroll(scrollState),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Aquí es donde debes manejar todos los estados de UI
+                // Mostrar el indicador de progreso para estados relevantes
+                if (shouldShowProgressSection(state)) {
+                    ConfigurationProgressSection(
+                        currentState = state
+                    )
+                }
+
+                // Aquí es donde manejas todos los estados de UI
                 when (state) {
                     is BleState.ConfigMethodSelection -> {
                         ConfigMethodSelectionSection(
@@ -294,13 +309,10 @@ fun BleConfigScreen(
                         )
                     }
                     is BleState.ConfigurationSuccess -> {
-                        val esp32Device = (state as? BleState.ConfigurationSuccess)?.esp32Device
+                        // Mantener la vista de éxito existente pero hacerla más simple
+                        // ya que ahora tenemos un diálogo para mostrar detalles
                         SuccessSection(
-                            message = buildString {
-                                appendLine("¡Configuración completada!")
-                                appendLine("ESP32 #${esp32Device?.documentName} configurado exitosamente.")
-                                appendLine("El panel ha sido creado y está listo para usar.")
-                            },
+                            message = "Configuración completada exitosamente.",
                             onFinishClick = onConfigurationComplete
                         )
                     }
@@ -339,6 +351,31 @@ fun BleConfigScreen(
 
     if (showBluetoothDialog) {
         BluetoothDialog(context = context, onDismiss = { showBluetoothDialog = false })
+    }
+
+    // Mostrar diálogo de éxito cuando la configuración se complete
+    if (showSuccessDialog && configuredESP32 != null) {
+        ConfigSuccessDialog(
+            esp32Device = configuredESP32!!,
+            onDismiss = {
+                showSuccessDialog = false
+                onConfigurationComplete()
+            }
+        )
+    }
+}
+
+@Composable
+private fun shouldShowProgressSection(state: BleState): Boolean {
+    return when (state) {
+        // Estados donde no mostramos el progreso
+        is BleState.Initial,
+        is BleState.ConfigMethodSelection,
+        is BleState.LoadingUnassignedDevices,
+        is BleState.NoUnassignedDevices,
+        is BleState.UnassignedDevicesFound -> false
+        // En cualquier otro estado sí mostramos
+        else -> true
     }
 }
 
@@ -671,6 +708,7 @@ private fun ErrorSection(
     }
 }
 
+@SuppressLint("MissingPermission")
 @Composable
 private fun DeviceButton(
     device: BluetoothDevice,
@@ -681,8 +719,7 @@ private fun DeviceButton(
     val deviceName = remember(device) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
-                PackageManager.PERMISSION_GRANTED
-            ) {
+                PackageManager.PERMISSION_GRANTED) {
                 device.name?.takeIf { it.startsWith("ESP32-") }?.let { name ->
                     "ESP32 #${name.substringAfter("ESP32-")}"
                 } ?: "ESP32 (Sin ID)"
