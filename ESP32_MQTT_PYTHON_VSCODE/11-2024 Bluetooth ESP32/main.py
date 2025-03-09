@@ -161,6 +161,7 @@ def prepare_for_mqtt(managers):
     return gc.mem_free()
 
 def setup_relay_monitoring(managers, esp32_id):
+    print("\n[RELAY] Iniciando setup_relay_monitoring con ID: " + esp32_id)
     try:
         print("\n[RELAY] Configuring relays...")
         managers["relay"] = RelayManager()
@@ -682,6 +683,7 @@ def main():
                             print("[MAIN] LED azul cambió después de limpiar BLE, restaurando...")
                             managers["led"].set_config_mode()  # Restaurar si cambió
                         
+                        print("\n[MAIN] Intentando configurar relays después de MQTT exitoso...")
                         # Intentar conexión MQTT
                         print("[MAIN] Verificando conexión MQTT...")
                         if managers["mqtt"].check_connection() or setup_mqtt_connection(managers):

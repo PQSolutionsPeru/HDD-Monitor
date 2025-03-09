@@ -15,7 +15,7 @@ from config import ESP32_CONFIG_MQTT as MQTT_CONFIG
 # Estados del ESP32
 ESP32_STATES = {
     'AWAITING_CONFIG': 'AWAITING_CONFIG',
-    'CONFIGURED': 'CONFIGURED',
+    'ONLINE': 'ONLINE',
     'ERROR': 'ERROR',
     'OK': 'OK',
     'DISC': 'DISC',  # Estado de desconexión
@@ -174,7 +174,7 @@ class ESP32ConfigManager:
             # Actualizar estado en Firestore
             esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
             esp32_ref.update({
-                'status': ESP32_STATES['CONFIGURED'],
+                'status': ESP32_STATES['ONLINE'],
                 'lastUpdate': datetime.now(pytz.UTC)
             })
             
@@ -190,7 +190,7 @@ class ESP32ConfigManager:
             if payload.get('status') in ['SUCCESS', 'CONFIG_ACCEPTED']:
                 esp32_ref = self.db.document(f'hdd-monitor/esp32/registered/{esp32_id}')
                 esp32_ref.update({
-                    'status': ESP32_STATES['CONFIGURED'],
+                    'status': ESP32_STATES['ONLINE'],
                     'lastUpdate': datetime.now(pytz.UTC)
                 })
                 logging.info(f"ESP32 {esp32_id} configurado exitosamente")

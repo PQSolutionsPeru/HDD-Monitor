@@ -191,6 +191,13 @@ class NotificationHandler:
                 panel_id = path_parts[5]
                 relay_id = path_parts[7]
 
+                # NUEVA CONDICIÓN: Ignorar notificaciones del relay Sistema si están relacionadas con ONLINE/OFFLINE
+                if relay_id.lower() == "sistema" and (
+                    old_data.get('status') in ['ONLINE', 'OFFLINE'] or 
+                    new_data.get('status') in ['ONLINE', 'OFFLINE']):
+                    logging.info(f"Ignorando notificación de relay Sistema para cambio ONLINE/OFFLINE")
+                    return
+
                 # Crear clave única para esta combinación específica de cambio
                 # Usar relay_id, estados viejo y nuevo, y un timestamp redondeado a ventanas de 5 segundos
                 window_time = int(time.time() * 1000 / 5000)

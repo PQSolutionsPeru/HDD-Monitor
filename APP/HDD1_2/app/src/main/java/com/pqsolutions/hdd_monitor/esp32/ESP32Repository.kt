@@ -64,15 +64,49 @@ class ESP32Repository @Inject constructor(
         }
     }
 
+    fun observeESP32ByMac(mac: String): Flow<ESP32Device?> = callbackFlow {
+        try {
+            Log.d(TAG, "Buscando ESP32 con MAC: $mac")
+            val normalizedMac = mac.uppercase().replace(":", "").replace("-", "")
+
+            val listenerRegistration = firestore.collection(ESP32_COLLECTION)
+                .whereEqualTo("MAC", normalizedMac)
+                .limit(1)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e(TAG, "Error observando ESP32 por MAC", error)
+                        return@addSnapshotListener
+                    }
+
+                    val device = snapshot?.documents?.firstOrNull()?.toESP32Device()
+                    if (device != null) {
+                        Log.d(TAG, "ESP32 encontrado por MAC: ${device.documentName}")
+                        trySend(device)
+                    } else {
+                        trySend(null)
+                    }
+                }
+
+            awaitClose {
+                listenerRegistration.remove()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error configurando observador por MAC", e)
+            close(e)
+        }
+    }
+
     fun observeUnassignedESP32s(deviceId: String? = null): Flow<List<ESP32Device>> = callbackFlow {
         try {
             Log.d(TAG, "Iniciando observación de ESP32s no asignados. DeviceId: $deviceId")
 
+            // Usar whereIn para status y eliminar el filtro de client_id
             val baseQuery = firestore.collection(ESP32_COLLECTION)
                 .whereIn("status", listOf(
                     ESP32Device.STATUS_AWAITING_CONFIG,
                     ESP32Device.STATUS_PENDING_ASSIGNMENT,
-                    ESP32Device.STATUS_WIFI_CONFIG
+                    ESP32Device.STATUS_WIFI_CONFIG,
+                    "CONFIG"
                 ))
 
             val finalQuery = deviceId?.let { id ->
@@ -88,9 +122,21 @@ class ESP32Repository @Inject constructor(
                     }
 
                     val devices = snapshot?.documents?.mapNotNull { doc ->
-                        doc.toESP32Device()?.also {
-                            Log.d(TAG, "ESP32 encontrado - ID: ${doc.id}, Status: ${it.status}, MAC: ${it.MAC}")
-                        }
+                        // Filtrar aquí los dispositivos que no tienen client_id o panel_id asignados
+                        val device = doc.toESP32Device()
+                        if (device != null) {
+                            val clientId = doc.getString("client_id") ?: ""
+                            val panelId = doc.getString("panel_id") ?: ""
+                            val isUnassigned = clientId.isEmpty() && panelId.isEmpty()
+
+                            if (isUnassigned) {
+                                Log.d(TAG, "ESP32 sin asignar encontrado: ${doc.id}, Status: ${device.status}")
+                                device
+                            } else {
+                                Log.d(TAG, "ESP32 ya asignado, ignorando: ${doc.id}")
+                                null
+                            }
+                        } else null
                     } ?: emptyList()
 
                     trySend(devices)
@@ -277,6 +323,16 @@ class ESP32Repository @Inject constructor(
 
         Log.d(TAG, "ESP32 registered with ID: $esp32Id")
         esp32Id
+    }
+
+    suspend fun deleteESP32(esp32Id: String): Result<Unit> = runCatching {
+        Log.d(TAG, "Deleting ESP32: $esp32Id from registered collection")
+
+        firestore.document("$ESP32_COLLECTION/$esp32Id")
+            .delete()
+            .await()
+
+        Log.d(TAG, "ESP32 deleted successfully")
     }
 
     suspend fun unassignFromPanel(esp32Id: String): Result<Unit> = runCatching {

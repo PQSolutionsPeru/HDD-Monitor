@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,9 +67,17 @@ fun UserDashboardScreen(
     val notificationUiState by notificationViewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    LaunchedEffect(key1 = Unit) {
+    LaunchedEffect(Unit) {
         Log.d(TAG, "LaunchedEffect: Loading panels for user dashboard")
         viewModel.loadPanels()
+        viewModel.startPeriodicRefresh() // Iniciar actualización periódica
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            Log.d(TAG, "DisposableEffect: Stopping periodic refresh")
+            viewModel.stopPeriodicRefresh() // Detener actualización al salir
+        }
     }
 
     HDD1_2Theme {

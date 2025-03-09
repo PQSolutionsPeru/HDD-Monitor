@@ -139,12 +139,28 @@ class BleConnector @Inject constructor(
                         }
                     }
                     message.startsWith("status:wifi_con") -> {
+                        // Primero intentar el formato esperado con información adicional
                         val parts = message.split(",")
                         val ip = parts.find { it.startsWith("ip:") }?.substringAfter("ip:") ?: ""
                         val esp32Id = parts.find { it.startsWith("id:") }?.substringAfter("id:") ?: ""
 
-                        Log.d(TAG, "WiFi configurado exitosamente. IP: $ip, ESP32 ID: $esp32Id")
-                        onWifiConfigSuccess?.invoke(ip, esp32Id)
+                        // Si no tenemos información suficiente, usar la MAC del dispositivo
+                        val effectiveIp = if (ip.isBlank()) "desconocida" else ip
+                        val effectiveId = if (esp32Id.isBlank()) {
+                            // Extraer ID del nombre del dispositivo
+                            currentConnectedDevice?.let { device ->
+                                try {
+                                    device.name?.substringAfter("ESP32-") ?: ""
+                                } catch (e: Exception) {
+                                    ""
+                                }
+                            } ?: ""
+                        } else {
+                            esp32Id
+                        }
+
+                        Log.d(TAG, "WiFi configurado exitosamente. IP: $effectiveIp, ESP32 ID: $effectiveId")
+                        onWifiConfigSuccess?.invoke(effectiveIp, effectiveId)
                     }
                     message.startsWith("error:wifi_failed") -> {
                         val errorMsg = message.substringAfter("error:wifi_failed:")

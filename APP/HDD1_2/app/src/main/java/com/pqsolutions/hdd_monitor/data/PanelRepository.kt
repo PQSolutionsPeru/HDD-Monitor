@@ -4,12 +4,14 @@ import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.pqsolutions.hdd_monitor.data.util.IdManager
+import com.pqsolutions.hdd_monitor.esp32.ESP32Device
 import com.pqsolutions.hdd_monitor.esp32.ESP32Repository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -65,19 +67,37 @@ class PanelRepository @Inject constructor(
 
                     snapshot?.let {
                         currentPanels.clear()
-                        currentPanels.addAll(snapshot.documents.mapNotNull { doc ->
+
+                        // Procesar todos los paneles primero
+                        val panelsList = snapshot.documents.mapNotNull { doc ->
                             try {
                                 val panel = doc.toObject(Panel::class.java)?.copy(
                                     documentName = doc.id,
                                     clientName = clientDocName,
                                     lastUpdate = doc.getLong("lastUpdate") ?: System.currentTimeMillis()
                                 )
+                                panel
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error converting panel", e)
+                                null
+                            }
+                        }
 
-                                panel?.let {
+                        // Enviar una primera actualización con los paneles sin procesar el estado ESP32
+                        currentPanels.addAll(panelsList)
+                        trySend(currentPanels.toList())
+
+                        // Luego procesar cada panel para actualizar su estado ESP32
+                        panelsList.forEach { panel ->
+                            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                try {
+                                    // Actualizar el estado ESP32
+                                    val updatedPanel = updatePanelWithESP32Status(panel, clientDocName)
+
                                     // Verificar y eliminar listener anterior si existe
                                     relayListeners[panel.documentName]?.remove()
 
-                                    // Crear nuevo listener
+                                    // Crear nuevo listener para relays
                                     relayListeners[panel.documentName] = firestore
                                         .collection("$BASE_PATH/$clientDocName/panels/${panel.documentName}/relays")
                                         .addSnapshotListener { relaysSnapshot, relayError ->
@@ -96,17 +116,23 @@ class PanelRepository @Inject constructor(
                                                     }
                                                 }
                                                 panel.relays = updatedRelays
+
+                                                // Enviar actualización después de procesar los relays
                                                 trySend(currentPanels.toList())
                                             }
                                         }
+
+                                    // Actualizar la lista y enviar cambios
+                                    val index = currentPanels.indexOfFirst { it.documentName == panel.documentName }
+                                    if (index >= 0) {
+                                        currentPanels[index] = updatedPanel
+                                        trySend(currentPanels.toList())
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error updating panel ESP32 status", e)
                                 }
-                                panel
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error converting panel", e)
-                                null
                             }
-                        })
-                        trySend(currentPanels.toList())
+                        }
                     }
                 }
         } else {
@@ -121,24 +147,43 @@ class PanelRepository @Inject constructor(
 
                     clientSnapshot?.let { clients ->
                         currentPanels.clear()
+
+                        // Para cada cliente, obtener sus paneles
                         clients.documents.forEach { clientDoc ->
                             val currentClientDocName = clientDoc.id
                             firestore.collection("$BASE_PATH/$currentClientDocName/panels")
                                 .get()
                                 .addOnSuccessListener { panelsSnapshot ->
-                                    panelsSnapshot.documents.forEach { doc ->
+                                    // Procesar todos los paneles de este cliente
+                                    val clientPanels = panelsSnapshot.documents.mapNotNull { doc ->
                                         try {
                                             val panel = doc.toObject(Panel::class.java)?.copy(
                                                 documentName = doc.id,
                                                 clientName = currentClientDocName,
                                                 lastUpdate = doc.getLong("lastUpdate") ?: System.currentTimeMillis()
                                             )
+                                            panel
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Error converting panel", e)
+                                            null
+                                        }
+                                    }
 
-                                            panel?.let {
+                                    // Añadir los paneles a la lista actual
+                                    currentPanels.addAll(clientPanels)
+                                    trySend(currentPanels.toList())
+
+                                    // Procesar cada panel para actualizar su estado ESP32
+                                    clientPanels.forEach { panel ->
+                                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                            try {
+                                                // Actualizar el estado ESP32
+                                                val updatedPanel = updatePanelWithESP32Status(panel, currentClientDocName)
+
                                                 // Verificar y eliminar listener anterior si existe
                                                 relayListeners[panel.documentName]?.remove()
 
-                                                // Crear nuevo listener
+                                                // Crear nuevo listener para relays
                                                 relayListeners[panel.documentName] = firestore
                                                     .collection("$BASE_PATH/$currentClientDocName/panels/${panel.documentName}/relays")
                                                     .addSnapshotListener { relaysSnapshot, relayError ->
@@ -157,16 +202,26 @@ class PanelRepository @Inject constructor(
                                                                 }
                                                             }
                                                             panel.relays = updatedRelays
+
+                                                            // Enviar actualización después de procesar los relays
                                                             trySend(currentPanels.toList())
                                                         }
                                                     }
-                                                currentPanels.add(panel)
+
+                                                // Actualizar la lista y enviar cambios
+                                                val index = currentPanels.indexOfFirst { it.documentName == panel.documentName }
+                                                if (index >= 0) {
+                                                    currentPanels[index] = updatedPanel
+                                                    trySend(currentPanels.toList())
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.e(TAG, "Error updating panel ESP32 status", e)
                                             }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Error converting panel", e)
                                         }
                                     }
-                                    trySend(currentPanels.toList())
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e(TAG, "Error fetching panels for client $currentClientDocName", e)
                                 }
                         }
                     }
@@ -444,6 +499,58 @@ class PanelRepository @Inject constructor(
         Log.d(TAG, "Relay status updated successfully")
     }
 
+    private suspend fun updatePanelWithESP32Status(panel: Panel, clientDocName: String): Panel {
+        if (panel.esp32_id.isEmpty()) {
+            // Si no tiene ESP32 asignado, mantenerlo como OFFLINE
+            panel.esp32Status = ESP32Device.STATUS_OFFLINE
+            return panel
+        }
+
+        try {
+            // Consultar el estado actual del ESP32 en Firestore
+            val esp32Doc = firestore
+                .collection("hdd-monitor/esp32/registered")
+                .document(panel.esp32_id)
+                .get()
+                .await()
+
+            if (esp32Doc.exists()) {
+                // Obtener el estado actual
+                val currentStatus = esp32Doc.getString("status") ?: ESP32Device.STATUS_OFFLINE
+
+                // Verificar última actualización para determinar si está realmente OFFLINE
+                val lastUpdate = esp32Doc.getTimestamp("lastUpdate")
+                val currentTime = com.google.firebase.Timestamp.now()
+                val fiveMinutesAgo = com.google.firebase.Timestamp(
+                    currentTime.seconds - (5 * 60), // 5 minutos en segundos
+                    currentTime.nanoseconds
+                )
+
+                // Si la última actualización es más antigua que 5 minutos, considerar OFFLINE
+                panel.esp32Status = if (lastUpdate == null || lastUpdate.compareTo(fiveMinutesAgo) < 0) {
+                    Log.d(TAG, "ESP32 ${panel.esp32_id} marcado como OFFLINE por inactividad")
+                    ESP32Device.STATUS_OFFLINE
+                } else if (currentStatus == ESP32Device.STATUS_RUNNING ||
+                    currentStatus == ESP32Device.STATUS_ONLINE ||
+                    currentStatus == ESP32Device.STATUS_CONFIGURED) {
+                    Log.d(TAG, "ESP32 ${panel.esp32_id} está ONLINE con status $currentStatus")
+                    ESP32Device.STATUS_ONLINE
+                } else {
+                    Log.d(TAG, "ESP32 ${panel.esp32_id} tiene status $currentStatus")
+                    currentStatus
+                }
+            } else {
+                Log.d(TAG, "No se encontró documento para ESP32 ${panel.esp32_id}")
+                panel.esp32Status = ESP32Device.STATUS_OFFLINE
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error verificando estado de ESP32 ${panel.esp32_id}", e)
+            panel.esp32Status = ESP32Device.STATUS_OFFLINE
+        }
+
+        return panel
+    }
+
     suspend fun deletePanel(
         clientDocName: String,
         panelDocName: String
@@ -454,12 +561,12 @@ class PanelRepository @Inject constructor(
             .get()
             .await()
 
-        // Desasignar ESP32 si existe
+        // Eliminar ESP32 si existe (en lugar de solo desasignarlo)
         val esp32Id = panelDoc.getString("esp32_id")
         if (!esp32Id.isNullOrEmpty()) {
-            esp32Repository.unassignFromPanel(esp32Id)
+            esp32Repository.deleteESP32(esp32Id)
                 .onFailure { e ->
-                    Log.e(TAG, "Error unassigning ESP32", e)
+                    Log.e(TAG, "Error deleting ESP32", e)
                 }
         }
 
@@ -478,7 +585,7 @@ class PanelRepository @Inject constructor(
         batch.delete(panelDoc.reference)
         batch.commit().await()
 
-        Log.d(TAG, "Panel and relays deleted successfully")
+        Log.d(TAG, "Panel, relays and ESP32 deleted successfully")
     }
 
     suspend fun verifyPanelExists(clientDocName: String, panelDocName: String): Boolean {

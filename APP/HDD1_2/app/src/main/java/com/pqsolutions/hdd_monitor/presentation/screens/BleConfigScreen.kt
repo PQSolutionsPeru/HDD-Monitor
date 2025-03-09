@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -67,6 +68,7 @@ fun BleConfigScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
+    // LaunchedEffect corregido - solo para efectos secundarios, no UI
     LaunchedEffect(state) {
         Log.d(TAG, "Estado actual: $state")
         when (state) {
@@ -92,7 +94,7 @@ fun BleConfigScreen(
             is BleState.ConfigurationSuccess -> {
                 Log.d(TAG, "Configuración completada exitosamente")
             }
-            else -> { }
+            else -> { /* No hacer nada para otros estados */ }
         }
     }
 
@@ -157,7 +159,18 @@ fun BleConfigScreen(
                     .verticalScroll(scrollState),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Aquí es donde debes manejar todos los estados de UI
                 when (state) {
+                    is BleState.ConfigMethodSelection -> {
+                        ConfigMethodSelectionSection(
+                            onScanForNewDevices = {
+                                viewModel.startScan()
+                            },
+                            onReuseExistingDevices = {
+                                viewModel.loadUnassignedEsp32s()
+                            }
+                        )
+                    }
                     is BleState.Initial,
                     is BleState.Scanning -> {
                         ScanningSection(
@@ -173,11 +186,33 @@ fun BleConfigScreen(
                             }
                         )
                     }
-
+                    is BleState.LoadingUnassignedDevices -> {
+                        LoadingSection(message = "Buscando dispositivos existentes...")
+                    }
+                    is BleState.NoUnassignedDevices -> {
+                        UnassignedDevicesSection(
+                            devices = emptyList(),
+                            onDeviceClick = { },
+                            onBackClick = {
+                                viewModel._state.value = BleState.ConfigMethodSelection
+                            }
+                        )
+                    }
+                    is BleState.UnassignedDevicesFound -> {
+                        val unassignedDevices = (state as BleState.UnassignedDevicesFound).devices
+                        UnassignedDevicesSection(
+                            devices = unassignedDevices,
+                            onDeviceClick = { device ->
+                                viewModel.selectUnassignedESP32(device)
+                            },
+                            onBackClick = {
+                                viewModel._state.value = BleState.ConfigMethodSelection
+                            }
+                        )
+                    }
                     is BleState.Connecting -> {
                         LoadingSection(message = "Conectando al dispositivo...")
                     }
-
                     is BleState.Connected -> {
                         WifiConfigSection(
                             ssid = wifiSsid,
@@ -190,19 +225,15 @@ fun BleConfigScreen(
                             }
                         )
                     }
-
                     is BleState.WifiConfigReceived -> {
                         LoadingSection(message = "Enviando configuración WiFi...")
                     }
-
                     is BleState.WifiConfiguring -> {
                         LoadingSection(message = "Configurando WiFi en el dispositivo...")
                     }
-
                     is BleState.WaitingForRunningMode -> {
                         LoadingSection(message = "Esperando confirmación de modo operación...")
                     }
-
                     is BleState.SelectingClient -> {
                         val esp32Device = (state as BleState.SelectingClient).esp32Device
                         if (isAdmin.value) {
@@ -238,7 +269,6 @@ fun BleConfigScreen(
                             )
                         }
                     }
-
                     is BleState.CreatingPanel -> {
                         val esp32Device = (state as BleState.CreatingPanel).esp32Device
                         CreatePanelSection(
@@ -263,7 +293,6 @@ fun BleConfigScreen(
                             }
                         )
                     }
-
                     is BleState.ConfigurationSuccess -> {
                         val esp32Device = (state as? BleState.ConfigurationSuccess)?.esp32Device
                         SuccessSection(
@@ -275,21 +304,18 @@ fun BleConfigScreen(
                             onFinishClick = onConfigurationComplete
                         )
                     }
-
                     is BleState.ConfigurationError -> {
                         ErrorSection(
                             message = (state as BleState.ConfigurationError).message,
                             onRetryClick = { viewModel.startScan() }
                         )
                     }
-
                     is BleState.Error -> {
                         ErrorSection(
                             message = (state as BleState.Error).message,
                             onRetryClick = { viewModel.startScan() }
                         )
                     }
-
                     else -> {
                         LoadingSection(message = "Procesando...")
                     }
@@ -732,4 +758,129 @@ private fun BluetoothDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ConfigMethodSelectionSection(
+    onScanForNewDevices: () -> Unit,
+    onReuseExistingDevices: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            "Configurar Chip Monitor",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            "Seleccione una opción para configurar un ESP32:",
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = onScanForNewDevices,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Buscar Nuevos Dispositivos")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onReuseExistingDevices,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Reasignar Dispositivos Existentes")
+        }
+    }
+}
+
+@Composable
+private fun UnassignedDevicesSection(
+    devices: List<ESP32Device>,
+    onDeviceClick: (ESP32Device) -> Unit,
+    onBackClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            "Dispositivos Disponibles para Reasignar",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (devices.isEmpty()) {
+            Text(
+                "No hay dispositivos disponibles para reasignar",
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        } else {
+            Text(
+                "Seleccione un dispositivo para reasignarlo:",
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            devices.forEach { device ->
+                ESP32DeviceButton(device = device, onClick = onDeviceClick)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onBackClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Volver")
+        }
+    }
+}
+
+@Composable
+private fun ESP32DeviceButton(
+    device: ESP32Device,
+    onClick: (ESP32Device) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable { onClick(device) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "ESP32 #${device.documentName}",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text("MAC: ${device.MAC}")
+            Text("IP: ${device.IP ?: "No disponible"}")
+            Text("Estado: ${device.status}")
+        }
+    }
 }

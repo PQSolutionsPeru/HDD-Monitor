@@ -244,6 +244,7 @@ fun AppNavigation(
         onDispose {
             Log.d(TAG, "Cleaning up ViewModels")
             dashboardViewModel.cancelCurrentJob()
+            dashboardViewModel.stopPeriodicRefresh()
             notificationViewModel.clearError()
         }
     }

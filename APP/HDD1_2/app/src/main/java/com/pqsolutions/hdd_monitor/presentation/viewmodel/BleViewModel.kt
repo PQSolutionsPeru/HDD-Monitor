@@ -60,7 +60,7 @@ class BleViewModel @Inject constructor(
     private val userRepository: UserRepository
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow<BleState>(BleState.Initial)
+    val _state = MutableStateFlow<BleState>(BleState.Initial)
     val state: StateFlow<BleState> = _state.asStateFlow()
 
     private var currentMac: String? = null
@@ -79,10 +79,13 @@ class BleViewModel @Inject constructor(
     private var scanJob: Job? = null
     private var timeoutJob: Job? = null
 
+    private val _unassignedEsp32s = MutableStateFlow<List<ESP32Device>>(emptyList())
+    val unassignedEsp32s: StateFlow<List<ESP32Device>> = _unassignedEsp32s.asStateFlow()
+
     init {
         viewModelScope.launch {
             Log.d(TAG, "Iniciando BleViewModel")
-            _state.value = BleState.Initial
+            _state.value = BleState.ConfigMethodSelection
             observeDevices()
             observeConnectionState()
             observeWifiConfigState()
@@ -105,6 +108,57 @@ class BleViewModel @Inject constructor(
                         startScan()
                     }
                 }
+            }
+        }
+    }
+
+    fun loadUnassignedEsp32s() {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Cargando ESP32 no asignados...")
+                _state.value = BleState.LoadingUnassignedDevices
+
+                // Observar ESP32 no asignados desde el repositorio
+                esp32Repository.observeUnassignedESP32s().collect { unassignedDevices ->
+                    Log.d(TAG, "ESP32 no asignados encontrados: ${unassignedDevices.size}")
+                    unassignedDevices.forEach { device ->
+                        Log.d(TAG, "ESP32 no asignado: ${device.documentName}, Estado: ${device.status}")
+                    }
+
+                    // Actualizar el state flow con los dispositivos encontrados
+                    _unassignedEsp32s.value = unassignedDevices
+
+                    // Actualizar el estado de la UI
+                    if (unassignedDevices.isEmpty()) {
+                        _state.value = BleState.NoUnassignedDevices
+                    } else {
+                        _state.value = BleState.UnassignedDevicesFound(unassignedDevices)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cargando ESP32 no asignados", e)
+                _state.value = BleState.Error("Error cargando ESP32 no asignados: ${e.message}")
+            }
+        }
+    }
+
+    fun selectUnassignedESP32(esp32Device: ESP32Device) {
+        Log.d(TAG, "Seleccionando ESP32 no asignado: ${esp32Device.documentName}")
+        currentESP32 = esp32Device
+        timeoutJob?.cancel()
+
+        // Verificar si el usuario es admin o normal para mostrar la pantalla adecuada
+        viewModelScope.launch {
+            try {
+                val isAdmin = isUserAdmin()
+                if (isAdmin) {
+                    _state.value = BleState.SelectingClient(esp32Device)
+                } else {
+                    _state.value = BleState.CreatingPanel(esp32Device, userRepository.getCurrentUser()?.clientDocName ?: "")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error en selectUnassignedESP32", e)
+                _state.value = BleState.Error("Error al seleccionar dispositivo: ${e.message}")
             }
         }
     }
@@ -521,7 +575,7 @@ class BleViewModel @Inject constructor(
                 esp32Repository.observeESP32Status(esp32Id).collect { status ->
                     Log.d(TAG, "ESP32 $esp32Id estado: $status")
                     when (status) {
-                        ESP32Device.STATUS_CONFIGURED -> {
+                        ESP32Device.STATUS_ONLINE -> {
                             // Configuración aceptada por el ESP32
                             currentESP32?.let { esp32Device ->
                                 _state.value = BleState.ConfigurationSuccess(esp32Device)
@@ -633,27 +687,109 @@ class BleViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "Iniciando observación de ESP32 ID: $esp32Id")
             try {
-                esp32Repository.observeUnassignedESP32s(esp32Id).collect { unassignedESP32s ->
-                    Log.d(TAG, "Recibida actualización de ESP32s no asignados: ${unassignedESP32s.size}")
-                    unassignedESP32s.forEach { esp32 ->
-                        Log.d(TAG, "ESP32: ${esp32.documentName}, Estado: ${esp32.status}")
+                // Si el ESP32ID está vacío, ver si podemos obtenerlo del dispositivo conectado
+                val effectiveId = if (esp32Id.isBlank()) {
+                    val device = devices.value.firstOrNull()
+                    try {
+                        device?.name?.substringAfter("ESP32-") ?: ""
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error extrayendo ID del nombre del dispositivo", e)
+                        ""
+                    }
+                } else {
+                    esp32Id
+                }
+
+                if (effectiveId.isBlank()) {
+                    Log.e(TAG, "No se pudo determinar el ID del ESP32")
+                    _state.value = BleState.Error("No se pudo identificar el ESP32")
+                    return@launch
+                }
+
+                Log.d(TAG, "Buscando ESP32 con ID: $effectiveId")
+
+                // Ampliamos nuestro periodo de búsqueda para darle tiempo al ESP32 a registrarse en Firestore
+                var timeoutMillis = 30000L // 30 segundos
+                var device: ESP32Device? = null
+
+                // Intenta varias veces con un retraso entre intentos
+                while (timeoutMillis > 0 && device == null) {
+                    // Esperar para darle tiempo a Firestore a actualizarse
+                    delay(5000) // 5 segundos entre intentos
+                    timeoutMillis -= 5000
+
+                    // Intentar observar directamente por ID
+                    try {
+                        Log.d(TAG, "Intento directo por ID: $effectiveId")
+                        val snapshot = withTimeout(3000) {
+                            esp32Repository.observeESP32s().take(1).collect { devices ->
+                                val found = devices.find { it.documentName == effectiveId }
+                                if (found != null) {
+                                    Log.d(TAG, "ESP32 encontrado directamente por ID: ${found.documentName}, estado: ${found.status}")
+                                    device = found
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.d(TAG, "No se encontró por ID directamente: ${e.message}")
                     }
 
-                    val esp32 = unassignedESP32s.find { device ->
-                        device.documentName == esp32Id &&
-                                device.status == ESP32Device.STATUS_AWAITING_CONFIG
+                    // Si no lo encontramos directamente, intentar por MAC
+                    if (device == null) {
+                        try {
+                            currentMac?.let { mac ->
+                                Log.d(TAG, "Intentando búsqueda por MAC: $mac")
+                                val unassignedDevices = withTimeoutOrNull(3000) {
+                                    esp32Repository.observeUnassignedESP32s().take(1)
+                                        .collect { devices ->
+                                            val found = devices.find {
+                                                it.MAC.equals(mac, ignoreCase = true) ||
+                                                        it.documentName == effectiveId
+                                            }
+                                            if (found != null) {
+                                                Log.d(TAG, "ESP32 encontrado por MAC: ${found.MAC}, ID: ${found.documentName}")
+                                                device = found
+                                            }
+                                        }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.d(TAG, "Error buscando por MAC: ${e.message}")
+                        }
                     }
 
-                    if (esp32 != null) {
-                        Log.d(TAG, "ESP32 encontrado en estado AWAITING_CONFIG")
-                        currentESP32 = esp32
-                        _state.value = BleState.SelectingClient(esp32)
-                        timeoutJob?.cancel()
-                        return@collect
-                    } else {
-                        Log.d(TAG, "ESP32 $esp32Id aún no está en estado AWAITING_CONFIG")
+                    // Si todavía no lo encontramos, intentar por todos los no asignados
+                    if (device == null) {
+                        try {
+                            Log.d(TAG, "Buscando entre todos los no asignados")
+                            withTimeoutOrNull(3000) {
+                                esp32Repository.observeUnassignedESP32s().take(1)
+                                    .collect { devices ->
+                                        if (devices.isNotEmpty()) {
+                                            device = devices.firstOrNull()
+                                            if (device != null) {
+                                                Log.d(TAG, "Encontrado dispositivo no asignado: ${device!!.documentName}")
+                                            }
+                                        }
+                                    }
+                            }
+                        } catch (e: Exception) {
+                            Log.d(TAG, "Error buscando entre no asignados: ${e.message}")
+                        }
                     }
                 }
+
+                // Verificar si encontramos un dispositivo
+                if (device != null) {
+                    Log.d(TAG, "ESP32 encontrado finalmente: ${device!!.documentName}, Estado: ${device!!.status}")
+                    currentESP32 = device
+                    _state.value = BleState.SelectingClient(device!!)
+                    timeoutJob?.cancel()
+                } else {
+                    Log.e(TAG, "No se pudo encontrar el ESP32 en Firestore después de múltiples intentos")
+                    _state.value = BleState.Error("No se pudo localizar el ESP32 en el sistema. Por favor intente de nuevo o contacte a soporte.")
+                }
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error observando ESP32 en Firestore", e)
                 _state.value = BleState.Error("Error verificando estado del dispositivo: ${e.message}")
