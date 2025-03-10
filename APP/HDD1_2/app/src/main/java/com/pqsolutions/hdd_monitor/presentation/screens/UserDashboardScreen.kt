@@ -223,7 +223,8 @@ private fun EmptyPanelsContent() {
 
 @Composable
 fun UserPanelItem(panel: Panel) {
-    Log.d(TAG, "Rendering UserPanelItem: ${panel.name}, Status: ${panel.hasIssues}")
+    Log.d(TAG, "Rendering UserPanelItem: ${panel.name}, ESP32Status: ${panel.esp32Status}, " +
+            "isESP32Offline: ${panel.isESP32Offline()}, hasIssues: ${panel.hasIssues}")
     var expanded by remember { mutableStateOf(false) }
 
     // Determinar color basado en estado del ESP32 primero, luego en relays

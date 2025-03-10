@@ -22,7 +22,8 @@ data class Notification(
     val status: String? = null,
     val panelName: String? = null,
     val readByAdmin: Boolean = false,
-    val readByUser: Boolean = false
+    val readByUser: Boolean = false,
+    val lastUpdateTimestamp: Long? = null
 ) {
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy, HH:mm")
@@ -77,6 +78,7 @@ data class Notification(
             val panelDocName = map["panelDocName"] as? String ?: map["panel_id"] as? String
             val panelName = map["panelName"] as? String ?: map["panel_name"] as? String
             val clientDocName = map["clientDocName"] as? String ?: map["client_id"] as? String ?: ""
+            val lastUpdateTimestamp = map["lastUpdate"] as? Long
 
             // Log para debug
             if (map["documentName"] != null) {
@@ -97,7 +99,8 @@ data class Notification(
                 status = status,
                 panelName = panelName,
                 readByAdmin = map["readByAdmin"] as? Boolean ?: false,
-                readByUser = map["readByUser"] as? Boolean ?: false
+                readByUser = map["readByUser"] as? Boolean ?: false,
+                lastUpdateTimestamp = lastUpdateTimestamp
             )
         }
     }

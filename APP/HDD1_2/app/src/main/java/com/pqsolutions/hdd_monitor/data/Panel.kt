@@ -16,18 +16,19 @@ data class Panel(
         Relay(RELAY_SUPERVISION, STATUS_DISC)
     ),
     var esp32Status: String = ESP32Device.STATUS_OFFLINE
+
+
 ) : Serializable {
 
     val overallStatus: Boolean
         get() = !isESP32Offline() && relays.none { it.status == STATUS_DISC }
 
     val relaysInDisc: String
-        get() = if (isESP32Offline()) "ESP32 OFFLINE" else
-            relays.filter { it.status == STATUS_DISC }
-                .joinToString(", ") { it.name }
+        get() = relays.filter { it.status == STATUS_DISC }
+            .joinToString(", ") { it.name }
 
     val hasIssues: Boolean
-        get() = isESP32Offline() || relays.any { it.status == STATUS_DISC }
+        get() = !overallStatus
 
     fun toMap(): Map<String, Any?> = mapOf(
         "documentName" to documentName,
@@ -39,10 +40,6 @@ data class Panel(
     )
 
     fun isESP32Offline(): Boolean = esp32Status == ESP32Device.STATUS_OFFLINE
-
-    fun isESP32Online(): Boolean = esp32Status == ESP32Device.STATUS_ONLINE ||
-            esp32Status == ESP32Device.STATUS_RUNNING ||
-            esp32Status == ESP32Device.STATUS_CONFIGURED
 
     fun updateRelay(relayName: String, newStatus: String): Panel {
         val updatedRelays = relays.map { relay ->

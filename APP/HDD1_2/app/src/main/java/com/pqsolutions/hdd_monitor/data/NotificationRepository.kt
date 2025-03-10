@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDateTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,7 +22,10 @@ import javax.inject.Singleton
 @Singleton
 class NotificationRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private var lastProcessedTimestamp: Long = 0L,
+    private val documentProcessCache: MutableSet<String> = mutableSetOf<String>(),
+    private val PROCESS_THROTTLE_TIME: Long = 2000L
 ) {
     companion object {
         private const val TAG = "NotificationRepository"
@@ -31,6 +33,9 @@ class NotificationRepository @Inject constructor(
         private const val DATE_FORMAT = "dd/MM/yyyy, HH:mm"  // Formato unificado
         private const val MAX_NOTIFICATIONS = 20
         private const val HOURS_TO_KEEP = 24L
+
+        // NUNCA mostrar notificaciones visuales desde aquí
+        private const val SHOW_VISUAL_NOTIFICATIONS = false
     }
 
     // Flow principal de notificaciones para un cliente específico (usuarios)
@@ -50,6 +55,33 @@ class NotificationRepository @Inject constructor(
         }
     }
 
+    private fun shouldProcessSnapshot(documents: List<com.google.firebase.firestore.DocumentSnapshot>, clientId: String): Boolean {
+        if (documents.isEmpty()) return false
+
+        // Crear una huella digital del snapshot
+        val snapshotSignature = documents.take(3).joinToString("|") { it.id } + "|" + clientId
+        val currentTimestamp = System.currentTimeMillis()
+
+        // Si una firma similar fue procesada recientemente, ignorar
+        if (documentProcessCache.contains(snapshotSignature) &&
+            currentTimestamp - lastProcessedTimestamp < PROCESS_THROTTLE_TIME) {
+            Log.d(TAG, "Ignorando snapshot duplicado: $snapshotSignature")
+            return false
+        }
+
+        // Actualizar caché
+        documentProcessCache.add(snapshotSignature)
+        lastProcessedTimestamp = currentTimestamp
+
+        // Limpiar caché si crece demasiado
+        if (documentProcessCache.size > 10) {
+            val oldestEntries = documentProcessCache.take(documentProcessCache.size - 5)
+            documentProcessCache.removeAll(oldestEntries.toSet())
+        }
+
+        return true
+    }
+
     fun getNotificationsFlow(clientDocName: String): Flow<List<Notification>> = callbackFlow {
         if (clientDocName.isBlank()) {
             Log.w(TAG, "Intento de obtener notificaciones con clientDocName vacío")
@@ -61,7 +93,9 @@ class NotificationRepository @Inject constructor(
         val collectionPath = "$BASE_PATH/$clientDocName/notifications"
         Log.d(TAG, "Consultando notificaciones en: $collectionPath")
 
-        // CORREGIDO: Ordenamos por timestamp en lugar de date_time para consistencia
+        // Usar un mapa para cachear notificaciones
+        val notificationsCache = mutableMapOf<String, Notification>()
+
         val notificationsRef = firestore.collection(collectionPath)
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(MAX_NOTIFICATIONS.toLong())
@@ -80,16 +114,23 @@ class NotificationRepository @Inject constructor(
 
             snapshot?.let { querySnapshot ->
                 try {
-                    Log.d(TAG, "Documentos encontrados: ${querySnapshot.documents.size}")
+                    val documents = querySnapshot.documents
+                    Log.d(TAG, "Documentos encontrados: ${documents.size}")
 
-                    // AÑADIR LOGS MÁS DETALLADOS PARA DEBUGGEAR
-                    if (querySnapshot.documents.isEmpty()) {
+                    if (documents.isEmpty()) {
                         Log.d(TAG, "No se encontraron documentos en la colección")
-                    } else {
-                        Log.d(TAG, "Primer documento: ${querySnapshot.documents[0].id}")
+                        trySend(emptyList())
+                        return@addSnapshotListener
                     }
 
-                    val notifications = querySnapshot.documents.mapNotNull { doc ->
+                    // Verificar si debemos procesar este snapshot o es un duplicado
+                    if (!shouldProcessSnapshot(documents, clientDocName)) {
+                        return@addSnapshotListener
+                    }
+
+                    Log.d(TAG, "Primer documento: ${documents[0].id}")
+
+                    val notifications = documents.mapNotNull { doc ->
                         try {
                             val data = doc.data ?: emptyMap()
                             // Log para ver qué datos llegan
@@ -106,12 +147,16 @@ class NotificationRepository @Inject constructor(
                                 }
                             }
 
-                            val notification = Notification.fromMap(notificationMap)
                             // Verificar validez de la notificación
+                            val notification = Notification.fromMap(notificationMap)
                             if (!notification.isValid()) {
                                 Log.w(TAG, "Notificación inválida: ${doc.id}")
+                                null
+                            } else {
+                                // Cachear la notificación válida
+                                notificationsCache[doc.id] = notification
+                                notification
                             }
-                            notification
                         } catch (e: Exception) {
                             Log.e(TAG, "Error procesando documento ${doc.id}", e)
                             null
@@ -120,7 +165,12 @@ class NotificationRepository @Inject constructor(
 
                     // IMPORTANTE: Verificar que realmente estamos enviando notificaciones
                     Log.d(TAG, "Enviando ${notifications.size} notificaciones al flow")
-                    trySend(notifications)
+                    if (notifications.isNotEmpty()) {
+                        trySend(notifications)
+                    } else {
+                        // Agregamos una rama else explícita para mayor claridad
+                        Log.d(TAG, "No hay notificaciones válidas para enviar")
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error procesando snapshot", e)
                     trySend(emptyList())
@@ -150,7 +200,7 @@ class NotificationRepository @Inject constructor(
 
     // Flow para todas las notificaciones (para administradores)
     fun getNotificationsFlow(): Flow<List<Notification>> = callbackFlow {
-        Log.d(TAG, "Iniciando consulta de todas las notificaciones")
+        Log.d(TAG, "Iniciando consulta de todas las notificaciones (admin)")
 
         val listenerRegistration = firestore.collectionGroup("notifications")
             .orderBy("timestamp", Query.Direction.DESCENDING)
@@ -170,40 +220,64 @@ class NotificationRepository @Inject constructor(
 
                 snapshot?.let { querySnapshot ->
                     try {
-                        Log.d(TAG, "Documentos encontrados: ${querySnapshot.documents.size}")
-                        val notifications = querySnapshot.documents.mapNotNull { doc ->
+                        val documents = querySnapshot.documents
+                        Log.d(TAG, "Documentos encontrados (admin): ${documents.size}")
+
+                        // Verificar si debemos procesar este snapshot o es un duplicado
+                        if (documents.isEmpty() || !shouldProcessSnapshot(documents, "admin")) {
+                            return@addSnapshotListener
+                        }
+
+                        val notifications = documents.mapNotNull { doc ->
                             try {
                                 val data = doc.data ?: emptyMap()
+                                val clientDocName = doc.reference.path
+                                    .split("/")
+                                    .let { parts ->
+                                        parts.getOrNull(parts.indexOf("clients") + 1) ?: ""
+                                    }
+
                                 val notificationMap = data.toMutableMap().apply {
                                     this["documentName"] = doc.id
-                                    val clientDocName = doc.reference.path
-                                        .split("/")
-                                        .let { parts ->
-                                            parts.getOrNull(parts.indexOf("clients") + 1) ?: ""
-                                        }
                                     this["clientDocName"] = clientDocName
                                 }
-                                Notification.fromMap(notificationMap)
+
+                                val notification = Notification.fromMap(notificationMap)
+                                // Solo enviar notificaciones válidas
+                                if (notification.isValid()) notification else null
                             } catch (e: Exception) {
-                                Log.e(TAG, "Error procesando documento ${doc.id}", e)
+                                Log.e(TAG, "Error procesando documento admin ${doc.id}", e)
                                 null
                             }
                         }
-                        trySend(notifications)
+
+                        if (notifications.isNotEmpty()) {
+                            Log.d(TAG, "Enviando ${notifications.size} notificaciones admin al flow")
+                            trySend(notifications)
+                        } else {
+                            Log.d(TAG, "No hay notificaciones válidas para enviar (admin)")
+                        }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error procesando snapshot", e)
+                        Log.e(TAG, "Error procesando snapshot (admin)", e)
                         trySend(emptyList())
                     }
                 } ?: run {
-                    Log.w(TAG, "Snapshot nulo recibido")
+                    Log.w(TAG, "Snapshot nulo recibido (admin)")
                     trySend(emptyList())
                 }
             }
+
+        synchronized(activeListeners) {
+            activeListeners.add(listenerRegistration)
+        }
 
         awaitClose {
             Log.d(TAG, "Cerrando listener de notificaciones globales")
             try {
                 listenerRegistration.remove()
+                synchronized(activeListeners) {
+                    activeListeners.remove(listenerRegistration)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error cerrando listener", e)
             }

@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessaging
 import com.pqsolutions.hdd_monitor.data.AuthRepository
 import com.pqsolutions.hdd_monitor.data.EventRepository
@@ -23,11 +24,13 @@ import com.pqsolutions.hdd_monitor.presentation.state.MainUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -43,6 +46,7 @@ class MainViewModel @Inject constructor(
     private val eventRepository: EventRepository,
     private val panelRepository: PanelRepository,
     private val notificationRepository: NotificationRepository,
+    private val firestore: FirebaseFirestore, // Añadido FirebaseFirestore
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -53,11 +57,13 @@ class MainViewModel @Inject constructor(
     val hasPendingNotifications: StateFlow<Boolean> = _hasPendingNotifications.asStateFlow()
 
     private var sessionCheckJob: Job? = null
+    private var pendingNotificationsJob: Job? = null
 
     companion object {
         private const val TAG = "MainViewModel"
         const val PANEL_UPDATE_ACTION = "com.pqsolutions.hdd_monitor.PANEL_UPDATE"
         const val CLIENT_MANAGEMENT_ROUTE = "client_management"
+        private const val BASE_PATH = "hdd-monitor/accounts/clients" // Añadida constante BASE_PATH
     }
 
     private val panelUpdateReceiver = object : BroadcastReceiver() {
@@ -311,36 +317,75 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        sessionCheckJob?.cancel()
-        eventRepository.clearListeners()
-        LocalBroadcastManager.getInstance(context).unregisterReceiver(panelUpdateReceiver)
-    }
-
     private fun checkPendingNotifications() {
-        viewModelScope.launch {
-            uiState.value.userData?.let { user ->
-                val notificationFlow = if (user.role == UserRole.ADMIN) {
-                    notificationRepository.getNotificationsFlow()
-                } else {
-                    notificationRepository.getNotificationsFlow(user.clientDocName)
-                }
+        // Cancelar trabajo existente
+        pendingNotificationsJob?.cancel()
 
-                combine(
-                    eventRepository.getEventsFlow(user.clientDocName).distinctUntilChanged(),
-                    notificationFlow.distinctUntilChanged()
-                ) { events, notifications ->
-                    val hasUnreadNotifications = notifications.any { notification -> !notification.isRead }
-                    val hasPendingEvents = events.any { event -> event.status == "PROGRAMADO" }
-                    hasUnreadNotifications || hasPendingEvents
-                }.collect { hasPending ->
-                    if (hasPending != _hasPendingNotifications.value) {
-                        _hasPendingNotifications.value = hasPending
-                        Log.d(TAG, "Pending notifications/events updated: $hasPending")
+        pendingNotificationsJob = viewModelScope.launch {
+            uiState.value.userData?.let { user ->
+                try {
+                    // Usar enfoque de consulta periódica en lugar de listener permanente
+                    while (isActive) {
+                        val hasUnread = checkUnreadNotificationsDirectly(user)
+                        if (hasUnread != _hasPendingNotifications.value) {
+                            _hasPendingNotifications.value = hasUnread
+                            Log.d(TAG, "Estado de notificaciones pendientes actualizado: $hasUnread")
+                        }
+                        // Consultar cada 5 segundos
+                        delay(5000)
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error en checkPendingNotifications", e)
                 }
             }
+        }
+    }
+
+    // Método para consultar notificaciones sin establecer listener permanente
+    private suspend fun checkUnreadNotificationsDirectly(user: UserData): Boolean {
+        return try {
+            val clientDocName = user.clientDocName
+            val hasUnreadNotifications = if (user.role == UserRole.ADMIN) {
+                // Consultar para admins
+                firestore.collectionGroup("notifications")
+                    .whereEqualTo("isRead", false)
+                    .limit(1)
+                    .get()
+                    .await()
+                    .size() > 0
+            } else {
+                // Consultar para usuarios normales
+                firestore.collection("$BASE_PATH/$clientDocName/notifications")
+                    .whereEqualTo("isRead", false)
+                    .limit(1)
+                    .get()
+                    .await()
+                    .size() > 0
+            }
+
+            // Corregido: Usar método apropiado de eventRepository
+            val hasPendingEvents = checkPendingEvents(clientDocName)
+
+            hasUnreadNotifications || hasPendingEvents
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking unread notifications", e)
+            false
+        }
+    }
+
+    // Método para verificar eventos pendientes
+    private suspend fun checkPendingEvents(clientDocName: String): Boolean {
+        return try {
+            val events = firestore.collection("$BASE_PATH/$clientDocName/events")
+                .whereEqualTo("status", "PROGRAMADO")
+                .limit(1)
+                .get()
+                .await()
+
+            events.size() > 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking pending events", e)
+            false
         }
     }
 
@@ -381,5 +426,13 @@ class MainViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error updating FCM token: ${e.message}", e)
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        sessionCheckJob?.cancel()
+        pendingNotificationsJob?.cancel()
+        eventRepository.clearListeners()
+        LocalBroadcastManager.getInstance(context).unregisterReceiver(panelUpdateReceiver)
     }
 }
