@@ -61,6 +61,7 @@
     <string name="panel_relay_status">Estado de relays</string>
     <string name="panel_connection_ok">Conectado</string>
     <string name="panel_connection_error">Desconectado</string>
+    <string name="field_panel">Panel: %1$s</string>
 
     <!-- ESP32 Strings -->
     <string name="panel_esp32_connected">ESP32 Conectado</string>

@@ -42,7 +42,6 @@ class DashboardViewModel @Inject constructor(
 
     init {
         Log.d(TAG, "DashboardViewModel initialized")
-        loadPanels()
         listenForStatusUpdates()
     }
 
@@ -141,7 +140,15 @@ class DashboardViewModel @Inject constructor(
      */
     fun loadPanels() {
         Log.d(TAG, "loadPanels() called")
-        panelsJob?.cancel()
+
+        // Si ya hay un trabajo activo, no iniciar otro y no cancelarlo
+        if (panelsJob?.isActive == true) {
+            Log.d(TAG, "Panels already loading, skipping redundant call")
+            return
+        }
+
+        // Importante: NO cancelamos el job existente aquí para evitar reiniciar el flujo constantemente
+        // Solo creamos uno nuevo si no hay ninguno activo o si el anterior ya terminó
 
         // Indicar carga
         _uiState.update { it.copy(isLoading = true, error = null) }
@@ -202,11 +209,16 @@ class DashboardViewModel @Inject constructor(
                     ) }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading panels", e)
-                _uiState.update { it.copy(
-                    isLoading = false,
-                    error = e.message ?: "Error desconocido"
-                ) }
+                // Solo actualizar el error si la coroutine no fue cancelada intencionalmente
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e(TAG, "Error loading panels", e)
+                    _uiState.update { it.copy(
+                        isLoading = false,
+                        error = e.message ?: "Error desconocido"
+                    ) }
+                } else {
+                    Log.d(TAG, "Panel loading cancelled intentionally")
+                }
             }
         }
     }

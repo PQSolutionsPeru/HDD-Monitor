@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -54,14 +55,24 @@ fun EventScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     val dialogState = rememberDialogState()
 
+    // LaunchedEffect corregido con manejo de excepciones
     LaunchedEffect(Unit) {
-        if (eventId != null) {
-            viewModel.loadSpecificEvent(eventId)
-        } else {
-            viewModel.loadEvents()
-        }
-        if (isAdmin) {
-            viewModel.loadClients()
+        Log.d("EventScreen", "LaunchedEffect iniciado en EventScreen")
+
+        try {
+            if (eventId != null && eventId.isNotBlank()) {
+                Log.d("EventScreen", "Cargando evento específico: $eventId")
+                viewModel.loadSpecificEvent(eventId)
+            } else {
+                Log.d("EventScreen", "Cargando todos los eventos disponibles")
+                viewModel.loadEvents()
+            }
+
+            if (isAdmin) {
+                viewModel.loadClients()
+            }
+        } catch (e: Exception) {
+            Log.e("EventScreen", "Error en LaunchedEffect", e)
         }
     }
 
@@ -76,7 +87,19 @@ fun EventScreen(
         }
     }
 
+    // DisposableEffect para limpiar recursos al desmontar la pantalla
+    DisposableEffect(Unit) {
+        onDispose {
+            Log.d("EventScreen", "DisposableEffect: Limpiando recursos")
+            viewModel.cancelCurrentJob()
+        }
+    }
+
+    // BackHandler actualizado para reiniciar notificaciones al volver
     BackHandler {
+        Log.d("EventScreen", "BackHandler: Navegando hacia atrás")
+        viewModel.cancelCurrentJob()
+        notificationViewModel.restartNotificationCollection()
         onBackClick()
     }
 
@@ -88,7 +111,12 @@ fun EventScreen(
                         stringResource(R.string.event_details)
                     else
                         stringResource(R.string.events),
-                    onBackClick = onBackClick,
+                    onBackClick = {
+                        // También reiniciar notificaciones cuando se presiona el botón de atrás
+                        viewModel.cancelCurrentJob()
+                        notificationViewModel.restartNotificationCollection()
+                        onBackClick()
+                    },
                     actions = {
                         if (eventId == null) {
                             IconButton(onClick = { showFilterMenu = true }) {

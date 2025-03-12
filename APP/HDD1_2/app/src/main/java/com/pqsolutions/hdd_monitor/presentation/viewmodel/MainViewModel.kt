@@ -345,8 +345,10 @@ class MainViewModel @Inject constructor(
     private suspend fun checkUnreadNotificationsDirectly(user: UserData): Boolean {
         return try {
             val clientDocName = user.clientDocName
+
+            // Primero verificar notificaciones no leídas
             val hasUnreadNotifications = if (user.role == UserRole.ADMIN) {
-                // Consultar para admins
+                // Consultar para admins usando collectionGroup (más eficiente)
                 firestore.collectionGroup("notifications")
                     .whereEqualTo("isRead", false)
                     .limit(1)
@@ -354,18 +356,26 @@ class MainViewModel @Inject constructor(
                     .await()
                     .size() > 0
             } else {
-                // Consultar para usuarios normales
-                firestore.collection("$BASE_PATH/$clientDocName/notifications")
-                    .whereEqualTo("isRead", false)
-                    .limit(1)
-                    .get()
-                    .await()
-                    .size() > 0
+                // Consultar para usuarios normales en su cliente específico
+                if (clientDocName.isNotEmpty()) {
+                    // CORRECCIÓN: Usar la ruta correcta sin duplicar "clients"
+                    // Error era: "$BASE_PATH/clients/$clientDocName/notifications"
+                    firestore.collection("$BASE_PATH/$clientDocName/notifications")
+                        .whereEqualTo("isRead", false)
+                        .limit(1)
+                        .get()
+                        .await()
+                        .size() > 0
+                } else {
+                    // Protección contra clientDocName vacío
+                    false
+                }
             }
 
-            // Corregido: Usar método apropiado de eventRepository
+            // Luego verificar eventos pendientes de manera segura
             val hasPendingEvents = checkPendingEvents(clientDocName)
 
+            // Retornar true si hay notificaciones no leídas o eventos pendientes
             hasUnreadNotifications || hasPendingEvents
         } catch (e: Exception) {
             Log.e(TAG, "Error checking unread notifications", e)
@@ -374,15 +384,45 @@ class MainViewModel @Inject constructor(
     }
 
     // Método para verificar eventos pendientes
-    private suspend fun checkPendingEvents(clientDocName: String): Boolean {
+    private suspend fun checkPendingEvents(clientDocName: String?): Boolean {
         return try {
-            val events = firestore.collection("$BASE_PATH/$clientDocName/events")
-                .whereEqualTo("status", "PROGRAMADO")
-                .limit(1)
-                .get()
-                .await()
+            if (clientDocName.isNullOrEmpty()) {
+                // Para administradores, buscar eventos pendientes en todos los clientes
+                val clientsSnapshot = firestore.collection(BASE_PATH).get().await()
+                var hasPendingEvents = false
 
-            events.size() > 0
+                for (clientDoc in clientsSnapshot.documents) {
+                    val clientId = clientDoc.id
+                    try {
+                        // CORRECCIÓN: Usar la ruta correcta sin duplicar "clients"
+                        val events = firestore.collection("$BASE_PATH/$clientId/events")
+                            .whereEqualTo("status", "PROGRAMADO")
+                            .limit(1)
+                            .get()
+                            .await()
+
+                        if (events.size() > 0) {
+                            hasPendingEvents = true
+                            break
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking events for client $clientId", e)
+                        // Continuar con el siguiente cliente en caso de error
+                    }
+                }
+
+                hasPendingEvents
+            } else {
+                // Para usuarios normales, buscar en su cliente específico
+                // CORRECCIÓN: Usar la ruta correcta sin duplicar "clients"
+                val events = firestore.collection("$BASE_PATH/$clientDocName/events")
+                    .whereEqualTo("status", "PROGRAMADO")
+                    .limit(1)
+                    .get()
+                    .await()
+
+                events.size() > 0
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error checking pending events", e)
             false

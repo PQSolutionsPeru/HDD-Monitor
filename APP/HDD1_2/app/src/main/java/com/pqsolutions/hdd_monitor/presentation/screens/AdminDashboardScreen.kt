@@ -70,16 +70,22 @@ fun AdminDashboardScreen(
     val notificationUiState by notificationViewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
+    val lifecycleKey = remember { "dashboard_lifecycle" }
+
+    LaunchedEffect(lifecycleKey) {
         Log.d(TAG, "LaunchedEffect: Loading panels for admin dashboard")
         viewModel.loadPanels()
-        viewModel.startPeriodicRefresh() // Iniciar actualización periódica
+
+        // Reiniciar la recolección de notificaciones
+        Log.d(TAG, "AdminDashboardScreen: Reiniciando recolección de notificaciones")
+        notificationViewModel.restartNotificationCollection()
     }
 
-    DisposableEffect(Unit) {
+    // DisposableEffect vinculado a la misma key que LaunchedEffect
+    DisposableEffect(lifecycleKey) {
         onDispose {
-            Log.d(TAG, "DisposableEffect: Stopping periodic refresh")
-            viewModel.stopPeriodicRefresh() // Detener actualización al salir
+            Log.d(TAG, "DisposableEffect: Cleaning up admin dashboard - only on actual disposal")
+            // No cancelar los trabajos de carga a menos que la pantalla sea realmente descartada
         }
     }
 
@@ -92,7 +98,7 @@ fun AdminDashboardScreen(
                         AnimatedNotificationBell(
                             hasNewNotifications = hasPendingNotifications,
                             notificationCount = notificationUiState.pendingCount,
-                            onClick = onViewEventsClick,
+                            onClick = onViewNotificationHistoryClick,
                             modifier = Modifier.size(48.dp)
                         )
                     }
@@ -135,6 +141,25 @@ fun AdminDashboardScreen(
                         .weight(1f)
                         .padding(horizontal = 16.dp)
                 ) {
+                    // Mostrar mensaje cuando no hay paneles o están cargando
+                    if (uiState.isLoading) {
+                        item {
+                            Text(
+                                "Cargando paneles...",
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                        }
+                    } else if (uiState.groupedPanels.isEmpty()) {
+                        item {
+                            Text(
+                                "No hay paneles disponibles",
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                        }
+                    }
+
                     uiState.groupedPanels.forEach { (clientName, clientPanels) ->
                         item {
                             Text(
@@ -150,6 +175,18 @@ fun AdminDashboardScreen(
                         ) { panel ->
                             AdminPanelItem(panel)
                             Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+
+                    // Mostrar error si existe
+                    if (uiState.error != null) {
+                        item {
+                            Text(
+                                "Error: ${uiState.error}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Red,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
                         }
                     }
                 }

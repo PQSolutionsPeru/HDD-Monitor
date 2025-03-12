@@ -50,11 +50,28 @@ class MessagingService : FirebaseMessagingService() {
         super.onCreate()
         Log.d(TAG, "FCM Service Created")
 
-        // Crear canal de notificación para estados
+        // Crear canales de notificación
         createStatusNotificationChannel()
-
-        // Crear canal para notificaciones de relay
         createRelayNotificationChannel()
+        createEventNotificationChannel()
+    }
+
+    private fun createEventNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // Canal para notificaciones de eventos
+            NotificationChannel(
+                "event_notifications",
+                "Eventos",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notificaciones sobre eventos programados"
+                enableLights(true)
+                enableVibration(true)
+                notificationManager.createNotificationChannel(this)
+            }
+        }
     }
 
     private fun createStatusNotificationChannel() {
@@ -114,12 +131,204 @@ class MessagingService : FirebaseMessagingService() {
         // Procesar datos específicos
         val data = remoteMessage.data
         if (data.isNotEmpty()) {
-            when (data["type"]) {
-                "relay" -> processRelayMessage(data)
-                "status" -> processStatusMessage(data)
-                else -> processRelayMessage(data) // Por defecto tratar como relay
+            // Determinar el tipo de mensaje basado en varios factores
+            val messageType = data["type"] ?: ""
+
+            when {
+                // Si es explícitamente de tipo "event" o contiene campos típicos de eventos
+                messageType == "event" || data.containsKey("eventId") || data.containsKey("eventType") -> {
+                    processEventMessage(data)
+                }
+                // Si es explícitamente de tipo "status"
+                messageType == "status" -> {
+                    processStatusMessage(data)
+                }
+                // Si es explícitamente de tipo "relay"
+                messageType == "relay" -> {
+                    processRelayMessage(data)
+                }
+                // En caso de duda, intentar inferir el tipo basado en los campos presentes
+                else -> {
+                    when {
+                        data.containsKey("eventId") || data.containsKey("action") && (
+                                data["action"] == "CREATE" ||
+                                        data["action"] == "DELETE" ||
+                                        data["action"] == "ACCEPT" ||
+                                        data["action"] == "FINISH"
+                                ) -> {
+                            // Probablemente sea un evento
+                            processEventMessage(data)
+                        }
+                        data.containsKey("relayName") || data.containsKey("oldStatus") && data.containsKey("newStatus") -> {
+                            // Probablemente sea una actualización de relay
+                            processRelayMessage(data)
+                        }
+                        data.containsKey("status") && !data.containsKey("eventId") -> {
+                            // Probablemente sea una actualización de estado
+                            processStatusMessage(data)
+                        }
+                        else -> {
+                            // No podemos determinar el tipo, usar eventMessage como fallback
+                            Log.d(TAG, "Tipo de mensaje desconocido, tratando como evento genérico")
+                            val title = data["title"] ?: "Nueva notificación"
+                            val message = data["message"] ?: "Ha recibido una nueva notificación"
+                            val eventId = data["eventId"] ?: ""
+                            val clientDocName = data["clientDocName"] ?: ""
+                            val action = data["action"] ?: ""
+
+                            // Usar showEventNotification como fallback
+                            showEventNotification(
+                                title = title,
+                                message = message,
+                                notificationId = System.currentTimeMillis().toString(),
+                                eventId = eventId,
+                                clientDocName = clientDocName,
+                                action = action
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * Procesa mensajes específicos de eventos (creación, actualización, eliminación)
+     */
+    private fun processEventMessage(data: Map<String, String>) {
+        Log.d(TAG, "=================== INICIO EVENTO ===================")
+        Log.d(TAG, "Datos de evento recibidos: $data")
+
+        // Extraer datos importantes
+        val clientDocName = data["clientDocName"] ?: ""
+        val eventId = data["eventId"] ?: ""
+        val eventType = data["eventType"] ?: ""
+        val status = data["status"] ?: ""
+        val action = data["action"] ?: ""
+        val panelDocName = data["panelDocName"] ?: data["panel_id"] ?: ""
+        val panelName = data["panelName"] ?: data["panel_name"] ?: ""
+
+        // CORRECCIÓN: Intentar obtener el título de diferentes lugares
+        val title = data["title"] ?: data["eventTitle"] ?: ""
+
+        // Si hay mensaje en los datos, usarlo; de lo contrario, construir uno
+        var messageFromData = data["message"] ?: ""
+
+        // CORRECCIÓN: Reemplazar el ID del panel con el nombre del panel en el mensaje
+        if (panelName.isNotEmpty() && panelDocName.isNotEmpty() && messageFromData.contains(panelDocName)) {
+            messageFromData = messageFromData.replace(panelDocName, panelName)
+        }
+
+        val timestamp = data["timestamp"]?.toLongOrNull() ?: System.currentTimeMillis()
+
+        Log.d(TAG, "Datos extraídos para mensaje de evento:" +
+                "\n- clientDocName: $clientDocName" +
+                "\n- eventId: $eventId" +
+                "\n- eventType: $eventType" +
+                "\n- status: $status" +
+                "\n- action: $action" +
+                "\n- title: $title" +
+                "\n- messageFromData: $messageFromData")
+
+        // Mostrar notificación si está habilitado
+        if (SHOW_VISUAL_NOTIFICATIONS) {
+            val notificationTitle = when (action) {
+                "CREATE" -> "Nuevo evento $eventType"
+                "ACCEPT" -> "Evento $eventType aceptado"
+                "FINISH" -> "Evento $eventType finalizado"
+                "DELETE" -> "Evento $eventType eliminado"
+                else -> "Evento $eventType"
+            }
+
+            // Usar el mensaje formateado
+            val notificationMessage = messageFromData ?: when (action) {
+                "CREATE" -> if (title.isNotEmpty()) "Se ha creado un nuevo evento: \"$title\"" else "Se ha creado un nuevo evento"
+                "ACCEPT" -> if (title.isNotEmpty()) "El evento \"$title\" ha sido aceptado" else "El evento ha sido aceptado"
+                "FINISH" -> if (title.isNotEmpty()) "El evento \"$title\" ha sido finalizado" else "El evento ha sido finalizado"
+                "DELETE" -> if (title.isNotEmpty()) "Se ha eliminado el evento \"$title\"" else "Se ha eliminado el evento"
+                else -> if (title.isNotEmpty()) "Actualización del evento \"$title\"" else "Actualización de evento"
+            }
+
+            // Usar un ID único basado en el eventId y la acción
+            val notificationId = "event_${eventId}_${action}".hashCode()
+
+            // Mostrar notificación visual al usuario
+            showEventNotification(
+                title = notificationTitle,
+                message = notificationMessage,
+                notificationId = notificationId.toString(),
+                eventId = eventId,
+                clientDocName = clientDocName,
+                action = action
+            )
+        }
+
+        Log.d(TAG, "=================== FIN EVENTO ===================")
+    }
+
+    /**
+     * Muestra una notificación específica para eventos
+     */
+    private fun showEventNotification(
+        title: String,
+        message: String,
+        notificationId: String,
+        eventId: String,
+        clientDocName: String,
+        action: String
+    ) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra("eventId", eventId)
+            putExtra("clientDocName", clientDocName)
+            putExtra("action", action)
+            putExtra("type", "event")
+        }
+
+        val pendingIntentFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent, pendingIntentFlag
+        )
+
+        // Usar un canal específico para eventos
+        val channelId = "event_notifications"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // Crear canal si no existe
+            if (notificationManager.getNotificationChannel(channelId) == null) {
+                NotificationChannel(
+                    channelId,
+                    "Eventos",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Notificaciones sobre eventos programados"
+                    enableLights(true)
+                    enableVibration(true)
+                    notificationManager.createNotificationChannel(this)
+                }
+            }
+        }
+
+        val notificationBuilder = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+
+        // Mostrar notificación
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(notificationId.hashCode(), notificationBuilder.build())
+
+        Log.d(TAG, "Notificación de evento mostrada: $title - $message")
     }
 
     private fun processStatusMessage(data: Map<String, String>) {
@@ -319,7 +528,6 @@ class MessagingService : FirebaseMessagingService() {
         Log.d(TAG, "=================== FIN RELAY ===================")
     }
 
-    // NUEVO: Método para mostrar notificaciones específicas de relay
     private fun showRelayNotification(
         clientDocName: String,
         panelDocName: String,
@@ -387,7 +595,6 @@ class MessagingService : FirebaseMessagingService() {
                         .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
 
                     // Generar un ID único basado en el relay y su estado
-                    // Esto evita duplicados y asegura que cada cambio de estado reemplace la notificación anterior
                     val notificationId = "${panelDocName}_${relayName}_${newStatus}".hashCode()
 
                     // Mostrar la notificación

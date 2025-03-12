@@ -107,7 +107,8 @@ fun ClientManagementScreen(
                     actions = {
                         AnimatedNotificationBell(
                             hasNewNotifications = hasPendingNotifications,
-                            onClick = onNotificationClick
+                            onClick = onNotificationClick,
+                            notificationCount = 0
                         )
 
                         when (state.currentScreen) {

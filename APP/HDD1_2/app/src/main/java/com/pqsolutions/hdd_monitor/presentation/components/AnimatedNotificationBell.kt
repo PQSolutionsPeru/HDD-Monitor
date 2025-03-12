@@ -37,6 +37,9 @@ fun AnimatedNotificationBell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // CORRECCIÓN: Solo animar si hay notificaciones sin leer (conteo > 0)
+    val shouldAnimate = hasNewNotifications && notificationCount > 0
+
     val infiniteTransition = rememberInfiniteTransition(label = "bell_transition")
 
     // Animación de rotación de la campana
@@ -88,7 +91,7 @@ fun AnimatedNotificationBell(
         contentAlignment = Alignment.Center
     ) {
         // Efecto de brillo detrás de la campana
-        if (hasNewNotifications) {
+        if (shouldAnimate) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -110,9 +113,9 @@ fun AnimatedNotificationBell(
                 contentDescription = "Notificaciones",
                 modifier = Modifier
                     .size(28.dp)
-                    .rotate(if (hasNewNotifications) angle else 0f)
-                    .scale(if (hasNewNotifications) scale else 1f),
-                tint = if (hasNewNotifications) MaterialTheme.colorScheme.primary
+                    .rotate(if (shouldAnimate) angle else 0f)
+                    .scale(if (shouldAnimate) scale else 1f),
+                tint = if (shouldAnimate) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurface
             )
         }
@@ -125,7 +128,7 @@ fun AnimatedNotificationBell(
                     .align(Alignment.TopEnd)
                     .size(badgeSize)
                     .background(
-                        color = if (hasNewNotifications)
+                        color = if (shouldAnimate)
                             MaterialTheme.colorScheme.error.copy(alpha = badgeAlpha)
                         else
                             MaterialTheme.colorScheme.error,

@@ -109,9 +109,9 @@ class NotificationViewModel @Inject constructor(
             NotificationType.RELAY
         }
 
-        // Extraer texto para la UI
+        // Extraer texto para la UI - Usar getDisplayMessage para asegurar el nombre del panel
         val title = "HDD Monitor"
-        val text = notification.message
+        val text = notification.getDisplayMessage()
 
         // Mapear estado si existe
         val status = notification.status?.let {
@@ -140,9 +140,32 @@ class NotificationViewModel @Inject constructor(
         )
     }
 
+    fun setLoading(isLoading: Boolean) {
+        _uiState.value = _uiState.value.copy(isLoading = isLoading)
+    }
+
+    fun cancelLoading() {
+        viewModelScope.launch {
+            try {
+                // Cancelar cualquier trabajo en progreso
+                notificationCollectJob?.cancel()
+                notificationCollectJob = null
+
+                // Resetear estado a "no cargando"
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cancelando carga", e)
+            }
+        }
+    }
+
     private fun loadNotifications() {
         // Cancelar trabajo anterior si existe
-        notificationCollectJob?.cancel()
+        try {
+            notificationCollectJob?.cancel()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelando trabajo anterior", e)
+        }
 
         notificationCollectJob = viewModelScope.launch {
             // Primero actualizamos el estado a cargando
@@ -161,79 +184,89 @@ class NotificationViewModel @Inject constructor(
                         else -> notificationUseCase.getNotificationsFlow(clientDocName)
                     }
 
-                    // NUEVO: Usar distinctUntilChanged para evitar procesamiento duplicado
+                    // Usar distinctUntilChanged con un timeout para evitar procesamiento duplicado
+                    var isFirstCollection = true
+
                     notificationsFlow
                         .distinctUntilChanged { old, new ->
-                            // Comparar si las listas son iguales por sus IDs para evitar procesamiento redundante
+                            // Comparar si las listas son iguales por sus IDs
                             if (old.size != new.size) return@distinctUntilChanged false
                             val oldIds = old.map { it.documentName }.toSet()
                             val newIds = new.map { it.documentName }.toSet()
                             oldIds == newIds
                         }
                         .collect { notifications ->
-                            // Log para debug
-                            Log.d(TAG, "Recibidas ${notifications.size} notificaciones del flujo")
+                            // Si es la primera recolección, siempre actualizamos
+                            // Si no, verificamos si hay algo nuevo que mostrar
+                            if (isFirstCollection || notifications.isNotEmpty()) {
+                                // Log para debug
+                                Log.d(TAG, "Recibidas ${notifications.size} notificaciones del flujo")
+                                isFirstCollection = false
 
-                            if (notifications.isEmpty()) {
-                                Log.d(TAG, "La lista de notificaciones está vacía")
+                                // Convertir de Notification a NotificationItem
+                                val notificationItems = notifications.map { mapToNotificationItem(it) }
+
+                                // Filtramos cualquier notificación que ya hayamos procesado
+                                val newNotifications = notificationItems.filterNot {
+                                    processedNotifications.contains(it.documentName)
+                                }
+
+                                // Actualizamos nuestra caché de procesados
+                                newNotifications.forEach { notification ->
+                                    processedNotifications.add(notification.documentName)
+                                    // Limpiar caché si es demasiado grande
+                                    if (processedNotifications.size > PROCESSED_CACHE_MAX_SIZE) {
+                                        val removeCount = processedNotifications.size - PROCESSED_CACHE_MAX_SIZE
+                                        processedNotifications.toList().take(removeCount).forEach {
+                                            processedNotifications.remove(it)
+                                        }
+                                    }
+                                }
+
+                                // Actualizar UI state con todas las notificaciones (nuevas y existentes)
+                                val hasUnread = notificationItems.any { !it.isRead }
+                                val unreadCount = notificationItems.count { !it.isRead }
+
                                 _uiState.value = _uiState.value.copy(
-                                    notifications = emptyList(),
+                                    notifications = notificationItems,
+                                    isLoading = false,
+                                    error = null,
+                                    hasUnreadNotifications = hasUnread,
+                                    pendingCount = unreadCount
+                                )
+                            } else {
+                                // Si no hay notificaciones pero llegamos a este punto,
+                                // solo actualizamos el estado de carga
+                                _uiState.value = _uiState.value.copy(
                                     isLoading = false,
                                     error = null,
                                     hasUnreadNotifications = false,
                                     pendingCount = 0
                                 )
-                                return@collect
                             }
-
-                            // IMPORTANTE: No generamos notificaciones visuales desde aquí
-                            // Solo actualizamos la UI interna de la app
-
-                            // Convertir de Notification a NotificationItem
-                            val notificationItems = notifications.map { mapToNotificationItem(it) }
-
-                            // Filtramos cualquier notificación que ya hayamos procesado
-                            val newNotifications = notificationItems.filterNot {
-                                processedNotifications.contains(it.documentName)
-                            }
-
-                            // Actualizamos nuestra caché de procesados
-                            newNotifications.forEach { notification ->
-                                processedNotifications.add(notification.documentName)
-                                // Limpiar caché si es demasiado grande
-                                if (processedNotifications.size > PROCESSED_CACHE_MAX_SIZE) {
-                                    val removeCount = processedNotifications.size - PROCESSED_CACHE_MAX_SIZE
-                                    processedNotifications.toList().take(removeCount).forEach {
-                                        processedNotifications.remove(it)
-                                    }
-                                }
-                            }
-
-                            // Actualizar UI state con todas las notificaciones (nuevas y existentes)
-                            val hasUnread = notificationItems.any { !it.isRead }
-                            val unreadCount = notificationItems.count { !it.isRead }
-
-                            _uiState.value = _uiState.value.copy(
-                                notifications = notificationItems,
-                                isLoading = false,
-                                error = null,
-                                hasUnreadNotifications = hasUnread,
-                                pendingCount = unreadCount
-                            )
                         }
                 } else {
                     Log.w(TAG, "No se encontró usuario actual")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = "Usuario no encontrado"
+                        error = "Usuario no encontrado",
+                        notifications = emptyList(),
+                        hasUnreadNotifications = false,
+                        pendingCount = 0
                     )
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error al cargar notificaciones", e)
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Error al cargar notificaciones: ${e.message}"
-                )
+                // Ignorar excepciones de cancelación
+                if (e is kotlinx.coroutines.CancellationException) {
+                    Log.d(TAG, "Carga de notificaciones cancelada intencionalmente")
+                } else {
+                    Log.e(TAG, "Error al cargar notificaciones", e)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Error al cargar notificaciones: ${e.message}",
+                        notifications = _uiState.value.notifications // Mantener notificaciones previas
+                    )
+                }
             }
         }
     }
@@ -299,47 +332,42 @@ class NotificationViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
-                // Marcar como leída
-                val result = notificationUseCase.markNotificationAsRead(
-                    clientDocName = notification.clientDocName,
-                    notificationDocName = notification.documentName
-                )
+                Log.d(TAG, "Clic en notificación: ${notification.documentName}")
 
-                // Actualizar estado local
-                if (result.isSuccess) {
-                    val updatedNotifications = _uiState.value.notifications.map {
-                        if (it.documentName == notification.documentName) {
-                            it.copy(isRead = true)
-                        } else {
-                            it
+                // Marcar la notificación como leída
+                if (!notification.isRead) {
+                    val currentUser = userRepository.getCurrentUser()
+                    if (currentUser != null) {
+                        // Usar notificationUseCase en lugar de notificationRepository
+                        notificationUseCase.markNotificationAsRead(
+                            notification.clientDocName,
+                            notification.documentName
+                        ).onSuccess {
+                            Log.d(TAG, "Notification marked as read: ${notification.documentName}")
                         }
                     }
-
-                    // Recalcular pendingCount
-                    val newPendingCount = updatedNotifications.count { !it.isRead }
-
-                    _uiState.value = _uiState.value.copy(
-                        notifications = updatedNotifications,
-                        hasUnreadNotifications = newPendingCount > 0,
-                        pendingCount = newPendingCount
-                    )
                 }
 
-                // Navegar según tipo
                 when (notification.notificationType) {
                     NotificationType.EVENT -> {
-                        notification.eventId?.let { eventId ->
-                            onNavigateToEvent(eventId)
-                        }
+                        // CORRECCIÓN: Navegar a la pantalla general de eventos en lugar de a un evento específico
+                        Log.d(TAG, "Navegando a la pantalla general de eventos desde notificación")
+                        onNavigateToEvent("") // Pasar una cadena vacía para navegar a la pantalla general de eventos
                     }
                     NotificationType.RELAY -> {
                         notification.panelDocName?.let { panelId ->
+                            Log.d(TAG, "Navegando al panel: $panelId")
                             onNavigateToPanel(panelId)
+                        } ?: run {
+                            Log.w(TAG, "No se pudo navegar, panelId es nulo")
                         }
+                    }
+                    else -> {
+                        Log.d(TAG, "Tipo de notificación desconocido, no se navega")
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error al procesar clic en notificación", e)
+                Log.e(TAG, "Error en onNotificationClick", e)
             }
         }
     }
@@ -349,8 +377,56 @@ class NotificationViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        super.onCleared()
-        notificationCollectJob?.cancel()
-        Log.d(TAG, "ViewModel cleared")
+        try {
+            Log.d(TAG, "onCleared: Limpiando recursos")
+
+            // Cancelar el job de recolección de notificaciones primero
+            notificationCollectJob?.cancel()
+            notificationCollectJob = null
+
+            // Limpiar otros recursos
+            processedNotifications.clear()
+
+            // Resetear el estado UI
+            _uiState.value = NotificationUiState()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error durante onCleared", e)
+        } finally {
+            super.onCleared()
+            Log.d(TAG, "ViewModel cleared")
+        }
+    }
+
+    fun restartNotificationCollection() {
+        // Evitar iniciar múltiples trabajos
+        if (_uiState.value.isLoading) {
+            Log.d(TAG, "Carga ya en progreso, no se reinicia")
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Reiniciando recolección de notificaciones")
+
+                // Detener job actual con un semáforo para evitar condiciones de carrera
+                val currentJob = notificationCollectJob
+                notificationCollectJob = null
+
+                // Cancelamos con cuidado
+                currentJob?.cancel()
+
+                // Pequeña pausa para asegurar limpieza
+                kotlinx.coroutines.delay(300)
+
+                // Actualizar estado UI para mostrar loading
+                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+                // Iniciar nueva carga
+                loadNotifications()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al reiniciar notificaciones", e)
+                _uiState.value = _uiState.value.copy(isLoading = false, error = "Error al cargar: ${e.message}")
+            }
+        }
     }
 }

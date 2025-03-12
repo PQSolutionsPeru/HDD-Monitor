@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -66,19 +67,24 @@ class EventViewModel @Inject constructor(
 
     fun loadEvents() {
         eventsJob?.cancel() // Cancelar job anterior si existe
+
         eventsJob = viewModelScope.launch {
             try {
+                Log.d(TAG, "Iniciando carga de eventos")
                 _state.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
 
                 if (currentUser != null) {
+                    Log.d(TAG, "Usuario actual: ${currentUser.documentName}, rol: ${currentUser.role}")
                     if (currentUser.role == UserRole.ADMIN) {
                         loadUsers()
                     }
 
                     val eventsFlow = if (currentUser.role == UserRole.ADMIN) {
+                        Log.d(TAG, "Cargando todos los eventos (vista de admin)")
                         eventRepository.getAllEventsFlow()
                     } else {
+                        Log.d(TAG, "Cargando eventos del cliente: ${currentUser.clientDocName}")
                         eventRepository.getEventsFlow(currentUser.clientDocName)
                     }
 
@@ -102,7 +108,15 @@ class EventViewModel @Inject constructor(
                                 }
                                 isValid
                             }
+
+                            Log.d(TAG, "Eventos válidos encontrados: ${validEvents.size}")
+                            validEvents.forEach {
+                                Log.d(TAG, "Evento: ${it.documentName}, título: ${it.title}, cliente: ${it.clientDocName}")
+                            }
+
                             val filteredAndSortedEvents = applyFilterAndSort(validEvents)
+                            Log.d(TAG, "Eventos después de filtro y ordenamiento: ${filteredAndSortedEvents.size}")
+
                             _state.update {
                                 it.copy(
                                     events = filteredAndSortedEvents,
@@ -118,6 +132,7 @@ class EventViewModel @Inject constructor(
                             }
                         }
                 } else {
+                    Log.e(TAG, "No se encontró usuario actual")
                     _state.update {
                         it.copy(
                             isLoading = false,
@@ -139,10 +154,17 @@ class EventViewModel @Inject constructor(
         }
     }
 
-    fun loadSpecificEvent(eventId: String) {
+    fun loadSpecificEvent(eventId: String?) {
+        if (eventId.isNullOrBlank()) {
+            Log.d(TAG, "EventId es null o vacío, cargando todos los eventos")
+            loadEvents()
+            return
+        }
+
         eventsJob?.cancel() // Cancelar job anterior si existe
         eventsJob = viewModelScope.launch {
             try {
+                Log.d(TAG, "Cargando evento específico: $eventId")
                 _state.update { it.copy(isLoading = true, error = null) }
                 val currentUser = userRepository.getCurrentUser()
 
@@ -170,6 +192,7 @@ class EventViewModel @Inject constructor(
                             }
 
                             if (event != null) {
+                                Log.d(TAG, "Evento específico encontrado: ${event.documentName}")
                                 _state.update {
                                     it.copy(
                                         events = listOf(event),
@@ -179,6 +202,7 @@ class EventViewModel @Inject constructor(
                                     )
                                 }
                             } else {
+                                Log.e(TAG, "Evento no encontrado: $eventId")
                                 _state.update {
                                     it.copy(
                                         isLoading = false,
@@ -204,6 +228,18 @@ class EventViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    fun cancelCurrentJob() {
+        try {
+            Log.d(TAG, "Cancelando trabajo actual de eventos y observaciones de paneles")
+            eventsJob?.cancel()
+            eventsJob = null
+
+            Log.d(TAG, "Se han cancelado todos los trabajos y observaciones")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al cancelar trabajos", e)
         }
     }
 
@@ -606,7 +642,9 @@ class EventViewModel @Inject constructor(
         if (event.panelDocName != null && event.isProgramado) {
             viewModelScope.launch {
                 try {
+                    // Usar take(1) para evitar observación continua
                     panelRepository.observePanelUpdates(event.clientDocName, event.panelDocName)
+                        .take(1) // Solo toma el primer valor
                         .collect { panel ->
                             if (panel != null) {
                                 if (panel.name != event.panelName) {
@@ -617,25 +655,46 @@ class EventViewModel @Inject constructor(
                             }
                         }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error observing panel updates", e)
+                    if (e !is CancellationException) {
+                        Log.e(TAG, "Error observing panel updates", e)
+                    }
                 }
             }
         }
     }
 
     private fun updateEventPanelInfo(event: Event) {
+        // Evitar actualizar eventos que ya no están cargados
+        if (_state.value.events.none { it.documentName == event.documentName }) {
+            Log.d(TAG, "Ignorando actualización para evento ya no cargado: ${event.documentName}")
+            return
+        }
+
         viewModelScope.launch {
             try {
-                eventRepository.updateEvent(event.clientDocName, event)
-                    .onSuccess {
-                        _uiEvent.send(EventUIEvent.ShowSnackbar("Se actualizó el nombre del panel en el evento"))
-                        loadEvents()
-                    }
-                    .onFailure { error ->
-                        handleError(error)
-                    }
+                // Solo actualizar si realmente hay un cambio y el evento sigue programado
+                val existingEvent = state.value.events.find { it.documentName == event.documentName }
+                if (existingEvent?.panelName != event.panelName && existingEvent?.isProgramado == true) {
+                    Log.d(TAG, "Actualizando información de panel para evento: ${event.documentName}")
+
+                    eventRepository.updateEvent(event.clientDocName, event)
+                        .onSuccess {
+                            // Simplemente actualizar el estado local sin recargar todos los eventos
+                            _state.update { currentState ->
+                                val updatedEvents = currentState.events.map {
+                                    if (it.documentName == event.documentName) event else it
+                                }
+                                currentState.copy(events = updatedEvents)
+                            }
+                        }
+                        .onFailure { error ->
+                            Log.e(TAG, "Error actualizando información de panel", error)
+                        }
+                }
             } catch (e: Exception) {
-                handleError(e)
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Error en updateEventPanelInfo", e)
+                }
             }
         }
     }
@@ -944,7 +1003,15 @@ class EventViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        eventsJob?.cancel()
-        super.onCleared()
+        try {
+            Log.d(TAG, "onCleared: Limpiando recursos")
+            cancelCurrentJob()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error durante onCleared", e)
+        } finally {
+            super.onCleared()
+            Log.d(TAG, "ViewModel eliminado")
+        }
     }
 }

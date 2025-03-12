@@ -47,6 +47,7 @@ import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
 import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
+import kotlinx.coroutines.launch
 
 private const val TAG = "UserDashboardScreen"
 
@@ -71,6 +72,10 @@ fun UserDashboardScreen(
         Log.d(TAG, "LaunchedEffect: Loading panels for user dashboard")
         viewModel.loadPanels()
         viewModel.startPeriodicRefresh() // Iniciar actualización periódica
+
+        // Reiniciar la recolección de notificaciones
+        Log.d(TAG, "UserDashboardScreen: Reiniciando recolección de notificaciones")
+        notificationViewModel.restartNotificationCollection()
     }
 
     DisposableEffect(Unit) {
@@ -89,7 +94,7 @@ fun UserDashboardScreen(
                         AnimatedNotificationBell(
                             hasNewNotifications = hasPendingNotifications,
                             notificationCount = notificationUiState.pendingCount,
-                            onClick = onViewEventsClick
+                            onClick = onViewNotificationHistoryClick
                         )
                     }
                 )
@@ -168,9 +173,13 @@ private fun DashboardActions(
     ) {
         DashboardButton(
             onClick = {
-                Log.d(TAG, "View Events button clicked")
+                Log.d(TAG, "View Events button clicked - iniciando navegación")
                 performHapticFeedback(context)
-                onViewEventsClick()
+                // Pequeña pausa para estabilizar la UI
+                kotlinx.coroutines.MainScope().launch {
+                    kotlinx.coroutines.delay(100)
+                    onViewEventsClick()
+                }
             },
             text = stringResource(R.string.view_events)
         )

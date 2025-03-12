@@ -2,8 +2,14 @@ package com.pqsolutions.hdd_monitor.presentation.screens
 
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,8 +25,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,20 +39,25 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.presentation.components.AnimatedNotificationBell
+import com.pqsolutions.hdd_monitor.presentation.components.DefaultErrorContent
 import com.pqsolutions.hdd_monitor.presentation.components.LoadingContent
 import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationItem
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationType
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,69 +70,119 @@ fun NotificationHistoryScreen(
 ) {
     val uiState by notificationViewModel.uiState.collectAsState()
 
-    LaunchedEffect(Unit) {
+    // Estado para controlar cuando estamos haciendo la carga inicial
+    var isInitialLoading by remember { mutableStateOf(true) }
+    val loadingKey = remember { mutableStateOf(0) }
+
+    // LaunchedEffect para la carga inicial
+    LaunchedEffect(loadingKey.value) {
         try {
-            // Refrescar notificaciones (incluye limpieza interna)
+            // Solo mostramos el indicador de carga en la carga inicial
+            // Para recargas posteriores, mantenemos el contenido visible
+            notificationViewModel.setLoading(isInitialLoading)
+
+            // Pequeña pausa para estabilizar
+            delay(200)
+
+            // Realizar la carga
             notificationViewModel.refresh()
 
-            // Esperar un poco antes de marcar como leídas para asegurar que estén cargadas
-            kotlinx.coroutines.delay(500)
+            // Esperar a que la carga termine
+            delay(800)
+
+            // Marcar como leídas
             notificationViewModel.markAllAsRead()
+
+            // Ya no es la carga inicial después de la primera carga
+            isInitialLoading = false
+
+            // Finalizar estado de carga
+            notificationViewModel.setLoading(false)
         } catch (e: Exception) {
-            Log.e("NotificationHistoryScreen", "Error en LaunchedEffect", e)
+            Log.e("NotificationHistoryScreen", "Error cargando notificaciones", e)
+            isInitialLoading = false
+            notificationViewModel.setLoading(false)
         }
     }
 
-    // Mantenemos este DisposableEffect para limpiar al salir
     DisposableEffect(Unit) {
         onDispose {
             notificationViewModel.clearError()
         }
     }
 
-    val showEmptyState = remember(uiState.notifications) {
-        uiState.notifications.isEmpty() && !uiState.isLoading && uiState.error == null
-    }
+    BackHandler { onBackClick() }
 
-    BackHandler {
-        onBackClick()
-    }
-
-    HDD1_2Theme {
-        Scaffold(
-            topBar = {
-                ScreenTopBar(
-                    title = stringResource(R.string.notification_history_title),
-                    onBackClick = {
-                        try {
-                            onBackClick()
-                        } catch (e: Exception) {
-                            Log.e("NotificationHistoryScreen", "Error en navegación", e)
+    Scaffold(
+        topBar = {
+            ScreenTopBar(
+                title = stringResource(R.string.notification_history_title),
+                onBackClick = onBackClick
+            )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentAlignment = Alignment.Center
+        ) {
+            // Si es la carga inicial y estamos cargando, mostrar solo el indicador
+            if (isInitialLoading && uiState.isLoading) {
+                CircularProgressIndicator()
+            }
+            // Para los demás casos, mostrar el contenido correspondiente
+            else {
+                // Si hay error, mostrar mensaje
+                if (uiState.error != null) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = uiState.error ?: "Error desconocido",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { loadingKey.value++ }) {
+                            Text(text = stringResource(R.string.retry))
                         }
                     }
-                )
-            }
-        ) { paddingValues ->
-            LoadingContent(
-                isLoading = uiState.isLoading,
-                isEmpty = showEmptyState,
-                error = uiState.error,
-                onRetry = { notificationViewModel.refresh() },
-                emptyContent = { EmptyNotificationsContent() },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                NotificationsList(
-                    notifications = uiState.notifications,
-                    onNotificationClick = { notification ->
-                        notificationViewModel.onNotificationClick(
-                            notification = notification,
-                            onNavigateToEvent = onNavigateToEvent,
-                            onNavigateToPanel = onNavigateToPanel
+                }
+                // Si no hay notificaciones, mostrar mensaje
+                else if (uiState.notifications.isEmpty()) {
+                    EmptyNotificationsContent()
+                }
+                // Si hay notificaciones, mostrarlas
+                else {
+                    Box {
+                        // Lista de notificaciones
+                        NotificationsList(
+                            notifications = uiState.notifications,
+                            onNotificationClick = { notification ->
+                                notificationViewModel.onNotificationClick(
+                                    notification = notification,
+                                    onNavigateToEvent = onNavigateToEvent,
+                                    onNavigateToPanel = onNavigateToPanel
+                                )
+                            }
                         )
+
+                        // Si está recargando (no es carga inicial), mostrar indicador superpuesto
+                        if (!isInitialLoading && uiState.isLoading) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
                     }
-                )
+                }
             }
         }
     }

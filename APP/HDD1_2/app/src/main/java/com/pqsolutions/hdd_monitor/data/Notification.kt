@@ -112,6 +112,17 @@ data class Notification(
             null
         }
 
+    fun getDisplayMessage(): String {
+        // Si tenemos un nombre de panel y el mensaje contiene el ID del panel, reemplazamos el ID por el nombre
+        return if (!panelName.isNullOrEmpty() &&
+            panelDocName.isNotEmpty() &&
+            message.contains(panelDocName)) {
+            message.replace(panelDocName, panelName)
+        } else {
+            message
+        }
+    }
+
     fun isValid(): Boolean {
         // Para notificaciones de sistema, ser más permisivo
         if (documentName.startsWith("notif_")) {

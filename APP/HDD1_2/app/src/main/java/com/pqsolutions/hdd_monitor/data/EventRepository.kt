@@ -147,13 +147,20 @@ class EventRepository @Inject constructor(
             val eventDocName = IdManager.generateEventDocumentName("Evento", clientDocName)
             Log.d(TAG, "Creating new event with document name: $eventDocName for client: $clientDocName")
 
-            var panelName: String? = null
+            // Siempre asegurarnos de tener el nombre del panel
+            var panelName = event.panelName
             event.panelDocName?.let { pDocName ->
-                val panelDoc = firestore
-                    .document("$BASE_PATH/$clientDocName/panels/$pDocName")
-                    .get()
-                    .await()
-                panelName = panelDoc.getString("name")
+                // Si ya hay un nombre de panel, no necesitamos buscarlo de nuevo
+                if (panelName.isNullOrEmpty()) {
+                    try {
+                        val panelDoc = firestore.document("$BASE_PATH/$clientDocName/panels/$pDocName")
+                            .get()
+                            .await()
+                        panelName = panelDoc.getString("name") ?: ""
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error al obtener nombre del panel: $pDocName", e)
+                    }
+                }
             }
 
             val eventRef = firestore
@@ -167,7 +174,7 @@ class EventRepository @Inject constructor(
                 "date_time" to event.date_time,
                 "lastUpdate" to now,
                 "panelDocName" to event.panelDocName,
-                "panelName" to panelName,
+                "panelName" to panelName,  // Aseguramos que siempre se guarde el nombre
                 "type" to event.type,
                 "createdByAccountId" to event.createdByAccountId,
                 "createdByAccountRole" to event.createdByAccountRole,
@@ -261,13 +268,21 @@ class EventRepository @Inject constructor(
             throw IllegalStateException("El evento no existe: ${event.documentName}")
         }
 
-        var panelName: String? = null
+        // Siempre obtener nombre actualizado del panel
+        var panelName: String? = event.panelName
         event.panelDocName?.let { pDocName ->
-            val panelDoc = firestore
-                .document("$BASE_PATH/$clientDocName/panels/$pDocName")
-                .get()
-                .await()
-            panelName = panelDoc.getString("name")
+            // Solo buscar el nombre si no lo tenemos ya
+            if (panelName.isNullOrEmpty()) {
+                try {
+                    val panelDoc = firestore
+                        .document("$BASE_PATH/$clientDocName/panels/$pDocName")
+                        .get()
+                        .await()
+                    panelName = panelDoc.getString("name")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error al obtener nombre del panel en updateEvent", e)
+                }
+            }
         }
 
         val eventData = event.toMap().toMutableMap().apply {

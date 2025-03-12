@@ -22,6 +22,7 @@ import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.LoginViewModel
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.MainViewModel
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
+import kotlinx.coroutines.launch
 
 private const val TAG = "AppNavigation"
 
@@ -141,14 +142,26 @@ fun AppNavigation(
             NotificationHistoryScreen(
                 notificationViewModel = notificationViewModel,
                 onBackClick = {
+                    // Simplemente limpiar errores y navegar hacia atrás
+                    // Sin reiniciar la recolección de notificaciones
                     notificationViewModel.clearError()
                     safeNavigateBack(navController)
                 },
                 hasPendingNotifications = hasPendingNotifications,
                 onNavigateToEvent = { eventId ->
-                    navController.navigate(Screen.eventDetail(eventId)) {
-                        launchSingleTop = true
-                        restoreState = true
+                    if (eventId.isBlank()) {
+                        Log.d(TAG, "Navegando a la pantalla general de eventos desde notificaciones")
+                        navController.navigate(Screen.Events.route) {
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    } else {
+                        // Mantener la navegación a un evento específico si se proporciona un ID
+                        Log.d(TAG, "Navegando a evento específico: $eventId")
+                        navController.navigate(Screen.eventDetail(eventId)) {
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 },
                 onNavigateToPanel = { panelId ->
@@ -341,13 +354,44 @@ private fun safeNavigateBack(navController: NavHostController) {
             return
         }
 
-        // Intentamos hacer pop del backstack
+        // Antes de popBackStack, aseguramos que no hay navegación en curso
+        if (navController.currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(
+                androidx.lifecycle.Lifecycle.State.RESUMED
+            ) == false) {
+            Log.d("Navigation", "Navegación en curso, esperando...")
+            return
+        }
+
+        // Intentamos hacer pop del backstack con un pequeño delay
         val canPop = navController.previousBackStackEntry != null
 
-        if (canPop && navController.popBackStack()) {
-            Log.d("Navigation", "PopBackStack exitoso")
+        if (canPop) {
+            try {
+                val result = navController.popBackStack()
+                Log.d("Navigation", "PopBackStack exitoso: $result")
+                if (!result) {
+                    // Si el pop falló, vamos al dashboard después de un pequeño delay
+                    kotlinx.coroutines.MainScope().launch {
+                        kotlinx.coroutines.delay(100)
+                        navController.navigate(Screen.Dashboard.route) {
+                            popUpTo(0) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("Navigation", "Error en popBackStack: ${e.message}", e)
+                // Recuperación con delay
+                kotlinx.coroutines.MainScope().launch {
+                    kotlinx.coroutines.delay(100)
+                    navController.navigate(Screen.Dashboard.route) {
+                        popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
         } else {
-            // Si no podemos hacer pop, o el pop falla, vamos al dashboard
+            // Si no podemos hacer pop, vamos al dashboard
             Log.d("Navigation", "No se puede hacer pop, navegando a Dashboard")
             navController.navigate(Screen.Dashboard.route) {
                 popUpTo(0) { inclusive = true }
@@ -356,14 +400,17 @@ private fun safeNavigateBack(navController: NavHostController) {
         }
     } catch (e: Exception) {
         Log.e("Navigation", "Error durante la navegación hacia atrás: ${e.message}", e)
-        // En caso de error, aseguramos que volvemos al dashboard
-        try {
-            navController.navigate(Screen.Dashboard.route) {
-                popUpTo(0) { inclusive = true }
-                launchSingleTop = true
+        // En caso de error, aseguramos que volvemos al dashboard con un delay
+        kotlinx.coroutines.MainScope().launch {
+            kotlinx.coroutines.delay(100)
+            try {
+                navController.navigate(Screen.Dashboard.route) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            } catch (e: Exception) {
+                Log.e("Navigation", "Error en navegación de recuperación: ${e.message}", e)
             }
-        } catch (e: Exception) {
-            Log.e("Navigation", "Error en navegación de recuperación: ${e.message}", e)
         }
     }
 }

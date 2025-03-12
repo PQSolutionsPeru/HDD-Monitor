@@ -440,8 +440,21 @@ class NotificationRepository @Inject constructor(
         val notificationDocName = IdManager.generateNotificationDocumentName(message, clientDocName)
         val now = LocalDateTime.now(Constants.TimeZone.PERU_ZONE)
 
+        // Obtener el nombre real del panel
+        val panelName = try {
+            val panelDoc = firestore.document("$BASE_PATH/$clientDocName/panels/$panelDocName")
+                .get()
+                .await()
+            panelDoc.getString("name") ?: ""
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al obtener nombre del panel: $panelDocName", e)
+            ""
+        }
+
         val notificationData = hashMapOf(
             "panelDocName" to panelDocName,
+            "panel_id" to panelDocName,
+            "panel_name" to panelName,  // Guardar el nombre real del panel
             "relayName" to relayName,
             "message" to message,
             "date_time" to now.format(DateTimeFormatter.ofPattern(DATE_FORMAT)),
@@ -456,7 +469,7 @@ class NotificationRepository @Inject constructor(
             .set(notificationData)
             .await()
 
-        Log.d(TAG, "Notification created: $notificationDocName")
+        Log.d(TAG, "Notification created: $notificationDocName with panel name: $panelName")
     }
 
     suspend fun deleteNotification(

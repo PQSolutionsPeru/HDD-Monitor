@@ -676,13 +676,17 @@ class NotificationHandler:
                     title=f"Evento {event_type}",
                     body=notification_data.get('message', '')
                 )
+                # CORREGIDO: Incluir el título y mensaje en los datos para la app
                 base_data = {
                     'clientDocName': str(client_id),
                     'eventId': str(notification_data.get('event_id', '')),
-                    'eventType': str(event_type),  # CORREGIDO: Ahora usa event_type
+                    'eventType': str(event_type),
+                    'title': str(notification_data.get('title', '')),  # AÑADIDO: Incluir título
+                    'eventTitle': str(notification_data.get('title', '')),  # AÑADIDO: Alternativa para título
+                    'message': str(notification_data.get('message', '')),  # AÑADIDO: Incluir mensaje
                     'status': str(notification_data.get('status', '')),
                     'action': str(notification_data.get('action', '')),
-                    'type': 'event',  # Siempre es 'event' para distinguir en la app
+                    'type': 'event',
                     'panelDocName': str(notification_data.get('panel_id', '')),
                     'timestamp': str(int(time.time() * 1000))
                 }
