@@ -134,7 +134,7 @@ fun AppNavigation(
             ClientManagementScreen(
                 onBackClick = { safeNavigateBack(navController) },
                 hasPendingNotifications = hasPendingNotifications,
-                onNotificationClick = { safeNavigate(navController, Screen.Events.route) }
+                onNotificationClick = { safeNavigate(navController, Screen.NotificationHistory.route) }
             )
         }
 
@@ -178,7 +178,22 @@ fun AppNavigation(
             EventScreen(
                 onBackClick = { safeNavigateBack(navController) },
                 isAdmin = uiState.userData?.role == UserRole.ADMIN,
-                hasPendingNotifications = hasPendingNotifications
+                hasPendingNotifications = hasPendingNotifications,
+                onNavigateToEvent = { eventId ->
+                    navController.navigate(Screen.eventDetail(eventId)) {
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onNavigateToPanel = { panelId ->
+                    navController.navigate(Screen.panelDetail(panelId)) {
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onViewNotificationHistoryClick = {
+                    safeNavigate(navController, Screen.NotificationHistory.route)
+                }
             )
         }
 
@@ -194,7 +209,22 @@ fun AppNavigation(
                 onBackClick = { safeNavigateBack(navController) },
                 isAdmin = uiState.userData?.role == UserRole.ADMIN,
                 hasPendingNotifications = hasPendingNotifications,
-                eventId = eventId
+                eventId = eventId,
+                onNavigateToEvent = { newEventId ->
+                    navController.navigate(Screen.eventDetail(newEventId)) {
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onNavigateToPanel = { panelId ->
+                    navController.navigate(Screen.panelDetail(panelId)) {
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onViewNotificationHistoryClick = {
+                    safeNavigate(navController, Screen.NotificationHistory.route)
+                }
             )
         }
 

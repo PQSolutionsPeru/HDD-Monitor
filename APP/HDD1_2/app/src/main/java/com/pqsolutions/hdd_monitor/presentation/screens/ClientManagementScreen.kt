@@ -107,7 +107,10 @@ fun ClientManagementScreen(
                     actions = {
                         AnimatedNotificationBell(
                             hasNewNotifications = hasPendingNotifications,
-                            onClick = onNotificationClick,
+                            onClick = {
+                                performHapticFeedback(context)
+                                onNotificationClick()
+                            },
                             notificationCount = 0
                         )
 

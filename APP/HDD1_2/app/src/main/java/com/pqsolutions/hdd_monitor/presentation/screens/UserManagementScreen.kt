@@ -49,7 +49,11 @@ fun UserManagementScreen(
                 actions = {
                     AnimatedNotificationBell(
                         hasNewNotifications = hasPendingNotifications,
-                        onClick = onNotificationClick
+                        onClick = {
+                            performHapticFeedback(context)
+                            onNotificationClick()
+                        },
+                        notificationCount = 0  // Usando valor fijo como en ClientManagementScreen
                     )
                     IconButton(
                         onClick = {

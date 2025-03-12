@@ -44,7 +44,10 @@ fun EventScreen(
     onBackClick: () -> Unit,
     isAdmin: Boolean,
     hasPendingNotifications: Boolean,
-    eventId: String? = null
+    eventId: String? = null,
+    onNavigateToEvent: (String) -> Unit = {},
+    onNavigateToPanel: (String) -> Unit = {},
+    onViewNotificationHistoryClick: () -> Unit
 ) {
     HandleKeyboardFocus()
     val state by viewModel.state.collectAsState()
@@ -191,7 +194,10 @@ fun EventScreen(
                         AnimatedNotificationBell(
                             hasNewNotifications = hasPendingNotifications,
                             notificationCount = notificationState.pendingCount,
-                            onClick = { /* Ya estamos en la pantalla de eventos */ }
+                            onClick = {
+                                performHapticFeedback(context)
+                                onViewNotificationHistoryClick()
+                            }
                         )
                     }
                 )
