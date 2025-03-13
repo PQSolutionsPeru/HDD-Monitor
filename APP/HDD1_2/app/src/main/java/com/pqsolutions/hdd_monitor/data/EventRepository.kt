@@ -8,6 +8,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.pqsolutions.hdd_monitor.data.util.IdManager
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
+import com.pqsolutions.hdd_monitor.util.EventNotificationScheduler
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -20,7 +21,8 @@ import javax.inject.Singleton
 @Singleton
 class EventRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val eventNotificationScheduler: EventNotificationScheduler
 ) {
     companion object {
         private const val TAG = "EventRepository"
@@ -189,6 +191,25 @@ class EventRepository @Inject constructor(
 
         batch.commit().await()
         Log.d(TAG, "Events batch committed successfully")
+
+        batch.commit().await()
+        Log.d(TAG, "Events batch committed successfully")
+
+        // Programar notificación para el nuevo evento
+        event.dateTime?.let { dateTime ->
+            val formattedDateTime = dateTime.format(DATE_FORMATTER)
+            for (clientDocName in clientDocNames) {
+                val eventDocId = IdManager.generateEventDocumentName("Evento", clientDocName)
+                eventNotificationScheduler.scheduleEventReminder(
+                    eventId = eventDocId,
+                    clientDocName = clientDocName,
+                    eventDateTime = formattedDateTime,
+                    eventTitle = event.title,
+                    eventType = event.type ?: "",
+                    panelName = event.panelName
+                )
+            }
+        }
     }
 
     suspend fun updateEventStatus(
@@ -251,6 +272,10 @@ class EventRepository @Inject constructor(
 
         eventDoc.update(updates).await()
         Log.d(TAG, "Event status updated successfully: $eventDocName to $newStatus")
+
+        if (newStatus != EventStatus.STATUS_PROGRAMADO) {
+            eventNotificationScheduler.cancelEventReminder(eventDocName)
+        }
     }
 
     suspend fun updateEvent(clientDocName: String, event: Event): Result<Unit> = runCatching {
@@ -292,6 +317,18 @@ class EventRepository @Inject constructor(
 
         eventDoc.update(eventData).await()
         Log.d(TAG, "Event updated successfully: ${event.documentName}")
+
+        event.dateTime?.let { dateTime ->
+            val formattedDateTime = dateTime.format(DATE_FORMATTER)
+            eventNotificationScheduler.scheduleEventReminder(
+                eventId = event.documentName,
+                clientDocName = clientDocName,
+                eventDateTime = formattedDateTime,
+                eventTitle = event.title,
+                eventType = event.type ?: "",
+                panelName = event.panelName
+            )
+        }
     }
 
     suspend fun markEventAsRead(clientDocName: String, eventDocName: String): Result<Unit> = runCatching {
@@ -322,6 +359,17 @@ class EventRepository @Inject constructor(
 
         eventDoc.delete().await()
         Log.d(TAG, "Event deleted successfully: $eventDocName")
+
+        // Cancelar cualquier notificación programada
+        eventNotificationScheduler.cancelEventReminder(eventDocName)
+    }
+
+    suspend fun scheduleAllPendingEventNotifications() {
+        try {
+            eventNotificationScheduler.scheduleAllPendingEvents()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error programando notificaciones para eventos pendientes", e)
+        }
     }
 
     suspend fun getClients(): List<Client> {

@@ -339,6 +339,17 @@ fun EventCard(
                             }
                         }
 
+                        // Agregar botón de editar cuando el evento está programado y fue creado por este usuario
+                        if (event.isProgramado && event.createdByAccountRole == "user") {
+                            IconButton(onClick = onEditClick) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Editar evento",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
                         Button(
                             onClick = { onContactWhatsApp("+51993533004", "Administrador", event) },
                             colors = ButtonDefaults.buttonColors(

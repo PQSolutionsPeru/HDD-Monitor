@@ -46,6 +46,7 @@ class EventViewModel @Inject constructor(
     companion object {
         private const val TAG = "EventViewModel"
         private const val EVENT_TYPES_PATH = "hdd-monitor/event_types"
+        val DEFAULT = EventSortOption(EventSortOption.SortField.LAST_UPDATE, EventSortOption.SortDirection.DESC)
     }
 
     private val _state = MutableStateFlow(EventViewState.initial())
@@ -60,6 +61,12 @@ class EventViewModel @Inject constructor(
     private var eventsJob: Job? = null
 
     init {
+        // Asegurando ando que siempre comienza con el orden por lastUpdate descendente
+        currentSort = EventSortOption(
+            field = EventSortOption.SortField.LAST_UPDATE,
+            direction = EventSortOption.SortDirection.DESC
+        )
+
         loadEvents()
         loadEventTypes()
         loadUsers()
@@ -959,47 +966,56 @@ class EventViewModel @Inject constructor(
     }
 
     private fun applyFilterAndSort(events: List<Event>): List<Event> {
-        return events
-            .filter { event ->
-                when (currentFilter) {
-                    is EventFilter.All -> true
-                    is EventFilter.Programmed -> event.isProgramado
-                    is EventFilter.Accepted -> event.isAceptado
-                    is EventFilter.ByClient -> event.clientDocName == (currentFilter as EventFilter.ByClient).clientDocName
-                    is EventFilter.ByType -> event.type == (currentFilter as EventFilter.ByType).eventType
-                    is EventFilter.Completed -> event.isFinalizado
+        val filteredEvents = events.filter { event ->
+            when (currentFilter) {
+                is EventFilter.All -> true
+                is EventFilter.Programmed -> event.isProgramado
+                is EventFilter.Accepted -> event.isAceptado
+                is EventFilter.ByClient -> event.clientDocName == (currentFilter as EventFilter.ByClient).clientDocName
+                is EventFilter.ByType -> event.type == (currentFilter as EventFilter.ByType).eventType
+                is EventFilter.Completed -> event.isFinalizado
+            }
+        }
+
+        return when (currentSort.field) {
+            EventSortOption.SortField.DATE -> {
+                if (currentSort.direction == EventSortOption.SortDirection.DESC) {
+                    // Ordenar por fecha descendente (más recientes primero)
+                    filteredEvents.sortedByDescending { it.dateTime ?: LocalDateTime.MIN }
+                } else {
+                    // Ordenar por fecha ascendente
+                    filteredEvents.sortedBy { it.dateTime ?: LocalDateTime.MIN }
                 }
             }
-            .sortedWith { a, b ->
-                when (currentSort.field) {
-                    EventSortOption.SortField.DATE -> {
-                        val dateComparison = (a.dateTime ?: LocalDateTime.MIN)
-                            .compareTo(b.dateTime ?: LocalDateTime.MIN)
-                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
-                            dateComparison * -1 else dateComparison
-                    }
-                    EventSortOption.SortField.STATUS -> {
-                        val comparison = a.status.compareTo(b.status)
-                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
-                            comparison * -1 else comparison
-                    }
-                    EventSortOption.SortField.TITLE -> {
-                        val comparison = a.title.compareTo(b.title)
-                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
-                            comparison * -1 else comparison
-                    }
-                    EventSortOption.SortField.TYPE -> {
-                        val comparison = (a.type ?: "").compareTo(b.type ?: "")
-                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
-                            comparison * -1 else comparison
-                    }
-                    EventSortOption.SortField.LAST_UPDATE -> {
-                        val comparison = a.lastUpdate.compareTo(b.lastUpdate)
-                        if (currentSort.direction == EventSortOption.SortDirection.DESC)
-                            comparison * -1 else comparison
-                    }
+            EventSortOption.SortField.STATUS -> {
+                if (currentSort.direction == EventSortOption.SortDirection.DESC) {
+                    filteredEvents.sortedByDescending { it.status }
+                } else {
+                    filteredEvents.sortedBy { it.status }
                 }
             }
+            EventSortOption.SortField.TITLE -> {
+                if (currentSort.direction == EventSortOption.SortDirection.DESC) {
+                    filteredEvents.sortedByDescending { it.title }
+                } else {
+                    filteredEvents.sortedBy { it.title }
+                }
+            }
+            EventSortOption.SortField.TYPE -> {
+                if (currentSort.direction == EventSortOption.SortDirection.DESC) {
+                    filteredEvents.sortedByDescending { it.type ?: "" }
+                } else {
+                    filteredEvents.sortedBy { it.type ?: "" }
+                }
+            }
+            EventSortOption.SortField.LAST_UPDATE -> {
+                if (currentSort.direction == EventSortOption.SortDirection.DESC) {
+                    filteredEvents.sortedByDescending { it.lastUpdate }
+                } else {
+                    filteredEvents.sortedBy { it.lastUpdate }
+                }
+            }
+        }
     }
 
     override fun onCleared() {

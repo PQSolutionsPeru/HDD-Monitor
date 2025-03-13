@@ -11,6 +11,7 @@ import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserPreferences
 import com.pqsolutions.hdd_monitor.data.UserRepository
 import com.pqsolutions.hdd_monitor.esp32.ESP32Repository
+import com.pqsolutions.hdd_monitor.util.EventNotificationScheduler
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -37,6 +38,16 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideEventNotificationScheduler(
+        @ApplicationContext context: Context,
+        firestore: FirebaseFirestore,
+        userRepository: UserRepository
+    ): EventNotificationScheduler {
+        return EventNotificationScheduler(context, firestore, userRepository)
+    }
+
+    @Provides
+    @Singleton
     fun provideESP32Repository(
         firestore: FirebaseFirestore
     ): ESP32Repository {
@@ -60,9 +71,10 @@ object AppModule {
     @Singleton
     fun provideEventRepository(
         firestore: FirebaseFirestore,
-        auth: FirebaseAuth
+        auth: FirebaseAuth,
+        eventNotificationScheduler: EventNotificationScheduler
     ): EventRepository {
-        return EventRepository(firestore, auth)
+        return EventRepository(firestore, auth, eventNotificationScheduler)
     }
 
     @Provides

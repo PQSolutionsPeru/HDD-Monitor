@@ -28,7 +28,7 @@ import java.util.Date
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MessagingService : FirebaseMessagingService() {
+class FirebaseMessagingService : FirebaseMessagingService() {
 
     @Inject
     lateinit var clientRepository: ClientRepository
@@ -241,12 +241,14 @@ class MessagingService : FirebaseMessagingService() {
             }
 
             // Usar el mensaje formateado
-            val notificationMessage = messageFromData ?: when (action) {
-                "CREATE" -> if (title.isNotEmpty()) "Se ha creado un nuevo evento: \"$title\"" else "Se ha creado un nuevo evento"
-                "ACCEPT" -> if (title.isNotEmpty()) "El evento \"$title\" ha sido aceptado" else "El evento ha sido aceptado"
-                "FINISH" -> if (title.isNotEmpty()) "El evento \"$title\" ha sido finalizado" else "El evento ha sido finalizado"
-                "DELETE" -> if (title.isNotEmpty()) "Se ha eliminado el evento \"$title\"" else "Se ha eliminado el evento"
-                else -> if (title.isNotEmpty()) "Actualización del evento \"$title\"" else "Actualización de evento"
+            val notificationMessage = messageFromData.ifEmpty {
+                when (action) {
+                    "CREATE" -> if (title.isNotEmpty()) "Se ha creado un nuevo evento: \"$title\"" else "Se ha creado un nuevo evento"
+                    "ACCEPT" -> if (title.isNotEmpty()) "El evento \"$title\" ha sido aceptado" else "El evento ha sido aceptado"
+                    "FINISH" -> if (title.isNotEmpty()) "El evento \"$title\" ha sido finalizado" else "El evento ha sido finalizado"
+                    "DELETE" -> if (title.isNotEmpty()) "Se ha eliminado el evento \"$title\"" else "Se ha eliminado el evento"
+                    else -> if (title.isNotEmpty()) "Actualización del evento \"$title\"" else "Actualización de evento"
+                }
             }
 
             // Usar un ID único basado en el eventId y la acción
@@ -423,7 +425,7 @@ class MessagingService : FirebaseMessagingService() {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
                     // Intent para abrir la app
-                    val intent = Intent(this@MessagingService, MainActivity::class.java).apply {
+                    val intent = Intent(this@FirebaseMessagingService, MainActivity::class.java).apply {
                         addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                         putExtra("clientDocName", clientDocName)
                         putExtra("panelDocName", panelDocName)
@@ -438,12 +440,12 @@ class MessagingService : FirebaseMessagingService() {
                     }
 
                     val pendingIntent = PendingIntent.getActivity(
-                        this@MessagingService, 0, intent, pendingIntentFlag
+                        this@FirebaseMessagingService, 0, intent, pendingIntentFlag
                     )
 
                     // Crear la notificación
                     val channelId = "status_notifications"
-                    val notificationBuilder = NotificationCompat.Builder(this@MessagingService, channelId)
+                    val notificationBuilder = NotificationCompat.Builder(this@FirebaseMessagingService, channelId)
                         .setSmallIcon(R.drawable.ic_notification)
                         .setContentTitle(title)
                         .setContentText(message)
@@ -564,7 +566,7 @@ class MessagingService : FirebaseMessagingService() {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
                     // Intent para abrir la app
-                    val intent = Intent(this@MessagingService, MainActivity::class.java).apply {
+                    val intent = Intent(this@FirebaseMessagingService, MainActivity::class.java).apply {
                         addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                         putExtra("clientDocName", clientDocName)
                         putExtra("panelDocName", panelDocName)
@@ -580,12 +582,12 @@ class MessagingService : FirebaseMessagingService() {
                     }
 
                     val pendingIntent = PendingIntent.getActivity(
-                        this@MessagingService, 0, intent, pendingIntentFlag
+                        this@FirebaseMessagingService, 0, intent, pendingIntentFlag
                     )
 
                     // Crear la notificación
                     val channelId = "relay_notifications"
-                    val notificationBuilder = NotificationCompat.Builder(this@MessagingService, channelId)
+                    val notificationBuilder = NotificationCompat.Builder(this@FirebaseMessagingService, channelId)
                         .setSmallIcon(R.drawable.ic_notification)
                         .setContentTitle(title)
                         .setContentText(message)
@@ -608,6 +610,6 @@ class MessagingService : FirebaseMessagingService() {
     }
 
     companion object {
-        private const val TAG = "MessagingService"
+        private const val TAG = "FirebaseMessagingService"
     }
 }

@@ -149,7 +149,31 @@ class NotificationHandler:
 
     def get_event_message(self, update_type: str, event_data: Dict[str, Any]) -> str:
         """Genera el mensaje de notificación según el tipo de actualización"""
-        panel_name = event_data.get('panelName') or event_data.get('panelDocName', '')
+        # Intentar obtener el nombre del panel primero desde panelName
+        panel_name = event_data.get('panelName')
+        panel_doc_name = event_data.get('panelDocName', '')
+        client_doc_name = event_data.get('clientDocName', '')
+        
+        # Si solo tenemos el ID del panel pero no su nombre, buscar en Firestore
+        if not panel_name and panel_doc_name and client_doc_name:
+            try:
+                panel_ref = self.db.document(f'hdd-monitor/accounts/clients/{client_doc_name}/panels/{panel_doc_name}')
+                panel_doc = panel_ref.get()
+                if panel_doc.exists:
+                    panel_data = panel_doc.to_dict()
+                    panel_name = panel_data.get('name')
+                    
+                    # Actualizar event_data con el nombre encontrado para uso futuro
+                    if panel_name:
+                        event_data['panelName'] = panel_name
+                        logging.info(f"Nombre de panel obtenido para {panel_doc_name}: {panel_name}")
+            except Exception as e:
+                logging.error(f"Error obteniendo nombre del panel: {e}")
+        
+        # Si aún no tenemos el nombre, usar el ID como último recurso
+        if not panel_name:
+            panel_name = panel_doc_name
+        
         panel_text = f' para el panel "{panel_name}"' if panel_name else ''
         title_text = f'"{event_data.get("title", "")}"'
 

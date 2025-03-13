@@ -115,7 +115,7 @@
 
         <!-- Firebase Messaging Service -->
         <service
-            android:name=".service.MessagingService"
+            android:name=".service.FirebaseMessagingService"
             android:directBootAware="true"
             android:exported="false">
             <intent-filter>
