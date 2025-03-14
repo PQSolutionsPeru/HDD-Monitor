@@ -310,10 +310,13 @@ class EventRepository @Inject constructor(
             }
         }
 
-        val eventData = event.toMap().toMutableMap().apply {
-            this["panelName"] = panelName
-            this["lastUpdate"] = LocalDateTime.now().format(DATE_FORMATTER)
-        }
+        // Actualizar explícitamente lastUpdate con la fecha y hora actual
+        val now = LocalDateTime.now().format(DATE_FORMATTER)
+        Log.d(TAG, "Actualizando lastUpdate a: $now para evento: ${event.documentName}")
+
+        val eventData = event.toMap().toMutableMap()
+        eventData["panelName"] = panelName
+        eventData["lastUpdate"] = now  // Actualización explícita de lastUpdate
 
         eventDoc.update(eventData).await()
         Log.d(TAG, "Event updated successfully: ${event.documentName}")
