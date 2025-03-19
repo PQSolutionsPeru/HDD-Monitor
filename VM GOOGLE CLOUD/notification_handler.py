@@ -237,8 +237,8 @@ class NotificationHandler:
                 if not hasattr(self, '_notification_cache'):
                     self._notification_cache = {}
                     
-                # Verificar si esta combinación específica fue notificada recientemente (8 segundos)
-                debounce_window = 8000  # 8 segundos en milisegundos
+                # Verificar si esta combinación específica fue notificada recientemente (1 segundo)
+                debounce_window = 1000  # 1 segundo en milisegundos
                 if cache_key in self._notification_cache:
                     last_time = self._notification_cache[cache_key]
                     if current_time - last_time < debounce_window:
@@ -260,7 +260,7 @@ class NotificationHandler:
                     
                     recent_docs = list(recent_query.stream())
                     
-                    # Si hay notificación reciente (menos de 8 segundos) para este relay, ignorar
+                    # Si hay notificación reciente (menos de 1 segundo) para este relay, ignorar
                     if recent_docs and len(recent_docs) > 0:
                         recent_doc = recent_docs[0]
                         recent_time = recent_doc.to_dict().get('timestamp', 0)
