@@ -5,6 +5,7 @@ import com.google.firebase.firestore.PropertyName
 import com.pqsolutions.hdd_monitor.R
 import com.pqsolutions.hdd_monitor.util.Constants.Status
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 object EventStatus {
@@ -12,6 +13,9 @@ object EventStatus {
     const val STATUS_PROGRAMADO = Status.STATUS_PROGRAMADO
     const val STATUS_ACEPTADO = Status.STATUS_ACEPTADO
     const val STATUS_FINALIZADO = "FINALIZADO"  // Nuevo estado
+
+    // Zona horaria de Perú
+    private val PERU_ZONE_ID = ZoneId.of("America/Lima")
 
     // Formatter para fechas
     private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
@@ -80,12 +84,15 @@ object EventStatus {
             else -> null
         }
 
+    // Función para obtener la fecha/hora actual en zona horaria de Perú
+    fun getCurrentDateTime(): LocalDateTime = LocalDateTime.now(PERU_ZONE_ID)
+
     // Clase para manejar transiciones de estado con metadata
     data class StatusTransition(
         val fromStatus: String,
         val toStatus: String,
         @get:PropertyName("timestamp")
-        val timestamp: String = LocalDateTime.now().format(DATE_FORMATTER),
+        val timestamp: String = getCurrentDateTime().format(DATE_FORMATTER),
         @get:PropertyName("userDocName")
         val userDocName: String? = null,
         @get:PropertyName("userRole")

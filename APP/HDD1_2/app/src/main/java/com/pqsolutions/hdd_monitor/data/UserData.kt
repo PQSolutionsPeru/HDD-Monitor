@@ -15,7 +15,9 @@ data class UserData(
     val clientName: String = "",
     @get:PropertyName("fcmToken")
     val fcmToken: String? = null,
-    val phone: String = ""
+    val phone: String = "",
+    @Transient
+    val password: String = ""
 ) {
     var role: UserRole
         get() = UserRole.fromString(roleString)

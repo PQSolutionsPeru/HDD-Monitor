@@ -8,12 +8,12 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.pqsolutions.hdd_monitor.data.util.IdManager
 import com.pqsolutions.hdd_monitor.domain.model.EventStatus
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
-import com.pqsolutions.hdd_monitor.util.EventNotificationScheduler
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,8 +21,7 @@ import javax.inject.Singleton
 @Singleton
 class EventRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val auth: FirebaseAuth,
-    private val eventNotificationScheduler: EventNotificationScheduler
+    private val auth: FirebaseAuth
 ) {
     companion object {
         private const val TAG = "EventRepository"
@@ -31,6 +30,14 @@ class EventRepository @Inject constructor(
     }
 
     private var eventListeners = mutableListOf<ListenerRegistration>()
+
+    /**
+     * Método dummy para reemplazar la funcionalidad de programación de notificaciones
+     * que ha sido eliminada. Se mantuvo para compatibilidad con HddApplication.
+     */
+    suspend fun scheduleAllPendingEventNotifications() {
+        Log.d(TAG, "La funcionalidad de programación de notificaciones para eventos ha sido desactivada")
+    }
 
     fun getAllEventsFlow(): Flow<List<Event>> = callbackFlow {
         if (auth.currentUser == null) {
@@ -143,7 +150,9 @@ class EventRepository @Inject constructor(
         }
 
         val batch = firestore.batch()
-        val now = LocalDateTime.now().format(DATE_FORMATTER)
+        // Usamos la zona horaria de Perú para la fecha/hora actual
+        val peruZoneId = ZoneId.of("America/Lima")
+        val now = LocalDateTime.now(peruZoneId).format(DATE_FORMATTER)
 
         for (clientDocName in clientDocNames) {
             val eventDocName = IdManager.generateEventDocumentName("Evento", clientDocName)
@@ -189,27 +198,9 @@ class EventRepository @Inject constructor(
             batch.set(eventRef, eventData)
         }
 
+        // Fix: Evitamos la doble llamada a commit que está causando el error
         batch.commit().await()
         Log.d(TAG, "Events batch committed successfully")
-
-        batch.commit().await()
-        Log.d(TAG, "Events batch committed successfully")
-
-        // Programar notificación para el nuevo evento
-        event.dateTime?.let { dateTime ->
-            val formattedDateTime = dateTime.format(DATE_FORMATTER)
-            for (clientDocName in clientDocNames) {
-                val eventDocId = IdManager.generateEventDocumentName("Evento", clientDocName)
-                eventNotificationScheduler.scheduleEventReminder(
-                    eventId = eventDocId,
-                    clientDocName = clientDocName,
-                    eventDateTime = formattedDateTime,
-                    eventTitle = event.title,
-                    eventType = event.type ?: "",
-                    panelName = event.panelName
-                )
-            }
-        }
     }
 
     suspend fun updateEventStatus(
@@ -272,13 +263,9 @@ class EventRepository @Inject constructor(
 
         eventDoc.update(updates).await()
         Log.d(TAG, "Event status updated successfully: $eventDocName to $newStatus")
-
-        if (newStatus != EventStatus.STATUS_PROGRAMADO) {
-            eventNotificationScheduler.cancelEventReminder(eventDocName)
-        }
     }
 
-    suspend fun updateEvent(clientDocName: String, event: Event): Result<Unit> = runCatching {
+    suspend fun updateEvent(clientDocName: String, event: Event, updateLastUpdate: Boolean = true): Result<Unit> = runCatching {
         if (clientDocName.isEmpty() || event.documentName.isEmpty()) {
             throw IllegalArgumentException("Client and Event document names cannot be empty")
         }
@@ -310,27 +297,28 @@ class EventRepository @Inject constructor(
             }
         }
 
-        // Actualizar explícitamente lastUpdate con la fecha y hora actual
-        val now = LocalDateTime.now().format(DATE_FORMATTER)
-        Log.d(TAG, "Actualizando lastUpdate a: $now para evento: ${event.documentName}")
-
         val eventData = event.toMap().toMutableMap()
         eventData["panelName"] = panelName
-        eventData["lastUpdate"] = now  // Actualización explícita de lastUpdate
+
+        // Solo actualizar lastUpdate si se solicita explícitamente
+        if (updateLastUpdate) {
+            // Actualizar explícitamente lastUpdate con la fecha y hora actual
+            val now = LocalDateTime.now().format(DATE_FORMATTER)
+            Log.d(TAG, "Actualizando lastUpdate a: $now para evento: ${event.documentName}")
+            eventData["lastUpdate"] = now
+        } else {
+            // No actualizamos lastUpdate y utilizamos el valor existente
+            Log.d(TAG, "Manteniendo lastUpdate original para evento: ${event.documentName}")
+            // Quitamos lastUpdate del mapa para evitar actualizarlo
+            eventData.remove("lastUpdate")
+        }
 
         eventDoc.update(eventData).await()
-        Log.d(TAG, "Event updated successfully: ${event.documentName}")
 
-        event.dateTime?.let { dateTime ->
-            val formattedDateTime = dateTime.format(DATE_FORMATTER)
-            eventNotificationScheduler.scheduleEventReminder(
-                eventId = event.documentName,
-                clientDocName = clientDocName,
-                eventDateTime = formattedDateTime,
-                eventTitle = event.title,
-                eventType = event.type ?: "",
-                panelName = event.panelName
-            )
+        if (updateLastUpdate) {
+            Log.d(TAG, "Event updated successfully with lastUpdate: ${event.documentName}")
+        } else {
+            Log.d(TAG, "Event updated successfully without changing lastUpdate: ${event.documentName}")
         }
     }
 
@@ -363,17 +351,8 @@ class EventRepository @Inject constructor(
         eventDoc.delete().await()
         Log.d(TAG, "Event deleted successfully: $eventDocName")
 
-        // Cancelar cualquier notificación programada
-        eventNotificationScheduler.cancelEventReminder(eventDocName)
     }
 
-    suspend fun scheduleAllPendingEventNotifications() {
-        try {
-            eventNotificationScheduler.scheduleAllPendingEvents()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error programando notificaciones para eventos pendientes", e)
-        }
-    }
 
     suspend fun getClients(): List<Client> {
         return firestore.collection(BASE_PATH)
@@ -393,6 +372,46 @@ class EventRepository @Inject constructor(
             .mapNotNull { doc ->
                 doc.toObject(Panel::class.java)?.copy(documentName = doc.id)
             }
+    }
+
+    suspend fun updateEventWithoutLastUpdate(clientDocName: String, event: Event): Result<Unit> = runCatching {
+        if (clientDocName.isEmpty() || event.documentName.isEmpty()) {
+            throw IllegalArgumentException("Client and Event document names cannot be empty")
+        }
+
+        val eventsCollection = firestore.collection("$BASE_PATH/$clientDocName/events")
+        Log.d(TAG, "Attempting to update event (without lastUpdate): ${event.documentName}")
+
+        val eventDoc = eventsCollection.document(event.documentName)
+        val snapshot = eventDoc.get().await()
+
+        if (!snapshot.exists()) {
+            throw IllegalStateException("El evento no existe: ${event.documentName}")
+        }
+
+        // Siempre obtener nombre actualizado del panel
+        var panelName: String? = event.panelName
+        event.panelDocName?.let { pDocName ->
+            // Solo buscar el nombre si no lo tenemos ya
+            if (panelName.isNullOrEmpty()) {
+                try {
+                    val panelDoc = firestore
+                        .document("$BASE_PATH/$clientDocName/panels/$pDocName")
+                        .get()
+                        .await()
+                    panelName = panelDoc.getString("name")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error al obtener nombre del panel en updateEvent", e)
+                }
+            }
+        }
+
+        val eventData = event.toMap().toMutableMap()
+        eventData["panelName"] = panelName
+        // Importante: NO actualizamos lastUpdate aquí
+
+        eventDoc.update(eventData).await()
+        Log.d(TAG, "Event updated successfully without lastUpdate change: ${event.documentName}")
     }
 
     fun clearListeners() {

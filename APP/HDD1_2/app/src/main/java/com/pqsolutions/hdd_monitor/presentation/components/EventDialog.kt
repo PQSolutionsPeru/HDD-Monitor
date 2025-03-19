@@ -2,6 +2,7 @@ package com.pqsolutions.hdd_monitor.presentation.components
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardActions
@@ -88,8 +89,7 @@ fun EventDialog(
     } else {
         selectedTime != null &&
                 (selectedDate?.isAfter(LocalDate.now()) == true ||
-                        (selectedDate?.isEqual(LocalDate.now()) == true &&
-                                selectedTime.isAfter(LocalTime.now())))
+                        selectedDate?.isEqual(LocalDate.now()) == true)
     }
 
     // Validación del formulario
@@ -128,11 +128,26 @@ fun EventDialog(
         TimePickerDialog(
             context,
             { _, hourOfDay, minute ->
-                onEvent(EventDialogEvent.TimeSelected(LocalTime.of(hourOfDay, minute)))
+                try {
+                    // Log para depuración
+                    Log.d("EventDialog", "Hora seleccionada: $hourOfDay:$minute")
+
+                    // Crear LocalTime directamente, sin validaciones adicionales
+                    val selectedLocalTime = LocalTime.of(hourOfDay, minute)
+
+                    // Log adicional para confirmar la creación
+                    Log.d("EventDialog", "LocalTime creado: $selectedLocalTime")
+
+                    // Enviar el evento con la hora seleccionada
+                    onEvent(EventDialogEvent.TimeSelected(selectedLocalTime))
+                } catch (e: Exception) {
+                    // Log detallado del error
+                    Log.e("EventDialog", "Error seleccionando hora: ${e.message}", e)
+                }
             },
             selectedTime?.hour ?: LocalTime.now().hour,
             selectedTime?.minute ?: LocalTime.now().minute,
-            true
+            true // formato 24 horas
         )
     }
 

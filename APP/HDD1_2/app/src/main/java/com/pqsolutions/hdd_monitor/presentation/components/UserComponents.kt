@@ -332,6 +332,7 @@ fun UserDialog(
                 }
             }
         },
+
         confirmButton = {
             Button(
                 onClick = {
@@ -344,7 +345,8 @@ fun UserDialog(
                             clientDocName = selectedClient?.documentName ?: "",
                             clientName = selectedClient?.name ?: "",
                             fcmToken = user?.fcmToken,
-                            phone = if (phone.isNotBlank()) "+51$phone" else ""
+                            phone = if (phone.isNotBlank()) "+51$phone" else "",
+                            password = password // Añadir la contraseña al objeto UserData
                         )
                     )
                 },

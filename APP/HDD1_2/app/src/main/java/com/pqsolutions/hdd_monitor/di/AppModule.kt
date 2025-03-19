@@ -11,7 +11,6 @@ import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserPreferences
 import com.pqsolutions.hdd_monitor.data.UserRepository
 import com.pqsolutions.hdd_monitor.esp32.ESP32Repository
-import com.pqsolutions.hdd_monitor.util.EventNotificationScheduler
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,15 +35,16 @@ object AppModule {
         esp32Repository: ESP32Repository
     ): PanelRepository = PanelRepository(firestore, esp32Repository)
 
-    @Provides
-    @Singleton
-    fun provideEventNotificationScheduler(
-        @ApplicationContext context: Context,
-        firestore: FirebaseFirestore,
-        userRepository: UserRepository
-    ): EventNotificationScheduler {
-        return EventNotificationScheduler(context, firestore, userRepository)
-    }
+    // Eliminamos el proveedor de EventNotificationScheduler
+    // @Provides
+    // @Singleton
+    // fun provideEventNotificationScheduler(
+    //     @ApplicationContext context: Context,
+    //     firestore: FirebaseFirestore,
+    //     userRepository: UserRepository
+    // ): EventNotificationScheduler {
+    //     return EventNotificationScheduler(context, firestore, userRepository)
+    // }
 
     @Provides
     @Singleton
@@ -72,9 +72,11 @@ object AppModule {
     fun provideEventRepository(
         firestore: FirebaseFirestore,
         auth: FirebaseAuth,
-        eventNotificationScheduler: EventNotificationScheduler
+        // Eliminamos la dependencia de eventNotificationScheduler
+        // eventNotificationScheduler: EventNotificationScheduler
     ): EventRepository {
-        return EventRepository(firestore, auth, eventNotificationScheduler)
+        // Modificamos el constructor para que no use eventNotificationScheduler
+        return EventRepository(firestore, auth)
     }
 
     @Provides

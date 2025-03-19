@@ -5,6 +5,7 @@ import com.pqsolutions.hdd_monitor.domain.model.EventStatus
 import com.pqsolutions.hdd_monitor.domain.model.UserRole
 import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
@@ -33,6 +34,7 @@ data class Event(
     val needsApproval: Boolean = true
 ) {
     companion object {
+        private val PERU_ZONE_ID = ZoneId.of("America/Lima")
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
 
         fun createNew(
@@ -47,7 +49,8 @@ data class Event(
             createdByAccountRole: String
         ): Event {
             val normalizedRole = if (createdByAccountRole.equals("admin", ignoreCase = true)) "admin" else "user"
-            val now = LocalDateTime.now().format(DATE_FORMATTER)
+            // Usar zona horaria de Perú para la fecha actual
+            val now = LocalDateTime.now(PERU_ZONE_ID).format(DATE_FORMATTER)
 
             return Event(
                 documentName = "",

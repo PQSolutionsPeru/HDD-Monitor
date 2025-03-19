@@ -207,6 +207,10 @@ class UserRepository @Inject constructor(
 
     suspend fun createUser(user: UserData): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            // Primero crear la cuenta en Firebase Authentication
+            val authResult = auth.createUserWithEmailAndPassword(user.email, user.password).await()
+            Log.d(TAG, "Usuario creado en Firebase Auth: ${authResult.user?.uid}")
+
             val documentName = when (user.role) {
                 UserRole.ADMIN -> IdManager.generateAdminDocumentName(user.name)
                 UserRole.USER -> IdManager.generateUserDocumentName(user.name, user.clientDocName)
@@ -224,7 +228,8 @@ class UserRepository @Inject constructor(
                 "role" to UserRole.toFirestoreValue(user.role),
                 "clientDocName" to user.clientDocName,
                 "fcmToken" to user.fcmToken,
-                "phone" to user.phone // Agregado el campo phone
+                "phone" to user.phone,
+                "password" to user.password // Guardar la contraseña en Firestore para referencia
             )
 
             firestore.collection(collectionPath)
@@ -232,10 +237,10 @@ class UserRepository @Inject constructor(
                 .set(userMap)
                 .await()
 
-            Log.d(TAG, "User created successfully: $documentName")
+            Log.d(TAG, "Usuario creado exitosamente: $documentName")
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Error creating user: ${e.message}")
+            Log.e(TAG, "Error creando usuario: ${e.message}")
             Result.failure(e)
         }
     }

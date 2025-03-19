@@ -15,15 +15,11 @@ import androidx.work.Configuration
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.pqsolutions.hdd_monitor.service.MonitoringService
-import com.pqsolutions.hdd_monitor.data.EventRepository
-import com.pqsolutions.hdd_monitor.util.EventNotificationScheduler
-import com.pqsolutions.hdd_monitor.util.EventReminderWorkerFactory
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,23 +36,29 @@ class HddApplication : Application(), Configuration.Provider {
         private const val SERVICE_CHECK_WORK = "service_check_work"
     }
 
-    @Inject
-    lateinit var eventRepository: EventRepository
+    // Eliminamos la inyección de los componentes que ya no existen
+    // @Inject
+    // lateinit var eventRepository: EventRepository
 
-    @Inject
-    lateinit var eventNotificationScheduler: EventNotificationScheduler
+    // @Inject
+    // lateinit var eventNotificationScheduler: EventNotificationScheduler
 
-    @Inject
-    lateinit var eventReminderWorkerFactory: EventReminderWorkerFactory
+    // @Inject
+    // lateinit var eventReminderWorkerFactory: EventReminderWorkerFactory
 
+    // Modificamos la configuración de WorkManager para que no use el factory eliminado
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setMinimumLoggingLevel(Log.INFO)
-            .setWorkerFactory(eventReminderWorkerFactory)
+            // Eliminamos la línea que configura el worker factory
+            // .setWorkerFactory(eventReminderWorkerFactory)
             .build()
 
     override fun onCreate() {
         super.onCreate()
+
+        // Cancelar todos los trabajos de recordatorios de eventos existentes
+        WorkManager.getInstance(this).cancelAllWork()
 
         // Inicializar Firebase
         FirebaseApp.initializeApp(this)
@@ -65,18 +67,16 @@ class HddApplication : Application(), Configuration.Provider {
         // Crear canales de notificación
         createNotificationChannels()
 
-        // Inicializar canal de notificaciones para recordatorios de eventos
-        eventNotificationScheduler.createNotificationChannel()
-
-        // Programar notificaciones para eventos pendientes
-        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-            try {
-                eventRepository.scheduleAllPendingEventNotifications()
-                Log.d(TAG, "Programación de notificaciones para eventos pendientes iniciada")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error programando notificaciones para eventos", e)
-            }
-        }
+        // Eliminamos las referencias a la programación de notificaciones
+        // eventNotificationScheduler.createNotificationChannel()
+        // CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+        //     try {
+        //         eventRepository.scheduleAllPendingEventNotifications()
+        //         Log.d(TAG, "Programación de notificaciones para eventos pendientes iniciada")
+        //     } catch (e: Exception) {
+        //         Log.e(TAG, "Error programando notificaciones para eventos", e)
+        //     }
+        // }
 
         // Iniciar servicio de monitoreo
         startMonitoringService()
