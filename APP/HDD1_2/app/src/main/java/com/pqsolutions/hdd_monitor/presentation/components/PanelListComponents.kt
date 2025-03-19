@@ -68,16 +68,46 @@ fun PanelList(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(
-            items = panels,
-            key = { it.documentName }
-        ) { panel ->
-            PanelCard(
-                panel = panel,
-                onPanelSelect = { onPanelSelect(panel) },
-                onEditPanel = { onEditPanel(panel) },
-                onDeletePanel = { onDeletePanel(panel) }
-            )
+        // Para cada panel, generar sus elementos según el estado de los relays
+        panels.forEach { panel ->
+            // Si el ESP32 está OFFLINE o todos los relays están OK, mostrar un solo panel
+            if (panel.isESP32Offline() || panel.relays.none { it.status == Panel.STATUS_DISC }) {
+                item(key = "${panel.documentName}_single") {
+                    PanelCard(
+                        panel = panel,
+                        onPanelSelect = { onPanelSelect(panel) },
+                        onEditPanel = { onEditPanel(panel) },
+                        onDeletePanel = { onDeletePanel(panel) }
+                    )
+                }
+            } else {
+                // Para los paneles con relays en DISC, mostrar un PanelItem por cada relay en DISC
+                // dentro de un único item para mantenerlos agrupados
+                val relaysInDisc = panel.relays.filter { it.status == Panel.STATUS_DISC }
+
+                item(key = "${panel.documentName}_disc_group") {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        relaysInDisc.forEach { relay ->
+                            val isAlarmRelay = relay.name == Panel.RELAY_ALARM
+
+                            PanelCardForRelay(
+                                panel = panel,
+                                relay = relay,
+                                isAlarmRelay = isAlarmRelay,
+                                onPanelSelect = { onPanelSelect(panel) },
+                                onEditPanel = { onEditPanel(panel) },
+                                onDeletePanel = { onDeletePanel(panel) }
+                            )
+
+                            if (relay != relaysInDisc.last()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -219,6 +249,134 @@ fun PanelCard(
                         RelayStatusRow(relay = relay)
                         Spacer(modifier = Modifier.height(4.dp))
                     }
+                }
+            }
+        }
+    }
+}
+
+// Nuevo componente para mostrar un panel con un solo relay en DISC
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PanelCardForRelay(
+    panel: Panel,
+    relay: Relay,
+    isAlarmRelay: Boolean,
+    onPanelSelect: () -> Unit,
+    onEditPanel: () -> Unit,
+    onDeletePanel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var expanded by remember { mutableStateOf(false) }
+
+    // Determinar el color de fondo basado en el tipo de relay
+    val backgroundColor = if (isAlarmRelay) {
+        Color(0xFFFFEBEE) // Rojo claro para relay Alarma
+    } else {
+        Color(0xFFFFFDE7) // Amarillo claro para otros relays
+    }
+
+    // Color del texto para paneles amarillos
+    val textColor = if (!isAlarmRelay) {
+        Color(0xFF0D47A1) // Azul oscuro para texto en paneles amarillos
+    } else {
+        MaterialTheme.colorScheme.onSurface // Color normal para otros casos
+    }
+
+    Card(
+        onClick = {
+            performHapticFeedback(context)
+            onPanelSelect()
+        },
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+        colors = CardDefaults.cardColors(
+            containerColor = backgroundColor,
+            contentColor = if (!isAlarmRelay) textColor else Color.Unspecified
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Header con información básica y acciones
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = panel.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (!isAlarmRelay) textColor else Color.Unspecified
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.field_location, panel.location),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (!isAlarmRelay) textColor else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row {
+                    IconButton(onClick = onEditPanel) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = stringResource(R.string.edit),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(onClick = onDeletePanel) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = stringResource(R.string.delete),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    IconButton(
+                        onClick = { expanded = !expanded }
+                    ) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (expanded) "Mostrar menos" else "Mostrar más"
+                        )
+                    }
+                }
+            }
+
+            // Mostrar mensaje específico del relay en DISC
+            Text(
+                text = "Estado: ${relay.name} en DISC",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                ),
+                color = if (isAlarmRelay) PanelColors.StatusDisc else textColor
+            )
+
+            // Detalles expandibles de relay
+            if (expanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Relay ${relay.name} activado",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isAlarmRelay) PanelColors.StatusDisc else textColor
+                )
+
+                // Mostrar información adicional si está disponible
+                if (relay.date_time != null) {
+                    Text(
+                        text = "Fecha: ${relay.date_time}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (!isAlarmRelay) textColor.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

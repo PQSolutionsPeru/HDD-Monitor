@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -142,12 +141,34 @@ fun UserDashboardScreen(
                             EmptyPanelsContent()
                         }
                     } else {
-                        items(
-                            items = uiState.panels,
-                            key = { panel -> "${panel.clientName}_${panel.documentName}" }
-                        ) { panel ->
-                            UserPanelItem(panel)
-                            Spacer(modifier = Modifier.height(8.dp))
+                        // Para cada panel, generar sus elementos según el estado de los relays
+                        uiState.panels.forEach { panel ->
+                            // Si el ESP32 está OFFLINE o todos los relays están OK, mostrar un solo panel
+                            if (panel.isESP32Offline() || panel.relays.none { it.status == Panel.STATUS_DISC }) {
+                                item(key = "${panel.documentName}_single") {
+                                    UserPanelItem(panel)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
+                            } else {
+                                // Para los paneles con relays en DISC, mostrar un PanelItem por cada relay en DISC
+                                // dentro de un único item para mantenerlos agrupados
+                                val relaysInDisc = panel.relays.filter { it.status == Panel.STATUS_DISC }
+
+                                item(key = "${panel.documentName}_disc_group") {
+                                    Column {
+                                        relaysInDisc.forEach { relay ->
+                                            val isAlarmRelay = relay.name == Panel.RELAY_ALARM
+
+                                            UserPanelItemForRelay(
+                                                panel = panel,
+                                                relay = relay,
+                                                isAlarmRelay = isAlarmRelay
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -237,7 +258,7 @@ fun UserPanelItem(panel: Panel) {
     var expanded by remember { mutableStateOf(false) }
 
     // Determinar color basado en estado del ESP32 primero, luego en relays
-    val containerColor = when {
+    val backgroundColor = when {
         panel.isESP32Offline() -> PanelColors.PanelBackgroundOffline
         panel.hasIssues -> Color(0xFFFFEBEE) // Rojo claro
         else -> Color(0xFFE8F5E9) // Verde claro
@@ -248,7 +269,7 @@ fun UserPanelItem(panel: Panel) {
             .fillMaxWidth()
             .animateContentSize()
             .clickable { expanded = !expanded },
-        colors = CardDefaults.cardColors(containerColor = containerColor)
+        colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = panel.name, style = MaterialTheme.typography.titleMedium)
@@ -284,6 +305,82 @@ fun UserPanelItem(panel: Panel) {
                     panel.relays.forEach { relay ->
                         UserRelayStatus(relay)
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun UserPanelItemForRelay(
+    panel: Panel,
+    relay: Relay,
+    isAlarmRelay: Boolean
+) {
+    Log.d(TAG, "Rendering UserPanelItemForRelay: ${panel.name}, Relay: ${relay.name}, isAlarmRelay: $isAlarmRelay")
+    var expanded by remember { mutableStateOf(false) }
+
+    // Determinar color basado en el tipo de relay
+    val backgroundColor = if (isAlarmRelay) {
+        Color(0xFFFFEBEE) // Rojo claro para relay Alarma
+    } else {
+        Color(0xFFFFEE58) // Amarillo más intenso para otros relays
+    }
+
+    // Color del texto para paneles amarillos
+    val textColor = if (!isAlarmRelay) {
+        Color(0xFF0D47A1) // Azul oscuro para texto en paneles amarillos
+    } else {
+        MaterialTheme.colorScheme.onSurface // Color normal para otros casos
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .clickable { expanded = !expanded },
+        colors = CardDefaults.cardColors(
+            containerColor = backgroundColor,
+            contentColor = if (!isAlarmRelay) textColor else Color.Unspecified
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = panel.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (!isAlarmRelay) textColor else Color.Unspecified
+            )
+            Text(
+                text = "Ubicación: ${panel.location}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (!isAlarmRelay) textColor else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Mostrar mensaje específico del relay en DISC
+            Text(
+                text = "Estado: ${relay.name} en DISC",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                ),
+                color = if (isAlarmRelay) PanelColors.StatusDisc else textColor
+            )
+
+            if (expanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Relay ${relay.name} activado",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isAlarmRelay) PanelColors.StatusDisc else textColor
+                )
+
+                // Mostrar información adicional si está disponible
+                if (relay.date_time != null) {
+                    Text(
+                        text = "Fecha: ${relay.date_time}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (!isAlarmRelay) textColor.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
