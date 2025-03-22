@@ -74,6 +74,7 @@ fun AdminDashboardScreen(
     LaunchedEffect(lifecycleKey) {
         Log.d(TAG, "LaunchedEffect: Loading panels for admin dashboard")
         viewModel.loadPanels()
+        viewModel.startPeriodicRefresh()  // Añadido: iniciar refresco periódico
 
         // Reiniciar la recolección de notificaciones
         Log.d(TAG, "AdminDashboardScreen: Reiniciando recolección de notificaciones")
@@ -84,7 +85,7 @@ fun AdminDashboardScreen(
     DisposableEffect(lifecycleKey) {
         onDispose {
             Log.d(TAG, "DisposableEffect: Cleaning up admin dashboard - only on actual disposal")
-            // No cancelar los trabajos de carga a menos que la pantalla sea realmente descartada
+            viewModel.stopPeriodicRefresh()  // Añadido: detener refresco periódico al salir
         }
     }
 

@@ -14,6 +14,7 @@ import com.pqsolutions.hdd_monitor.util.Constants.DocumentPrefixes
 import com.pqsolutions.hdd_monitor.util.StatusUpdateManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -141,15 +142,6 @@ class DashboardViewModel @Inject constructor(
     fun loadPanels() {
         Log.d(TAG, "loadPanels() called")
 
-        // Si ya hay un trabajo activo, no iniciar otro y no cancelarlo
-        if (panelsJob?.isActive == true) {
-            Log.d(TAG, "Panels already loading, skipping redundant call")
-            return
-        }
-
-        // Importante: NO cancelamos el job existente aquí para evitar reiniciar el flujo constantemente
-        // Solo creamos uno nuevo si no hay ninguno activo o si el anterior ya terminó
-
         // Indicar carga
         _uiState.update { it.copy(isLoading = true, error = null) }
 
@@ -174,6 +166,15 @@ class DashboardViewModel @Inject constructor(
                     val clientsMap = loadClientNames(clientDocName)
                     _uiState.update { it.copy(clientNames = clientsMap) }
 
+                    // Para usuarios normales, cargar y guardar el nombre del cliente actual
+                    if (clientDocName != null && currentUser.role == UserRole.USER) {
+                        val client = clientRepository.getClient(clientDocName).getOrNull()
+                        if (client != null) {
+                            Log.d(TAG, "Retrieved client: ${client.name}")
+                            _uiState.update { it.copy(currentClientName = client.name) }
+                        }
+                    }
+
                     // Monitorear paneles con el flujo del repositorio
                     panelRepository.getPanels(clientDocName).collect { panels ->
                         Log.d(TAG, "Received ${panels.size} panels")
@@ -189,13 +190,14 @@ class DashboardViewModel @Inject constructor(
                             clientsMap[it.clientName] ?: it.clientName
                         }
 
-                        // Actualizar estado UI
+                        // Actualizar estado UI manteniendo el nombre del cliente actual
                         _uiState.update { currentState ->
                             currentState.copy(
                                 isLoading = false,
                                 panels = validPanels,
                                 groupedPanels = groupedPanels,
                                 clientNames = clientsMap,
+                                // Mantener el currentClientName que ya se estableció
                                 error = null,
                                 lastUpdate = System.currentTimeMillis()
                             )
@@ -259,8 +261,14 @@ class DashboardViewModel @Inject constructor(
      * ya que las actualizaciones son en tiempo real mediante los listeners
      */
     fun startPeriodicRefresh() {
-        Log.d(TAG, "startPeriodicRefresh() called - No necesario con el nuevo sistema")
-        // Las actualizaciones ahora se manejan con listeners en tiempo real
+        Log.d(TAG, "startPeriodicRefresh() called")
+        viewModelScope.launch {
+            while(true) {
+                delay(60000) // Actualizar cada minuto
+                refreshPanels()
+                Log.d(TAG, "Actualización periódica ejecutada")
+            }
+        }
     }
 
     fun stopPeriodicRefresh() {
@@ -274,6 +282,9 @@ class DashboardViewModel @Inject constructor(
      */
     fun refreshPanels() {
         Log.d(TAG, "refreshPanels() called - Recargando datos")
+        // Cancelar job existente para forzar una nueva carga
+        panelsJob?.cancel()
+        panelsJob = null
         loadPanels()
     }
 
@@ -299,6 +310,7 @@ class DashboardViewModel @Inject constructor(
         val panels: List<Panel> = emptyList(),
         val groupedPanels: Map<String, List<Panel>> = emptyMap(),
         val clientNames: Map<String, String> = emptyMap(),
+        val currentClientName: String = "",
         val error: String? = null,
         val lastUpdate: Long = System.currentTimeMillis()
     ) {
@@ -308,6 +320,7 @@ class DashboardViewModel @Inject constructor(
                     "panels=${panels.size}, " +
                     "groupedPanels=${groupedPanels.keys}, " +
                     "clientNames=${clientNames.size}, " +
+                    "currentClientName=$currentClientName, " +
                     "error=$error, " +
                     "lastUpdate=$lastUpdate" +
                     ")"

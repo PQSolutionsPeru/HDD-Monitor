@@ -117,11 +117,11 @@ class PanelRepository @Inject constructor(
 
         // Agregar un timeout de seguridad
         launch {
-            // Si después de 10 segundos no hemos enviado ningún panel, enviar lista vacía con mensaje
-            delay(10000)
+            // Si después de 5 segundos no hemos enviado ningún panel, emitir mensaje de log pero NO enviar lista vacía
+            delay(5000)
             if (currentPanels.isEmpty()) {
-                Log.w(TAG, "No se recibieron paneles después de 10 segundos, enviando lista vacía")
-                trySend(emptyList())
+                Log.w(TAG, "No se recibieron paneles después de 5 segundos, manteniendo paneles actuales")
+                // Ya no envía una lista vacía, solo muestra un log de advertencia
             }
         }
 

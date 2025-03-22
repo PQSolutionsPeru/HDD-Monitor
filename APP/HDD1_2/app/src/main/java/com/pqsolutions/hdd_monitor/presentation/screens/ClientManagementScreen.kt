@@ -216,7 +216,8 @@ fun ClientManagementScreen(
                                     },
                                     onDeletePanel = { panel ->
                                         showDeleteConfirmation = panel
-                                    }
+                                    },
+                                    isManagementView = true
                                 )
                             }
                         }
