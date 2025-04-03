@@ -11,6 +11,9 @@ import kotlinx.coroutines.tasks.await
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Source
+import com.pqsolutions.hdd_monitor.util.StatusUpdateManager
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,6 +25,9 @@ class ESP32Repository @Inject constructor(
         private const val TAG = "ESP32Repository"
         private const val ESP32_COLLECTION = "hdd-monitor/esp32/registered"
     }
+
+    // Mapa para rastrear listeners activos
+    private val activeListeners = ConcurrentHashMap<String, ListenerRegistration>()
 
     private fun DocumentSnapshot.toESP32Device(): ESP32Device? {
         return try {
@@ -41,6 +47,11 @@ class ESP32Repository @Inject constructor(
 
         try {
             Log.d(TAG, "Iniciando observación de ESP32s")
+
+            // Limpiar listeners anteriores con el mismo propósito
+            val listenerId = "observe_all_esp32"
+            activeListeners[listenerId]?.remove()
+
             listenerRegistration = firestore.collection(ESP32_COLLECTION)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
@@ -54,6 +65,9 @@ class ESP32Repository @Inject constructor(
 
                     trySend(devices)
                 }
+
+            // Registrar el nuevo listener
+            activeListeners[listenerId] = listenerRegistration
         } catch (e: Exception) {
             Log.e(TAG, "Error al configurar listener de ESP32", e)
             close(e)
@@ -61,6 +75,7 @@ class ESP32Repository @Inject constructor(
 
         awaitClose {
             listenerRegistration?.remove()
+            activeListeners.remove("observe_all_esp32")
         }
     }
 
@@ -68,6 +83,10 @@ class ESP32Repository @Inject constructor(
         try {
             Log.d(TAG, "Buscando ESP32 con MAC: $mac")
             val normalizedMac = mac.uppercase().replace(":", "").replace("-", "")
+
+            // Limpiar listeners anteriores
+            val listenerId = "observe_esp32_mac_$normalizedMac"
+            activeListeners[listenerId]?.remove()
 
             val listenerRegistration = firestore.collection(ESP32_COLLECTION)
                 .whereEqualTo("MAC", normalizedMac)
@@ -87,8 +106,12 @@ class ESP32Repository @Inject constructor(
                     }
                 }
 
+            // Registrar el nuevo listener
+            activeListeners[listenerId] = listenerRegistration
+
             awaitClose {
                 listenerRegistration.remove()
+                activeListeners.remove(listenerId)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error configurando observador por MAC", e)
@@ -99,6 +122,10 @@ class ESP32Repository @Inject constructor(
     fun observeUnassignedESP32s(deviceId: String? = null): Flow<List<ESP32Device>> = callbackFlow {
         try {
             Log.d(TAG, "Iniciando observación de ESP32s no asignados. DeviceId: $deviceId")
+
+            // Limpiar listeners anteriores
+            val listenerId = "observe_unassigned_esp32" + (deviceId ?: "")
+            activeListeners[listenerId]?.remove()
 
             // Usar whereIn para status y eliminar el filtro de client_id
             val baseQuery = firestore.collection(ESP32_COLLECTION)
@@ -142,8 +169,12 @@ class ESP32Repository @Inject constructor(
                     trySend(devices)
                 }
 
+            // Registrar el nuevo listener
+            activeListeners[listenerId] = listenerRegistration
+
             awaitClose {
                 listenerRegistration.remove()
+                activeListeners.remove(listenerId)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error configurando listener", e)
@@ -152,10 +183,11 @@ class ESP32Repository @Inject constructor(
     }
 
     fun observeESP32Status(esp32Id: String): Flow<String> = callbackFlow {
-        var listenerRegistration: ListenerRegistration? = null
-
         try {
-            listenerRegistration = firestore.collection(ESP32_COLLECTION)
+            val listenerId = "observe_esp32_status_$esp32Id"
+            activeListeners[listenerId]?.remove()
+
+            val listenerRegistration = firestore.collection(ESP32_COLLECTION)
                 .document(esp32Id)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
@@ -164,27 +196,49 @@ class ESP32Repository @Inject constructor(
                     }
 
                     val status = snapshot?.getString("status") ?: "UNKNOWN"
+                    Log.d(TAG, "Estado de ESP32 $esp32Id actualizado: $status")
                     trySend(status)
 
-                    if (status == ESP32Device.STATUS_RUNNING) {
-                        snapshot?.getString("client_id")?.let { clientId ->
-                            snapshot.getString("panel_id")?.let { panelId ->
+                    // Emitir actualización para panel asociado
+                    if (snapshot != null && snapshot.exists()) {
+                        val clientId = snapshot.getString("client_id") ?: ""
+                        val panelId = snapshot.getString("panel_id") ?: ""
+
+                        if (clientId.isNotEmpty() && panelId.isNotEmpty()) {
+                            // Notificar cambio de estado ESP32
+                            StatusUpdateManager.emitEsp32StatusUpdateSync(panelId, status)
+
+                            if (status == ESP32Device.STATUS_RUNNING) {
+                                // Si está en estado RUNNING, observar también los relays
                                 observeRelayStates(clientId, panelId)
                             }
                         }
                     }
                 }
+
+            // Registrar el nuevo listener
+            activeListeners[listenerId] = listenerRegistration
+
+            awaitClose {
+                listenerRegistration.remove()
+                activeListeners.remove(listenerId)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error al configurar listener de estado de ESP32", e)
             close(e)
         }
-
-        awaitClose {
-            listenerRegistration?.remove()
-        }
     }
 
     private fun observeRelayStates(clientId: String, panelId: String) {
+        val listenerId = "relays_${clientId}_${panelId}"
+
+        // Verificar si ya existe un listener
+        if (activeListeners.containsKey(listenerId)) {
+            return
+        }
+
+        Log.d(TAG, "Configurando listener de relays para panel $panelId")
+
         val relaysRef = firestore
             .collection("hdd-monitor/accounts/clients")
             .document(clientId)
@@ -192,7 +246,7 @@ class ESP32Repository @Inject constructor(
             .document(panelId)
             .collection("relays")
 
-        relaysRef.addSnapshotListener { snapshot, error ->
+        val registration = relaysRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.e(TAG, "Error observando relays", error)
                 return@addSnapshotListener
@@ -200,9 +254,16 @@ class ESP32Repository @Inject constructor(
 
             snapshot?.documentChanges?.forEach { change ->
                 val relay = change.document
-                Log.d(TAG, "Cambio en relay ${relay.id}: ${relay.getString("status")}")
+                val relayName = relay.id
+                val status = relay.getString("status") ?: "UNKNOWN"
+                Log.d(TAG, "Cambio en relay $relayName: $status")
+
+                // Emitir actualización
+                StatusUpdateManager.emitRelayStatusUpdateSync(panelId, relayName, status)
             }
         }
+
+        activeListeners[listenerId] = registration
     }
 
     private fun generateESP32Id(mac: String): String {
@@ -214,18 +275,31 @@ class ESP32Repository @Inject constructor(
         return try {
             Log.d(TAG, "Searching for ESP32 with MAC: $mac")
             val normalizedMAC = mac.uppercase().replace(":", "")
-            val esp32Id = generateESP32Id(normalizedMAC)
 
+            // Usar Source.SERVER para forzar consulta reciente
             firestore.collection(ESP32_COLLECTION)
                 .whereEqualTo("MAC", normalizedMAC)
-                .get()
+                .get(Source.SERVER)
                 .await()
                 .documents
                 .firstOrNull()
                 ?.toESP32Device()
         } catch (e: Exception) {
             Log.e(TAG, "Error finding ESP32 by MAC", e)
-            null
+            try {
+                // Intentar con caché si falla servidor
+                val normalizedMAC = mac.uppercase().replace(":", "")
+                firestore.collection(ESP32_COLLECTION)
+                    .whereEqualTo("MAC", normalizedMAC)
+                    .get(Source.CACHE)
+                    .await()
+                    .documents
+                    .firstOrNull()
+                    ?.toESP32Device()
+            } catch (e2: Exception) {
+                Log.e(TAG, "Error accessing cache", e2)
+                null
+            }
         }
     }
 
@@ -237,7 +311,7 @@ class ESP32Repository @Inject constructor(
         Log.d(TAG, "Assigning ESP32 $esp32Id to panel $panelId")
 
         val esp32Ref = firestore.document("$ESP32_COLLECTION/$esp32Id")
-        val esp32Doc = esp32Ref.get().await()
+        val esp32Doc = esp32Ref.get(Source.SERVER).await()
 
         if (!esp32Doc.exists()) {
             throw IllegalStateException("ESP32 $esp32Id no encontrado")
@@ -328,6 +402,15 @@ class ESP32Repository @Inject constructor(
     suspend fun deleteESP32(esp32Id: String): Result<Unit> = runCatching {
         Log.d(TAG, "Deleting ESP32: $esp32Id from registered collection")
 
+        // Limpiar cualquier listener asociado
+        val listenersToRemove = activeListeners.keys
+            .filter { it.contains(esp32Id) }
+
+        listenersToRemove.forEach { key ->
+            activeListeners[key]?.remove()
+            activeListeners.remove(key)
+        }
+
         firestore.document("$ESP32_COLLECTION/$esp32Id")
             .delete()
             .await()
@@ -350,5 +433,27 @@ class ESP32Repository @Inject constructor(
             .await()
 
         Log.d(TAG, "ESP32 unassigned successfully")
+    }
+
+    /**
+     * Limpia todos los listeners activos
+     */
+    fun clearListeners() {
+        Log.d(TAG, "Limpiando todos los listeners de ESP32: ${activeListeners.size} listeners")
+
+        // Copiar las claves para evitar ConcurrentModificationException
+        val keys = ArrayList(activeListeners.keys)
+
+        // Remover cada listener
+        keys.forEach { key ->
+            try {
+                activeListeners[key]?.remove()
+                activeListeners.remove(key)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al remover listener: $key", e)
+            }
+        }
+
+        Log.d(TAG, "Listeners de ESP32 limpiados correctamente")
     }
 }

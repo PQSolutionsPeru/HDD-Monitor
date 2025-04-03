@@ -1,105 +1,92 @@
 package com.pqsolutions.hdd_monitor.util
 
 import android.util.Log
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.BufferOverflow
 
 /**
- * Manager centralizado para actualizaciones de estado en tiempo real.
- * Permite que múltiples componentes reciban notificaciones de cambios.
+ * Administrador de actualizaciones de estado
+ * Coordina las actualizaciones de estado de paneles y relays en tiempo real
  */
 object StatusUpdateManager {
     private const val TAG = "StatusUpdateManager"
-    private const val BASE_PATH = "hdd-monitor/accounts/clients"
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 
-    // Usar MutableSharedFlow con replay para que los nuevos suscriptores reciban las actualizaciones más recientes
     private val _statusUpdates = MutableSharedFlow<StatusUpdate>(
-        replay = 1,
-        extraBufferCapacity = 64,
+        replay = 0,
+        extraBufferCapacity = 10,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
-
-    // Flow público para suscribirse a las actualizaciones
-    val statusUpdates = _statusUpdates.asSharedFlow()
+    val statusUpdates: SharedFlow<StatusUpdate> = _statusUpdates.asSharedFlow()
 
     /**
-     * Emite una actualización de estado ESP32
-     */
-    suspend fun emitEsp32StatusUpdate(panelDocName: String, newStatus: String) {
-        Log.d(TAG, "Emitiendo actualización ESP32: $panelDocName -> $newStatus")
-
-        // Obtener información del panel para incluir el nombre real
-        val panelInfo = getPanelInfo(panelDocName)
-
-        _statusUpdates.emit(
-            StatusUpdate(
-                panelDocName = panelDocName,
-                panelName = panelInfo.second,  // Incluir el nombre real
-                clientDocName = panelInfo.first,
-                newStatus = newStatus,
-                isEsp32 = true
-            )
-        )
-    }
-
-    /**
-     * Emite una actualización de estado de relay
+     * Emite una actualización de estado de relay de forma suspendida
      */
     suspend fun emitRelayStatusUpdate(panelDocName: String, relayName: String, newStatus: String) {
-        Log.d(TAG, "Emitiendo actualización relay: $panelDocName, $relayName -> $newStatus")
-
-        // Obtener información del panel para incluir el nombre real
-        val panelInfo = getPanelInfo(panelDocName)
-
-        _statusUpdates.emit(
-            StatusUpdate(
+        try {
+            val update = StatusUpdate(
                 panelDocName = panelDocName,
-                panelName = panelInfo.second,  // Incluir el nombre real
-                clientDocName = panelInfo.first,
                 relayName = relayName,
                 newStatus = newStatus,
-                isEsp32 = false
+                isEsp32 = false,
+                timestamp = System.currentTimeMillis()
             )
-        )
+            Log.d(TAG, "Emitiendo actualización de relay: $panelDocName/$relayName -> $newStatus")
+            _statusUpdates.emit(update)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error emitiendo actualización de relay", e)
+        }
     }
 
     /**
-     * Obtiene la información del panel (clientDocName, nombre real del panel)
+     * Emite una actualización de estado de ESP32 de forma suspendida
      */
-    private suspend fun getPanelInfo(panelDocName: String): Pair<String, String> {
+    suspend fun emitEsp32StatusUpdate(panelDocName: String, newStatus: String) {
         try {
-            // Buscar el panel en todos los clientes
-            val clientsCollection = firestore.collection(BASE_PATH).get().await()
-
-            for (clientDoc in clientsCollection.documents) {
-                val clientDocName = clientDoc.id
-                val panelDoc = firestore.document("$BASE_PATH/$clientDocName/panels/$panelDocName").get().await()
-
-                if (panelDoc.exists()) {
-                    val panelName = panelDoc.getString("name") ?: ""
-                    return Pair(clientDocName, panelName)
-                }
-            }
+            val update = StatusUpdate(
+                panelDocName = panelDocName,
+                relayName = "",
+                newStatus = newStatus,
+                isEsp32 = true,
+                timestamp = System.currentTimeMillis()
+            )
+            Log.d(TAG, "Emitiendo actualización de ESP32: $panelDocName -> $newStatus")
+            _statusUpdates.emit(update)
         } catch (e: Exception) {
-            Log.e(TAG, "Error al obtener información del panel: $panelDocName", e)
+            Log.e(TAG, "Error emitiendo actualización de ESP32", e)
         }
-
-        return Pair("", "")
     }
-}
 
-/**
- * Modelo de datos para actualizaciones de estado
- */
-data class StatusUpdate(
-    val panelDocName: String,
-    val panelName: String = "",  // Nombre real del panel
-    val clientDocName: String = "", // Cliente al que pertenece
-    val newStatus: String,
-    val relayName: String = "",
-    val isEsp32: Boolean
-)
+    /**
+     * Método para uso síncrono (desde listeners)
+     */
+    fun emitRelayStatusUpdateSync(panelDocName: String, relayName: String, newStatus: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            emitRelayStatusUpdate(panelDocName, relayName, newStatus)
+        }
+    }
+
+    /**
+     * Método para uso síncrono (desde listeners)
+     */
+    fun emitEsp32StatusUpdateSync(panelDocName: String, newStatus: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            emitEsp32StatusUpdate(panelDocName, newStatus)
+        }
+    }
+
+    /**
+     * Clase de datos para representar una actualización de estado
+     */
+    data class StatusUpdate(
+        val panelDocName: String,
+        val relayName: String,
+        val newStatus: String,
+        val isEsp32: Boolean,
+        val timestamp: Long
+    )
+}

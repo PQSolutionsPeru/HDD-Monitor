@@ -18,15 +18,17 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.firebase.FirebaseApp
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.messaging.FirebaseMessaging
 import com.pqsolutions.hdd_monitor.service.MonitoringService
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
 
 @HiltAndroidApp
 class HddApplication : Application(), Configuration.Provider {
@@ -36,15 +38,8 @@ class HddApplication : Application(), Configuration.Provider {
         private const val SERVICE_CHECK_WORK = "service_check_work"
     }
 
-    // Eliminamos la inyección de los componentes que ya no existen
-    // @Inject
-    // lateinit var eventRepository: EventRepository
-
-    // @Inject
-    // lateinit var eventNotificationScheduler: EventNotificationScheduler
-
-    // @Inject
-    // lateinit var eventReminderWorkerFactory: EventReminderWorkerFactory
+    // Scope para operaciones en la aplicación
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Modificamos la configuración de WorkManager para que no use el factory eliminado
     override val workManagerConfiguration: Configuration
@@ -57,26 +52,17 @@ class HddApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
-        // Cancelar todos los trabajos de recordatorios de eventos existentes
-        WorkManager.getInstance(this).cancelAllWork()
-
         // Inicializar Firebase
         FirebaseApp.initializeApp(this)
+
+        // Configurar Firestore para optimizar rendimiento y tiempo real
+        setupFirestore()
+
+        // Inicializar Firebase Messaging
         initializeFirebaseMessaging()
 
         // Crear canales de notificación
         createNotificationChannels()
-
-        // Eliminamos las referencias a la programación de notificaciones
-        // eventNotificationScheduler.createNotificationChannel()
-        // CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-        //     try {
-        //         eventRepository.scheduleAllPendingEventNotifications()
-        //         Log.d(TAG, "Programación de notificaciones para eventos pendientes iniciada")
-        //     } catch (e: Exception) {
-        //         Log.e(TAG, "Error programando notificaciones para eventos", e)
-        //     }
-        // }
 
         // Iniciar servicio de monitoreo
         startMonitoringService()
@@ -86,6 +72,33 @@ class HddApplication : Application(), Configuration.Provider {
 
         // Programar trabajo periódico para verificar el servicio
         scheduleServiceCheck()
+    }
+
+    private fun setupFirestore() {
+        applicationScope.launch {
+            try {
+                // Configurar ajustes de Firestore
+                val settings = FirebaseFirestoreSettings.Builder()
+                    .setPersistenceEnabled(true) // Habilitar persistencia local
+                    .setCacheSizeBytes(FirebaseFirestoreSettings.CACHE_SIZE_UNLIMITED) // Sin límite de caché
+                    .setSslEnabled(true) // Asegurar conexiones SSL
+                    .build()
+
+                // Aplicar configuración
+                val firestore = FirebaseFirestore.getInstance()
+                firestore.firestoreSettings = settings
+
+                // Forzar reconexión para limpiar cualquier estado anterior
+                // Esto simula un ciclo de desconexión-reconexión que puede ayudar con problemas de caché
+                firestore.disableNetwork()
+                delay(1000) // Esperar un segundo
+                firestore.enableNetwork()
+
+                Log.d(TAG, "Firestore configurado correctamente con persistencia y sin límite de caché")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error configurando Firestore", e)
+            }
+        }
     }
 
     private fun initializeFirebaseMessaging() {

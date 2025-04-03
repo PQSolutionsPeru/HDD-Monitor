@@ -5,8 +5,8 @@ class RelayConfig(BaseConfig):
         self.DEFAULT_CONFIG = {
             "pins": {
                 "32": "Alarma",    # NO
-                "25": "Problema",  # NO
-                "33": "Supervision" # NO
+                "33": "Problema",  # NO
+                "25": "Supervision" # NO
             },
             "debounce_time": 100,       # 100ms
             "min_report_interval": 2000  # 2 segundo

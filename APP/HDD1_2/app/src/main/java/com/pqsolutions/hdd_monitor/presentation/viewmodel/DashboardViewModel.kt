@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
 import com.pqsolutions.hdd_monitor.data.Panel
 import com.pqsolutions.hdd_monitor.data.PanelRepository
 import com.pqsolutions.hdd_monitor.data.UserRepository
@@ -18,7 +19,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -36,14 +39,17 @@ class DashboardViewModel @Inject constructor(
 
     private var panelsJob: Job? = null
     private var statusUpdateJob: Job? = null
+    private var refreshJob: Job? = null
 
     companion object {
         private const val TAG = "DashboardViewModel"
+        private const val REFRESH_INTERVAL = 30000L // 30 segundos
     }
 
     init {
         Log.d(TAG, "DashboardViewModel initialized")
         listenForStatusUpdates()
+        startPeriodicRefresh()
     }
 
     /**
@@ -54,17 +60,22 @@ class DashboardViewModel @Inject constructor(
         statusUpdateJob = viewModelScope.launch {
             Log.d(TAG, "Comenzando a escuchar actualizaciones de estado")
 
-            StatusUpdateManager.statusUpdates.collect { update ->
-                Log.d(TAG, "Recibida actualización de estado: ${update.panelDocName} -> ${update.newStatus}")
+            StatusUpdateManager.statusUpdates
+                .distinctUntilChanged() // Evitar duplicados
+                .collect { update ->
+                    Log.d(TAG, "Recibida actualización de estado: ${update.panelDocName} -> ${update.newStatus}")
 
-                if (update.isEsp32) {
-                    // Actualizar estado ESP32
-                    updatePanelESP32Status(update.panelDocName, update.newStatus)
-                } else {
-                    // Actualizar estado de relay
-                    updatePanelRelayStatus(update.panelDocName, update.relayName, update.newStatus)
+                    if (update.isEsp32) {
+                        // Actualizar estado ESP32
+                        updatePanelESP32Status(update.panelDocName, update.newStatus)
+                    } else {
+                        // Actualizar estado de relay
+                        updatePanelRelayStatus(update.panelDocName, update.relayName, update.newStatus)
+                    }
+
+                    // Forzar recomposición
+                    _uiState.update { it.copy(lastUpdate = System.currentTimeMillis()) }
                 }
-            }
         }
     }
 
@@ -142,6 +153,12 @@ class DashboardViewModel @Inject constructor(
     fun loadPanels() {
         Log.d(TAG, "loadPanels() called")
 
+        // Si ya hay un trabajo activo, no iniciar otro y no cancelarlo
+        if (panelsJob?.isActive == true) {
+            Log.d(TAG, "Panels already loading, skipping redundant call")
+            return
+        }
+
         // Indicar carga
         _uiState.update { it.copy(isLoading = true, error = null) }
 
@@ -166,15 +183,6 @@ class DashboardViewModel @Inject constructor(
                     val clientsMap = loadClientNames(clientDocName)
                     _uiState.update { it.copy(clientNames = clientsMap) }
 
-                    // Para usuarios normales, cargar y guardar el nombre del cliente actual
-                    if (clientDocName != null && currentUser.role == UserRole.USER) {
-                        val client = clientRepository.getClient(clientDocName).getOrNull()
-                        if (client != null) {
-                            Log.d(TAG, "Retrieved client: ${client.name}")
-                            _uiState.update { it.copy(currentClientName = client.name) }
-                        }
-                    }
-
                     // Monitorear paneles con el flujo del repositorio
                     panelRepository.getPanels(clientDocName).collect { panels ->
                         Log.d(TAG, "Received ${panels.size} panels")
@@ -190,14 +198,13 @@ class DashboardViewModel @Inject constructor(
                             clientsMap[it.clientName] ?: it.clientName
                         }
 
-                        // Actualizar estado UI manteniendo el nombre del cliente actual
+                        // Actualizar estado UI
                         _uiState.update { currentState ->
                             currentState.copy(
                                 isLoading = false,
                                 panels = validPanels,
                                 groupedPanels = groupedPanels,
                                 clientNames = clientsMap,
-                                // Mantener el currentClientName que ya se estableció
                                 error = null,
                                 lastUpdate = System.currentTimeMillis()
                             )
@@ -226,22 +233,38 @@ class DashboardViewModel @Inject constructor(
     }
 
     /**
-     * Carga los nombres de los clientes para mostrarlos en la interfaz
+     * Carga los nombres de los clientes para mostrarlos en la interfaz,
+     * usando Source.SERVER para garantizar datos actualizados
      */
     private suspend fun loadClientNames(clientDocName: String?): Map<String, String> {
         return try {
             if (clientDocName != null) {
                 // Para usuario normal, solo necesitamos un cliente
-                val client = clientRepository.getClient(clientDocName).getOrNull()
-                if (client != null) {
-                    mapOf(clientDocName to client.name)
+                // Usar Source.SERVER para forzar consulta fresca
+                val clientSnapshot = firestore
+                    .collection("hdd-monitor/accounts/clients")
+                    .document(clientDocName)
+                    .get(Source.SERVER)
+                    .await()
+
+                if (clientSnapshot.exists()) {
+                    val clientName = clientSnapshot.getString("name")
+                    if (clientName != null) {
+                        mapOf(clientDocName to clientName)
+                    } else {
+                        emptyMap()
+                    }
                 } else {
                     emptyMap()
                 }
             } else {
-                // Para admin, cargar todos los clientes de una vez para mejor rendimiento
+                // Para admin, cargar todos los clientes usando también Source.SERVER
                 val clients = mutableMapOf<String, String>()
-                val clientsSnapshot = firestore.collection("hdd-monitor/accounts/clients").get().await()
+                val clientsSnapshot = firestore
+                    .collection("hdd-monitor/accounts/clients")
+                    .get(Source.SERVER)
+                    .await()
+
                 for (doc in clientsSnapshot.documents) {
                     val clientName = doc.getString("name")
                     if (clientName != null) {
@@ -251,29 +274,84 @@ class DashboardViewModel @Inject constructor(
                 clients
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading client names", e)
-            emptyMap()
-        }
-    }
+            Log.e(TAG, "Error loading client names from server, trying cache", e)
 
-    /**
-     * Mantener estos métodos por compatibilidad, pero ahora no son necesarios
-     * ya que las actualizaciones son en tiempo real mediante los listeners
-     */
-    fun startPeriodicRefresh() {
-        Log.d(TAG, "startPeriodicRefresh() called")
-        viewModelScope.launch {
-            while(true) {
-                delay(60000) // Actualizar cada minuto
-                refreshPanels()
-                Log.d(TAG, "Actualización periódica ejecutada")
+            // Si falla la consulta al servidor, intentar con caché
+            try {
+                if (clientDocName != null) {
+                    val clientSnapshot = firestore
+                        .collection("hdd-monitor/accounts/clients")
+                        .document(clientDocName)
+                        .get(Source.CACHE)
+                        .await()
+
+                    if (clientSnapshot.exists()) {
+                        val clientName = clientSnapshot.getString("name")
+                        if (clientName != null) {
+                            return mapOf(clientDocName to clientName)
+                        }
+                    }
+                    emptyMap()
+                } else {
+                    val clients = mutableMapOf<String, String>()
+                    val clientsSnapshot = firestore
+                        .collection("hdd-monitor/accounts/clients")
+                        .get(Source.CACHE)
+                        .await()
+
+                    for (doc in clientsSnapshot.documents) {
+                        val clientName = doc.getString("name")
+                        if (clientName != null) {
+                            clients[doc.id] = clientName
+                        }
+                    }
+                    clients
+                }
+            } catch (cacheEx: Exception) {
+                Log.e(TAG, "Error accessing client names cache", cacheEx)
+                emptyMap()
             }
         }
     }
 
+    /**
+     * Inicia una actualización periódica para mantener los datos frescos
+     */
+    fun startPeriodicRefresh() {
+        Log.d(TAG, "startPeriodicRefresh() called")
+
+        // Cancelar trabajo anterior si existe
+        refreshJob?.cancel()
+
+        refreshJob = viewModelScope.launch {
+            while (isActive) {
+                try {
+                    // Esperar el intervalo configurado
+                    delay(REFRESH_INTERVAL)
+
+                    // Verificar si deberíamos continuar
+                    if (!isActive) break
+
+                    Log.d(TAG, "Ejecutando actualización periódica")
+                    refreshPanels()
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) {
+                        break
+                    }
+                    Log.e(TAG, "Error en actualización periódica", e)
+                    delay(5000) // Esperar un poco antes de reintentar
+                }
+            }
+        }
+    }
+
+    /**
+     * Detiene la actualización periódica
+     */
     fun stopPeriodicRefresh() {
-        Log.d(TAG, "stopPeriodicRefresh() called - No necesario con el nuevo sistema")
-        // Las actualizaciones ahora se manejan con listeners en tiempo real
+        Log.d(TAG, "stopPeriodicRefresh() called")
+        refreshJob?.cancel()
+        refreshJob = null
     }
 
     /**
@@ -281,11 +359,22 @@ class DashboardViewModel @Inject constructor(
      * Útil para acciones manuales (botón de refresh) o recuperación de errores
      */
     fun refreshPanels() {
-        Log.d(TAG, "refreshPanels() called - Recargando datos")
-        // Cancelar job existente para forzar una nueva carga
-        panelsJob?.cancel()
-        panelsJob = null
-        loadPanels()
+        Log.d(TAG, "refreshPanels() called - Recargando datos forzadamente")
+
+        viewModelScope.launch {
+            try {
+                // Primero limpiar listeners y cachés para forzar recargas frescas
+                panelRepository.clearListeners()
+
+                // Esperar un poco para permitir que se complete la limpieza
+                delay(300)
+
+                // Ahora cargar paneles de nuevo
+                loadPanels()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error forzando refresco de paneles", e)
+            }
+        }
     }
 
     /**
@@ -301,6 +390,7 @@ class DashboardViewModel @Inject constructor(
         super.onCleared()
         cancelCurrentJob()
         statusUpdateJob?.cancel()
+        refreshJob?.cancel()
         panelRepository.clearListeners()
         Log.d(TAG, "ViewModel cleared, all listeners and jobs cancelled")
     }
@@ -310,7 +400,6 @@ class DashboardViewModel @Inject constructor(
         val panels: List<Panel> = emptyList(),
         val groupedPanels: Map<String, List<Panel>> = emptyMap(),
         val clientNames: Map<String, String> = emptyMap(),
-        val currentClientName: String = "",
         val error: String? = null,
         val lastUpdate: Long = System.currentTimeMillis()
     ) {
@@ -320,7 +409,6 @@ class DashboardViewModel @Inject constructor(
                     "panels=${panels.size}, " +
                     "groupedPanels=${groupedPanels.keys}, " +
                     "clientNames=${clientNames.size}, " +
-                    "currentClientName=$currentClientName, " +
                     "error=$error, " +
                     "lastUpdate=$lastUpdate" +
                     ")"

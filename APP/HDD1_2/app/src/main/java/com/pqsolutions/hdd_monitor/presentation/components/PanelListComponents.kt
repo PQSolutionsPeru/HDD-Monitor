@@ -61,7 +61,6 @@ fun PanelList(
     onPanelSelect: (Panel) -> Unit,
     onEditPanel: (Panel) -> Unit,
     onDeletePanel: (Panel) -> Unit,
-    isManagementView: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -69,56 +68,41 @@ fun PanelList(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (isManagementView) {
-            // Vista para gestión: muestra cada panel una sola vez
-            items(
-                items = panels.distinctBy { it.documentName },
-                key = { it.documentName }
-            ) { panel ->
-                PanelCard(
-                    panel = panel,
-                    onPanelSelect = { onPanelSelect(panel) },
-                    onEditPanel = { onEditPanel(panel) },
-                    onDeletePanel = { onDeletePanel(panel) }
-                )
-            }
-        } else {
-            // Vista operativa: muestra paneles con relays detallados
-            panels.forEach { panel ->
-                // Si el ESP32 está OFFLINE o todos los relays están OK, mostrar un solo panel
-                if (panel.isESP32Offline() || panel.relays.none { it.status == Panel.STATUS_DISC }) {
-                    item(key = "${panel.documentName}_single") {
-                        PanelCard(
-                            panel = panel,
-                            onPanelSelect = { onPanelSelect(panel) },
-                            onEditPanel = { onEditPanel(panel) },
-                            onDeletePanel = { onDeletePanel(panel) }
-                        )
-                    }
-                } else {
-                    // Para los paneles con relays en DISC, mostrar un PanelItem por cada relay en DISC
-                    // dentro de un único item para mantenerlos agrupados
-                    val relaysInDisc = panel.relays.filter { it.status == Panel.STATUS_DISC }
+        // Para cada panel, generar sus elementos según el estado de los relays
+        panels.forEach { panel ->
+            // Si el ESP32 está OFFLINE o todos los relays están OK, mostrar un solo panel
+            if (panel.isESP32Offline() || panel.relays.none { it.status == Panel.STATUS_DISC }) {
+                item(key = "${panel.documentName}_single") {
+                    PanelCard(
+                        panel = panel,
+                        onPanelSelect = { onPanelSelect(panel) },
+                        onEditPanel = { onEditPanel(panel) },
+                        onDeletePanel = { onDeletePanel(panel) }
+                    )
+                }
+            } else {
+                // Para los paneles con relays en DISC, mostrar un PanelItem por cada relay en DISC
+                // dentro de un único item para mantenerlos agrupados
+                val relaysInDisc = panel.relays.filter { it.status == Panel.STATUS_DISC }
 
-                    item(key = "${panel.documentName}_disc_group") {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            relaysInDisc.forEach { relay ->
-                                val isAlarmRelay = relay.name == Panel.RELAY_ALARM
+                item(key = "${panel.documentName}_disc_group") {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        relaysInDisc.forEach { relay ->
+                            val isAlarmRelay = relay.name == Panel.RELAY_ALARM
 
-                                PanelCardForRelay(
-                                    panel = panel,
-                                    relay = relay,
-                                    isAlarmRelay = isAlarmRelay,
-                                    onPanelSelect = { onPanelSelect(panel) },
-                                    onEditPanel = { onEditPanel(panel) },
-                                    onDeletePanel = { onDeletePanel(panel) }
-                                )
+                            PanelCardForRelay(
+                                panel = panel,
+                                relay = relay,
+                                isAlarmRelay = isAlarmRelay,
+                                onPanelSelect = { onPanelSelect(panel) },
+                                onEditPanel = { onEditPanel(panel) },
+                                onDeletePanel = { onDeletePanel(panel) }
+                            )
 
-                                if (relay != relaysInDisc.last()) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
+                            if (relay != relaysInDisc.last()) {
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
                         }
                     }

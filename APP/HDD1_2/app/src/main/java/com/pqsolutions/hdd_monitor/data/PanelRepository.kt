@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -84,7 +83,11 @@ class PanelRepository @Inject constructor(
 
         // Copia segura para evitar ConcurrentModificationException
         val listeners = ArrayList(activeListeners.values)
+
+        // Limpiar las colecciones de inmediato
         activeListeners.clear()
+        relayStatusCache.clear()
+        esp32StatusCache.clear()
 
         // Remueve cada listener en un contexto seguro
         listeners.forEach { listener ->
@@ -95,11 +98,34 @@ class PanelRepository @Inject constructor(
             }
         }
 
-        // Limpia las cachés
-        relayStatusCache.clear()
-        esp32StatusCache.clear()
-
         Log.d(TAG, "All listeners cleared successfully")
+    }
+
+    /**
+     * Fuerza una recarga desde el servidor limpiando cachés
+     */
+    suspend fun forceRefreshFromServer() {
+        try {
+            Log.d(TAG, "Forzando refresco desde servidor")
+
+            // Limpiar cachés
+            relayStatusCache.clear()
+            esp32StatusCache.clear()
+
+            // Limpiar listeners
+            clearListeners()
+
+            // Verificar conexión
+            val testQuery = firestore.collection(BASE_PATH)
+                .limit(1)
+                .get(Source.SERVER)
+                .await()
+
+            Log.d(TAG, "Verificación de conexión exitosa: ${testQuery.size()} documentos")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al forzar refresco desde servidor", e)
+            throw e
+        }
     }
 
     /**
@@ -117,11 +143,11 @@ class PanelRepository @Inject constructor(
 
         // Agregar un timeout de seguridad
         launch {
-            // Si después de 5 segundos no hemos enviado ningún panel, emitir mensaje de log pero NO enviar lista vacía
-            delay(5000)
+            // Si después de 10 segundos no hemos enviado ningún panel, enviar lista vacía con mensaje
+            delay(10000)
             if (currentPanels.isEmpty()) {
-                Log.w(TAG, "No se recibieron paneles después de 5 segundos, manteniendo paneles actuales")
-                // Ya no envía una lista vacía, solo muestra un log de advertencia
+                Log.w(TAG, "No se recibieron paneles después de 10 segundos, enviando lista vacía")
+                trySend(emptyList())
             }
         }
 
@@ -217,7 +243,7 @@ class PanelRepository @Inject constructor(
                                 try {
                                     firestore
                                         .collection("$BASE_PATH/$clientDocName/panels/${p.documentName}/relays")
-                                        .get()
+                                        .get(Source.SERVER) // Usar SERVER para forzar datos frescos
                                         .addOnSuccessListener { relaysSnapshot ->
                                             val loadedRelays =
                                                 relaysSnapshot.documents.mapNotNull { relayDoc ->
@@ -255,6 +281,34 @@ class PanelRepository @Inject constructor(
                                         }
                                         .addOnFailureListener { e ->
                                             Log.e(TAG, "Error cargando relays iniciales", e)
+                                            // Si falla la carga desde SERVER, intentar con CACHE
+                                            firestore
+                                                .collection("$BASE_PATH/$clientDocName/panels/${p.documentName}/relays")
+                                                .get(Source.CACHE)
+                                                .addOnSuccessListener { relaysSnapshot ->
+                                                    // Mismo procesamiento que arriba
+                                                    val loadedRelays = relaysSnapshot.documents.mapNotNull { relayDoc ->
+                                                        try {
+                                                            Relay.fromMap(
+                                                                relayDoc.data?.plus(mapOf("name" to relayDoc.id))
+                                                                    ?: emptyMap()
+                                                            )
+                                                        } catch (e: Exception) {
+                                                            null
+                                                        }
+                                                    }
+
+                                                    if (loadedRelays.isNotEmpty()) {
+                                                        p.relays = loadedRelays
+                                                        val index = currentPanels.indexOfFirst {
+                                                            it.documentName == p.documentName
+                                                        }
+                                                        if (index >= 0) {
+                                                            currentPanels[index].relays = loadedRelays
+                                                            onUpdateCallback(currentPanels.toList())
+                                                        }
+                                                    }
+                                                }
                                         }
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Error cargando relays iniciales", e)
@@ -505,10 +559,8 @@ class PanelRepository @Inject constructor(
     private fun setupRelayListener(clientDocName: String, panel: Panel): ListenerRegistration {
         val relayListenerId = "relays_${clientDocName}_${panel.documentName}"
 
-        // Reutilizar listener existente
-        activeListeners[relayListenerId]?.let {
-            return it
-        }
+        // Remover listener existente para evitar duplicados
+        activeListeners[relayListenerId]?.remove()
 
         Log.d(TAG, "Setting up relay listener for panel ${panel.documentName}")
 
@@ -540,17 +592,14 @@ class PanelRepository @Inject constructor(
                             val cacheKey = "${clientDocName}_${panel.documentName}_${doc.id}"
                             val oldStatus = relayStatusCache[cacheKey]?.get("status")
                             if (oldStatus != null && oldStatus != relay.status) {
-                                coroutineScope.launch {
-                                    try {
-                                        StatusUpdateManager.emitRelayStatusUpdate(
-                                            panel.documentName,
-                                            doc.id,
-                                            relay.status
-                                        )
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error emitting relay status update", e)
-                                    }
-                                }
+                                // Emitir actualización inmediatamente
+                                StatusUpdateManager.emitRelayStatusUpdateSync(
+                                    panel.documentName,
+                                    doc.id,
+                                    relay.status
+                                )
+
+                                Log.d(TAG, "Relay status changed: ${relay.name} from $oldStatus to ${relay.status}")
                             }
 
                             // Actualizar caché
@@ -614,7 +663,7 @@ class PanelRepository @Inject constructor(
 
                         // Notificar cambio
                         try {
-                            StatusUpdateManager.emitEsp32StatusUpdate(panel.documentName, newStatus)
+                            StatusUpdateManager.emitEsp32StatusUpdateSync(panel.documentName, newStatus)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error emitting ESP32 status update", e)
                         }
@@ -628,7 +677,7 @@ class PanelRepository @Inject constructor(
 
                         // Notificar cambio a OFFLINE
                         try {
-                            StatusUpdateManager.emitEsp32StatusUpdate(
+                            StatusUpdateManager.emitEsp32StatusUpdateSync(
                                 panel.documentName,
                                 ESP32Device.STATUS_OFFLINE
                             )
@@ -767,7 +816,7 @@ class PanelRepository @Inject constructor(
                 val esp32Doc = firestore
                     .collection("hdd-monitor/esp32/registered")
                     .document(esp32Id)
-                    .get()
+                    .get(Source.SERVER) // Forzar consulta al servidor
                     .await()
 
                 if (esp32Doc.exists()) {
@@ -902,7 +951,7 @@ class PanelRepository @Inject constructor(
 
             // Notificar cambio
             try {
-                StatusUpdateManager.emitRelayStatusUpdate(panelDocName, relayName, relayStatus)
+                StatusUpdateManager.emitRelayStatusUpdateSync(panelDocName, relayName, relayStatus)
             } catch (e: Exception) {
                 Log.e(TAG, "Error emitting relay status update", e)
             }
@@ -973,13 +1022,23 @@ class PanelRepository @Inject constructor(
             withRetry {
                 val panelDoc = firestore
                     .document("$BASE_PATH/$clientDocName/panels/$panelDocName")
-                    .get()
+                    .get(Source.SERVER) // Forzar consulta al servidor
                     .await()
                 panelDoc.exists()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error verifying panel existence", e)
-            false
+            // Si falla la consulta al servidor, intentar con caché
+            try {
+                val panelDoc = firestore
+                    .document("$BASE_PATH/$clientDocName/panels/$panelDocName")
+                    .get(Source.CACHE)
+                    .await()
+                panelDoc.exists()
+            } catch (e2: Exception) {
+                Log.e(TAG, "Error accessing cache for panel verification", e2)
+                false
+            }
         }
     }
 }

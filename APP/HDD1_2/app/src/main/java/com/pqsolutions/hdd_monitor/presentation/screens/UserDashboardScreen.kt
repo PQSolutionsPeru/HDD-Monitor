@@ -88,11 +88,7 @@ fun UserDashboardScreen(
         Scaffold(
             topBar = {
                 ScreenTopBar(
-                    title = when {
-                        uiState.currentClientName.isNotEmpty() -> uiState.currentClientName
-                        uiState.panels.isNotEmpty() -> "${uiState.clientNames[uiState.panels.first().clientName] ?: ""}"
-                        else -> stringResource(R.string.user_dashboard_title)
-                    },
+                    title = stringResource(R.string.user_dashboard_title),
                     actions = {
                         AnimatedNotificationBell(
                             hasNewNotifications = hasPendingNotifications,

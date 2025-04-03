@@ -43,7 +43,7 @@ import com.pqsolutions.hdd_monitor.presentation.components.ScreenTopBar
 import com.pqsolutions.hdd_monitor.presentation.theme.HDD1_2Theme
 import com.pqsolutions.hdd_monitor.presentation.theme.PanelColors
 import com.pqsolutions.hdd_monitor.presentation.util.performHapticFeedback
-import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
+//import com.pqsolutions.hdd_monitor.presentation.util.playSoundEffect
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.DashboardViewModel
 import com.pqsolutions.hdd_monitor.presentation.viewmodel.NotificationViewModel
 
@@ -74,7 +74,6 @@ fun AdminDashboardScreen(
     LaunchedEffect(lifecycleKey) {
         Log.d(TAG, "LaunchedEffect: Loading panels for admin dashboard")
         viewModel.loadPanels()
-        viewModel.startPeriodicRefresh()  // Añadido: iniciar refresco periódico
 
         // Reiniciar la recolección de notificaciones
         Log.d(TAG, "AdminDashboardScreen: Reiniciando recolección de notificaciones")
@@ -83,9 +82,12 @@ fun AdminDashboardScreen(
 
     // DisposableEffect vinculado a la misma key que LaunchedEffect
     DisposableEffect(lifecycleKey) {
+        // Al entrar en la pantalla: iniciar actualización periódica
+        viewModel.startPeriodicRefresh()
+
         onDispose {
-            Log.d(TAG, "DisposableEffect: Cleaning up admin dashboard - only on actual disposal")
-            viewModel.stopPeriodicRefresh()  // Añadido: detener refresco periódico al salir
+            Log.d(TAG, "DisposableEffect: Cleaning up admin dashboard")
+            viewModel.stopPeriodicRefresh()
         }
     }
 
